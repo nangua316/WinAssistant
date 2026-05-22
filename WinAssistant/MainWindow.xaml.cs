@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
@@ -94,6 +95,7 @@ public sealed partial class MainWindow : Window
         };
 
         _trayIconAdded = Shell_NotifyIconW(NIM_ADD, ref nid);
+        Debug.WriteLine($"Tray icon added: {_trayIconAdded}, icon handle: {_trayIconHandle}");
     }
 
     private void CleanupTrayIcon()
@@ -356,7 +358,7 @@ public sealed partial class MainWindow : Window
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
         public string szInfo;
         public uint uTimeoutOrVersion;
-        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)]
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)]
         public string szInfoTitle;
         public uint dwInfoFlags;
         public Guid guidItem;

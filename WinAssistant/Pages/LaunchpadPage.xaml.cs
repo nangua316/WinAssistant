@@ -1,6 +1,7 @@
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using WinAssistant.Helpers;
 using WinAssistant.ViewModels;
 
@@ -22,16 +23,11 @@ public sealed partial class LaunchpadPage : Page
         {
             if (e.PropertyName == nameof(LaunchpadPageViewModel.SearchText))
                 AppGrid.CanReorderItems = string.IsNullOrEmpty(ViewModel.SearchText);
-            // Auto-select first item when filter results change.
             if (e.PropertyName == nameof(LaunchpadPageViewModel.FilteredItems))
                 SelectFirstItem();
         };
-        SizeChanged += OnPageSizeChanged;
-    }
-
-    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
-    {
-        UpdateItemSize();
+        SizeChanged += (_, _) => UpdateItemSize();
+        AppGrid.Loaded += (_, _) => UpdateItemSize();
     }
 
     private void SelectFirstItem()
@@ -47,20 +43,56 @@ public sealed partial class LaunchpadPage : Page
         ViewModel.SetXamlRoot(this.XamlRoot);
         SearchBox.Text = "";
         UpdateItemSize();
-        // Delay focus so the visual tree is ready
+        // Retry after layout settles
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-            SearchBox.Focus(FocusState.Programmatic));
+        {
+            UpdateItemSize();
+            SearchBox.Focus(FocusState.Programmatic);
+        });
     }
 
+    /// <summary>
+    /// Finds the ItemsWrapGrid panel and sets ItemWidth for 6-column layout.
+    /// Uses VisualTreeHelper to find the panel — ItemsPanelRoot may be null
+    /// at activation time on high-DPI systems.
+    /// </summary>
     private void UpdateItemSize()
     {
-        if (AppGrid.ItemsPanelRoot is ItemsWrapGrid wrapGrid)
+        var wrapGrid = FindWrapGrid();
+        if (wrapGrid == null)
         {
-            var availableWidth = ActualWidth - 48; // 24px padding each side
-            var maxColumns = 10;
-            var itemWidth = Math.Max(120, (int)(availableWidth / maxColumns));
-            wrapGrid.ItemWidth = itemWidth;
+            Log($"UpdateItemSize: ItemsWrapGrid not found, ActualWidth={ActualWidth}");
+            return;
         }
+
+        var availableWidth = Math.Max(200, ActualWidth - 40);
+        var maxColumns = 8;
+        var itemWidth = Math.Max(72, (int)(availableWidth / maxColumns));
+        wrapGrid.ItemWidth = itemWidth;
+        AppGrid.InvalidateMeasure();
+        AppGrid.InvalidateArrange();
+        Log($"UpdateItemSize: ActualWidth={ActualWidth}, availableWidth={availableWidth}, itemWidth={itemWidth}");
+    }
+
+    private ItemsWrapGrid? FindWrapGrid()
+    {
+        // ItemsPanelRoot is the fastest path
+        if (AppGrid.ItemsPanelRoot is ItemsWrapGrid wg) return wg;
+        // Fallback: walk the visual tree
+        return FindVisualChild<ItemsWrapGrid>(AppGrid);
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T t) return t;
+            var result = FindVisualChild<T>(child);
+            if (result != null) return result;
+        }
+        return null;
     }
 
     private void OnCloseClick(object sender, RoutedEventArgs e)
@@ -73,7 +105,6 @@ public sealed partial class LaunchpadPage : Page
         switch (e.Key)
         {
             case Windows.System.VirtualKey.Escape:
-                // First Escape clears search, second Escape closes
                 if (!string.IsNullOrEmpty(SearchBox.Text))
                 {
                     SearchBox.Text = "";
@@ -152,6 +183,8 @@ public sealed partial class LaunchpadPage : Page
 
         if (AppGrid.SelectedItem is LaunchpadItemViewModel vm)
         {
+            // Activate first while launchpad is foreground (has foreground privilege),
+            // then close launchpad to reveal the activated window.
             AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
             Close();
         }
@@ -220,5 +253,13 @@ public sealed partial class LaunchpadPage : Page
     private void Close()
     {
         CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static void Log(string msg)
+    {
+        try { System.IO.File.AppendAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt"),
+            $"[{DateTime.Now:HH:mm:ss.fff}] LaunchpadPage: {msg}{Environment.NewLine}"); }
+        catch { }
     }
 }

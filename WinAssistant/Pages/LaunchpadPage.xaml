@@ -7,181 +7,186 @@
 
     <Page.Resources>
         <helpers:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
-        <SolidColorBrush x:Key="LaunchpadBackground" Color="#FF1A1A1A" />
         <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="#1AFFFFFF" />
         <SolidColorBrush x:Key="GridViewItemBackgroundSelected" Color="#4DFFFFFF" />
         <SolidColorBrush x:Key="GridViewItemBackgroundSelectedPointerOver" Color="#70FFFFFF" />
     </Page.Resources>
 
-    <Grid Background="{StaticResource LaunchpadBackground}">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <Grid Background="#8C1A1A1A">
+        <Grid Margin="20,16,20,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <!-- Top bar: search + close -->
-        <Grid Padding="24,16">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBox x:Name="SearchBox"
-                     PlaceholderText="搜索应用..."
-                     Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                     MaxWidth="440"
-                     HorizontalAlignment="Stretch"
-                     Background="#333333"
-                     Foreground="White"
-                     PlaceholderForeground="#888888"
-                     BorderThickness="0"
-                     CornerRadius="8"
-                     Padding="16,10"
-                     FontSize="16"
-                     KeyDown="OnSearchBoxKeyDown" />
-            <Button Grid.Column="1"
-                    Content="✕ 关闭"
-                    Click="OnCloseClick"
-                    Background="#444444"
-                    Foreground="White"
-                    Padding="16,8"
-                    CornerRadius="6"
-                    FontSize="14" />
-        </Grid>
+            <!-- Top bar: search -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="SearchBox"
+                         PlaceholderText="搜索应用..."
+                         Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                         MaxWidth="440"
+                         HorizontalAlignment="Stretch"
+                         Background="#33FFFFFF"
+                         Foreground="White"
+                         PlaceholderForeground="#88FFFFFF"
+                         BorderThickness="0"
+                         CornerRadius="8"
+                         Padding="14,10"
+                         FontSize="16"
+                         KeyDown="OnSearchBoxKeyDown" />
+                <Button Grid.Column="1"
+                        Content="✕"
+                        Click="OnCloseClick"
+                        Background="#33FFFFFF"
+                        Foreground="White"
+                        Width="40" Height="40"
+                        Padding="0"
+                        CornerRadius="8"
+                        FontSize="16" />
+            </Grid>
 
-        <!-- App grid -->
-        <GridView Grid.Row="1"
-                  x:Name="AppGrid"
-                  ItemsSource="{x:Bind ViewModel.FilteredItems, Mode=OneWay}"
-                  CanDragItems="True"
-                  AllowDrop="True"
-                  CanReorderItems="True"
-                  DragItemsCompleted="OnDragItemsCompleted"
-                  SelectionMode="Single"
-                  IsItemClickEnabled="True"
-                  ItemClick="OnItemClick"
-                  Padding="24,8"
-                  KeyDown="OnAppGridKeyDown">
-            <GridView.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <ItemsWrapGrid Orientation="Horizontal"
-                                  ItemHeight="170" />
-                </ItemsPanelTemplate>
-            </GridView.ItemsPanel>
-            <GridView.ItemContainerStyle>
-                <Style TargetType="GridViewItem">
-                    <Setter Property="CornerRadius" Value="10" />
-                    <Setter Property="Padding" Value="4" />
-                    <Setter Property="Margin" Value="2" />
-                    <Setter Property="BorderThickness" Value="0" />
-                </Style>
-            </GridView.ItemContainerStyle>
-            <GridView.ItemTemplate>
-                <DataTemplate x:DataType="vm:LaunchpadItemViewModel">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
+            <!-- App grid -->
+            <GridView Grid.Row="1"
+                      x:Name="AppGrid"
+                      ItemsSource="{x:Bind ViewModel.FilteredItems, Mode=OneWay}"
+                      CanDragItems="True"
+                      AllowDrop="True"
+                      CanReorderItems="True"
+                      DragItemsCompleted="OnDragItemsCompleted"
+                      SelectionMode="Single"
+                      IsItemClickEnabled="True"
+                      ItemClick="OnItemClick"
+                      Padding="0,8"
+                      KeyDown="OnAppGridKeyDown"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto"
+                      ScrollViewer.VerticalScrollMode="Enabled">
+                <GridView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid Orientation="Horizontal"
+                                      ItemWidth="90"
+                                      ItemHeight="110" />
+                    </ItemsPanelTemplate>
+                </GridView.ItemsPanel>
+                <GridView.ItemContainerStyle>
+                    <Style TargetType="GridViewItem">
+                        <Setter Property="CornerRadius" Value="8" />
+                        <Setter Property="Padding" Value="4" />
+                        <Setter Property="Margin" Value="4" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="MaxWidth" Value="120" />
+                    </Style>
+                </GridView.ItemContainerStyle>
+                <GridView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:LaunchpadItemViewModel">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                        <Border Width="80" Height="80"
-                                Background="Transparent"
-                                HorizontalAlignment="Center"
-                                VerticalAlignment="Center">
-                            <Border.ContextFlyout>
-                                <MenuFlyout>
-                                    <MenuFlyoutItem Text="移除" Click="OnRemoveItem" />
-                                </MenuFlyout>
-                            </Border.ContextFlyout>
-                            <Grid>
-                                <!-- Fallback: first char shown while icon loads -->
-                                <Ellipse Width="48" Height="48"
-                                         Fill="#333333"
-                                         VerticalAlignment="Center"
-                                         HorizontalAlignment="Center"
-                                         Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
-                                <TextBlock Text="{x:Bind FallbackChar}"
-                                           FontSize="20"
-                                           Foreground="#666666"
+                            <Border Width="84" Height="84"
+                                    Background="Transparent"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center">
+                                <Border.ContextFlyout>
+                                    <MenuFlyout>
+                                        <MenuFlyoutItem Text="移除" Click="OnRemoveItem" />
+                                    </MenuFlyout>
+                                </Border.ContextFlyout>
+                                <Grid>
+                                    <Ellipse Width="52" Height="52"
+                                             Fill="#33FFFFFF"
+                                             VerticalAlignment="Center"
+                                             HorizontalAlignment="Center"
+                                             Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
+                                    <TextBlock Text="{x:Bind FallbackChar}"
+                                               FontSize="22"
+                                               Foreground="#88FFFFFF"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
+                                    <Image Source="{x:Bind IconSource, Mode=OneWay}"
+                                           Width="64" Height="64"
                                            VerticalAlignment="Center"
-                                           HorizontalAlignment="Center"
-                                           Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
-                                <Image Source="{x:Bind IconSource, Mode=OneWay}"
-                                       Width="64" Height="64"
-                                       VerticalAlignment="Center"
-                                       HorizontalAlignment="Center" />
-                            </Grid>
-                        </Border>
+                                           HorizontalAlignment="Center" />
+                                </Grid>
+                            </Border>
 
-                        <TextBlock Grid.Row="1"
-                                   Text="{x:Bind Name}"
-                                   Foreground="White"
-                                   FontSize="12"
-                                   TextAlignment="Center"
-                                   TextWrapping="NoWrap"
-                                   TextTrimming="CharacterEllipsis"
-                                   HorizontalAlignment="Center"
-                                   MaxWidth="160"
-                                   Margin="0,6,0,0"
-                                   ToolTipService.ToolTip="{x:Bind Name}" />
-                    </Grid>
-                </DataTemplate>
-            </GridView.ItemTemplate>
-        </GridView>
+                            <TextBlock Grid.Row="1"
+                                       Text="{x:Bind Name}"
+                                       Foreground="White"
+                                       FontSize="12"
+                                       TextAlignment="Center"
+                                       TextWrapping="NoWrap"
+                                       TextTrimming="CharacterEllipsis"
+                                       HorizontalAlignment="Center"
+                                       MaxWidth="110"
+                                       Margin="0,4,0,0"
+                                       ToolTipService.ToolTip="{x:Bind Name}" />
+                        </Grid>
+                    </DataTemplate>
+                </GridView.ItemTemplate>
+            </GridView>
 
-        <!-- Empty state (visible when no items at all) -->
-        <StackPanel Grid.Row="1"
-                    x:Name="EmptyStatePanel"
-                    Visibility="Collapsed"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Center"
-                    Spacing="8">
-            <FontIcon Glyph="&#xE710;" FontSize="48" Foreground="#666666"
-                      HorizontalAlignment="Center" />
-            <TextBlock Text="Launchpad 还没有应用"
-                       Foreground="#888888" FontSize="16"
-                       HorizontalAlignment="Center" />
-            <TextBlock Text="点击下方 + 添加应用 按钮添加"
-                       Foreground="#666666" FontSize="13"
-                       HorizontalAlignment="Center" />
-        </StackPanel>
+            <!-- Empty state -->
+            <StackPanel Grid.Row="1"
+                        x:Name="EmptyStatePanel"
+                        Visibility="Collapsed"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="8">
+                <FontIcon Glyph="&#xE710;" FontSize="40" Foreground="#66FFFFFF"
+                          HorizontalAlignment="Center" />
+                <TextBlock Text="Launchpad 还没有应用"
+                           Foreground="#88FFFFFF" FontSize="15"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="点击下方 + 添加应用 按钮添加"
+                           Foreground="#66FFFFFF" FontSize="12"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
 
-        <!-- No search results state -->
-        <StackPanel Grid.Row="1"
-                    x:Name="NoResultsPanel"
-                    Visibility="Collapsed"
-                    VerticalAlignment="Center"
-                    HorizontalAlignment="Center"
-                    Spacing="8">
-            <FontIcon Glyph="&#xE11A;" FontSize="48" Foreground="#666666"
-                      HorizontalAlignment="Center" />
-            <TextBlock Text="未找到匹配的应用"
-                       Foreground="#888888" FontSize="16"
-                       HorizontalAlignment="Center" />
-            <TextBlock Text="尝试其他关键词"
-                       Foreground="#666666" FontSize="13"
-                       HorizontalAlignment="Center" />
-        </StackPanel>
+            <!-- No results -->
+            <StackPanel Grid.Row="1"
+                        x:Name="NoResultsPanel"
+                        Visibility="Collapsed"
+                        VerticalAlignment="Center"
+                        HorizontalAlignment="Center"
+                        Spacing="8">
+                <FontIcon Glyph="&#xE11A;" FontSize="40" Foreground="#66FFFFFF"
+                          HorizontalAlignment="Center" />
+                <TextBlock Text="未找到匹配的应用"
+                           Foreground="#88FFFFFF" FontSize="15"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="尝试其他关键词"
+                           Foreground="#66FFFFFF" FontSize="12"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
 
-        <!-- Bottom bar -->
-        <Grid Grid.Row="2" Padding="24,12,24,20">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                       Foreground="#666666"
-                       FontSize="14"
-                       VerticalAlignment="Center" />
-            <Button Grid.Column="2"
-                    Content="+ 添加应用"
-                    Command="{x:Bind ViewModel.AddAppCommand}"
-                    Background="#444444"
-                    Foreground="White"
-                    Padding="16,8"
-                    CornerRadius="6"
-                    FontSize="14" />
+            <!-- Bottom bar -->
+            <Grid Grid.Row="2" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                           Foreground="#66FFFFFF"
+                           FontSize="13"
+                           VerticalAlignment="Center" />
+                <Button Grid.Column="2"
+                        Content="+ 添加应用"
+                        Command="{x:Bind ViewModel.AddAppCommand}"
+                        Background="#33FFFFFF"
+                        Foreground="White"
+                        Padding="14,6"
+                        CornerRadius="6"
+                        FontSize="13" />
+            </Grid>
         </Grid>
     </Grid>
 </Page>

@@ -1,7 +1,11 @@
 using System.Runtime.InteropServices;
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
+using Windows.Graphics;
 using Windows.UI.Composition;
 using WinAssistant.Pages;
 
@@ -12,14 +16,8 @@ public sealed partial class LaunchpadWindow : Window
     private LaunchpadPage? _page;
     private int _gen;
     private bool _isShowing;
-    private bool _isFullScreen;
     private readonly nint _hwnd;
     private static ITaskbarList2? _taskbar;
-
-    private static readonly nint HWND_BOTTOM = (nint)1;
-    private static readonly nint HWND_TOP = (nint)0;
-    private static readonly nint HWND_TOPMOST = (nint)(-1);
-    private static readonly nint HWND_NOTOPMOST = (nint)(-2);
 
     public LaunchpadWindow()
     {
@@ -27,29 +25,33 @@ public sealed partial class LaunchpadWindow : Window
 
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
+        // Dark mode
         var darkMode = 1;
         DwmSetWindowAttribute(_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
 
-        // Cloak immediately so the window is never visible without cloak.
-        int cloak = 1;
-        DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
+        // Acrylic backdrop (blur + tint)
+        SystemBackdrop = new DesktopAcrylicBackdrop();
 
-        // Set toolwindow style then show (while cloaked) to init the visual tree.
+        // Popup — no taskbar entry, no caption buttons
         MakeToolWindow();
 
-        SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, 0, 0,
-            SWP_NOSIZE | SWP_SHOWWINDOW | SWP_NOACTIVATE);
-        DeleteFromTaskbar();
+        // Hide title bar so the page content fills the window
+        AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Collapsed;
 
-        // Enter FullScreen once and never leave — avoids presenter-transition jank.
-        AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
-        _isFullScreen = true;
-        // Re-assert TOOLWINDOW after FullScreen (which clears it).
-        MakeToolWindow();
-        SetWindowPos(_hwnd, nint.Zero, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        // Size to ~85% of virtual screen (DPI-aware)
+        var (winW, winH) = CalcWindowSize();
+        AppWindow.MoveAndResize(new RectInt32((winW - 860) / 2, (winH - 750) / 2, 860, 750)); // initial: smaller until DPI is known
+        // Actual resize happens in OpenCore() when DPI is available
 
-        // Intercept close (Alt+F4 / taskbar close when showing) → hide launchpad.
+        // Rounded corners (Windows 11 DWM)
+        var cornerPref = DWMWCP_ROUND;
+        DwmSetWindowAttribute(_hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPref, sizeof(int));
+
+        // Keep hidden on construction — shown on first Open()
+        ShowWindow(_hwnd, SW_HIDE);
+
+        // Intercept Alt+F4 / system close when showing
         AppWindow.Closing += (_, e) =>
         {
             if (_isShowing)
@@ -57,10 +59,16 @@ public sealed partial class LaunchpadWindow : Window
                 e.Cancel = true;
                 CloseCore();
             }
-            // else: already hidden, let the close propagate (app shutdown).
         };
 
-        // Lazy-init ITaskbarList2 (once per process).
+        // Auto-close when user clicks outside (deactivate)
+        Activated += (_, e) =>
+        {
+            if (e.WindowActivationState == WindowActivationState.Deactivated && _isShowing)
+                CloseCore();
+        };
+
+        // Lazy-init ITaskbarList2 (once per process)
         if (_taskbar == null)
         {
             try
@@ -74,24 +82,13 @@ public sealed partial class LaunchpadWindow : Window
                     _taskbar = tl;
                 }
             }
-            catch (Exception ex)
-            {
-                Log($"ITaskbarList2 init failed: {ex.Message}");
-            }
+            catch { }
         }
     }
 
     public void Open()
     {
         try { OpenCore(); }
-        catch { }
-    }
-
-    private void Log(string m)
-    {
-        try { File.AppendAllText(
-            Path.Combine(Path.GetTempPath(), "WinAssistant_crash.log"),
-            $"[{DateTime.Now:HH:mm:ss.fff}] {m}\n"); }
         catch { }
     }
 
@@ -120,79 +117,51 @@ public sealed partial class LaunchpadWindow : Window
             ContentScaleHost.Children.Add(_page);
         }
 
-        var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
-        if (inner == null) { Log("OpenCore ERROR: inner is null"); return; }
-        var screenW = GetSystemMetrics(SM_CXSCREEN);
-        var screenH = GetSystemMetrics(SM_CYSCREEN);
-        inner.CenterPoint = new System.Numerics.Vector3(screenW / 2f, screenH / 2f, 0);
-        inner.Opacity = 0;
-        inner.Scale = new System.Numerics.Vector3(0.86f, 0.86f, 1);
-
-        var compositor = inner.Compositor;
-
-        // Show window first so XAML visual tree is connected.
-        MakeToolWindow();
-        ShowWindow(_hwnd, SW_SHOW);
-        SetWindowPos(_hwnd, nint.Zero, 0, 0, 0, 0,
-            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
-
         _page.ViewModel.SetXamlRootGetter(() => _page?.XamlRoot);
         _page.Activate();
 
-        try
-        {
-            // FullScreen is always on — no presenter change.
-            MakeToolWindow();
-            SetWindowPos(_hwnd, nint.Zero, 0, 0, 0, 0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        // Show window
+        MakeToolWindow();
+        ShowWindow(_hwnd, SW_SHOW);
+        // Size to ~95% of screen (physical pixels), centered
+        var dpi = GetDpiForWindow(_hwnd);
+        if (dpi == 0) dpi = 96;
+        var (winW, winH) = CalcWindowSize();
+        var physW = GetSystemMetrics(SM_CXSCREEN);
+        var physH = GetSystemMetrics(SM_CYSCREEN);
+        AppWindow.MoveAndResize(new RectInt32((physW - winW) / 2, (physH - winH) / 2, winW, winH));
 
-            // Bring to front (topmost to cover taskbar) while still cloaked.
-            SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0,
-                SWP_NOSIZE | SWP_NOACTIVATE);
-            var fgThread = GetWindowThreadProcessId(GetForegroundWindow(), out _);
-            var ourThread = GetCurrentThreadId();
-            if (fgThread != ourThread)
-                AttachThreadInput(ourThread, fgThread, true);
-            SetForegroundWindow(_hwnd);
-            if (fgThread != ourThread)
-                AttachThreadInput(ourThread, fgThread, false);
+        // Force window to top (use HWND_TOPMOST temporarily, then restore)
+        SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        var fgHwnd = GetForegroundWindow();
+        var fgThreadId = GetWindowThreadProcessId(fgHwnd, out _);
+        var myThreadId = GetWindowThreadProcessId(_hwnd, out _);
+        if (fgThreadId != myThreadId)
+            AttachThreadInput(myThreadId, fgThreadId, true);
+        SetForegroundWindow(_hwnd);
+        BringWindowToTop(_hwnd);
+        if (fgThreadId != myThreadId)
+            AttachThreadInput(myThreadId, fgThreadId, false);
+        SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
-            // Delay uncloak to let WinUI commit its first frame after SW_SHOW.
-            int decloak = 0;
-            var uncloakTimer = new Microsoft.UI.Xaml.DispatcherTimer();
-            uncloakTimer.Interval = TimeSpan.FromMilliseconds(30);
-            uncloakTimer.Tick += (s, e) =>
-            {
-                uncloakTimer.Stop();
-                try
-                {
-                    if (_gen != currentGen) return;
+        _isShowing = true;
+        DeleteFromTaskbar();
 
-                    DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref decloak, sizeof(int));
-                    _isShowing = true;
+        // Log actual window size for debugging
+        if (GetWindowRect(_hwnd, out var wrect))
+            Log($"Window: {wrect.right - wrect.left}x{wrect.bottom - wrect.top} at ({wrect.left},{wrect.top}), page ActualWidth={_page?.ActualWidth}");
 
-                    var easeOut = compositor.CreateCubicBezierEasingFunction(
-                        new System.Numerics.Vector2(0.0f, 0.0f),
-                        new System.Numerics.Vector2(0.2f, 1.0f));
+        // Fade in
+        var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
+        if (inner == null) return;
+        inner.Opacity = 0;
 
-                    var fadeIn = compositor.CreateScalarKeyFrameAnimation();
-                    fadeIn.InsertKeyFrame(0, 0, easeOut);
-                    fadeIn.InsertKeyFrame(1, 1, easeOut);
-                    fadeIn.Duration = TimeSpan.FromMilliseconds(180);
-
-                    var scaleUp = compositor.CreateVector3KeyFrameAnimation();
-                    scaleUp.InsertKeyFrame(0, new System.Numerics.Vector3(0.86f, 0.86f, 1), easeOut);
-                    scaleUp.InsertKeyFrame(1, System.Numerics.Vector3.One, easeOut);
-                    scaleUp.Duration = TimeSpan.FromMilliseconds(180);
-
-                    inner.StartAnimation("Opacity", fadeIn);
-                    inner.StartAnimation("Scale", scaleUp);
-                }
-                catch { }
-            };
-            uncloakTimer.Start();
-        }
-        catch { }
+        var compositor = inner.Compositor;
+        var fadeIn = compositor.CreateScalarKeyFrameAnimation();
+        fadeIn.InsertKeyFrame(0, 0);
+        fadeIn.InsertKeyFrame(1, 1);
+        fadeIn.Duration = TimeSpan.FromMilliseconds(150);
+        inner.StartAnimation("Opacity", fadeIn);
     }
 
     private void OnCloseRequested(object? sender, EventArgs e)
@@ -203,83 +172,60 @@ public sealed partial class LaunchpadWindow : Window
 
     private void CloseCore()
     {
-        var currentGen = _gen;
-
-        var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
-        if (inner?.Compositor == null) { ForceHide(); return; }
-        var compositor = inner.Compositor;
-
-        // Play fade-out and scale-down simultaneously.
-        var easeIn = compositor.CreateCubicBezierEasingFunction(
-            new System.Numerics.Vector2(0.4f, 0.0f),
-            new System.Numerics.Vector2(1.0f, 1.0f));
-
-        var fadeOut = compositor.CreateScalarKeyFrameAnimation();
-        fadeOut.InsertKeyFrame(0, 1, easeIn);
-        fadeOut.InsertKeyFrame(1, 0, easeIn);
-        fadeOut.Duration = TimeSpan.FromMilliseconds(120);
-
-        var scaleDown = compositor.CreateVector3KeyFrameAnimation();
-        scaleDown.InsertKeyFrame(0, System.Numerics.Vector3.One, easeIn);
-        scaleDown.InsertKeyFrame(1, new System.Numerics.Vector3(0.94f, 0.94f, 1), easeIn);
-        scaleDown.Duration = TimeSpan.FromMilliseconds(120);
-
-        inner.StartAnimation("Opacity", fadeOut);
-        inner.StartAnimation("Scale", scaleDown);
-
-        var timer = new Microsoft.UI.Xaml.DispatcherTimer();
-        timer.Interval = TimeSpan.FromMilliseconds(140);
-        timer.Tick += (s, t) =>
-        {
-            try
-            {
-                timer.Stop();
-                if (_gen != currentGen) return;
-                ForceHide();
-            }
-            catch { }
-        };
-        timer.Start();
+        // Hide immediately — no fade-out delay so the launched app can take focus.
+        ForceHide();
     }
 
     private void ForceHide()
     {
-        try
+        _isShowing = false;
+
+        var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
+        if (inner != null)
         {
-            _isShowing = false;
-
-            var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
-            if (inner != null)
-            {
-                inner.Opacity = 1;
-                inner.Scale = System.Numerics.Vector3.One;
-            }
-
-            // Cloak (invisible), then hide — keeps FullScreen so the
-            // next uncloak has no presenter transition jank.
-            int cloak = 1;
-            DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
-
-            ShowWindow(_hwnd, SW_HIDE);
-
-            // Re-assert toolwindow, remove topmost, and push to bottom while cloaked.
-            MakeToolWindow();
-            SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
-                SWP_NOSIZE | SWP_NOACTIVATE | SWP_FRAMECHANGED);
-            SetWindowPos(_hwnd, HWND_BOTTOM, 0, 0, 0, 0,
-                SWP_NOSIZE | SWP_NOACTIVATE);
-
-            DeleteFromTaskbar();
+            inner.Opacity = 1;
         }
-        catch { }
+
+        ShowWindow(_hwnd, SW_HIDE);
+        DeleteFromTaskbar();
     }
 
     private void MakeToolWindow()
     {
         var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
-        exStyle |= WS_EX_TOOLWINDOW;
         exStyle &= ~WS_EX_APPWINDOW;
         SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+    }
+
+    /// <summary>Virtual screen size in DIPs (DPI-independent pixels).</summary>
+    private (int w, int h) GetVirtualScreenSize()
+    {
+        var dpi = GetDpiForWindow(_hwnd);
+        if (dpi == 0) dpi = 96; // fallback
+        var physW = GetSystemMetrics(SM_CXSCREEN);
+        var physH = GetSystemMetrics(SM_CYSCREEN);
+        // Convert physical → virtual: virtual = physical * 96 / dpi
+        return (physW * 96 / dpi, physH * 96 / dpi);
+    }
+
+    /// <summary>Window size in PHYSICAL pixels (~95% width, ~85% height), minimum 860x750.</summary>
+    private (int w, int h) CalcWindowSize()
+    {
+        var (sw, sh) = GetVirtualScreenSize();
+        var dpi = GetDpiForWindow(_hwnd);
+        if (dpi == 0) dpi = 96;
+        var dipW = Math.Max(860, (int)(sw * 0.95));
+        var dipH = Math.Max(750, (int)(sh * 0.85));
+        // Convert DIPs → physical pixels for MoveAndResize
+        return (dipW * dpi / 96, dipH * dpi / 96);
+    }
+
+    private static void Log(string msg)
+    {
+        try { System.IO.File.AppendAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt"),
+            $"[{DateTime.Now:HH:mm:ss.fff}] Launchpad: {msg}{Environment.NewLine}"); }
+        catch { }
     }
 
     #region P/Invoke and COM interop
@@ -327,13 +273,25 @@ public sealed partial class LaunchpadWindow : Window
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(nint hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool BringWindowToTop(nint hWnd);
 
     [DllImport("user32.dll")]
     private static extern int GetSystemMetrics(int nIndex);
 
+    [DllImport("user32.dll")]
+    private static extern int GetDpiForWindow(nint hwnd);
+
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-    private const uint DWMWA_CLOAK = 13;
+    private const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const int DWMWCP_ROUND = 2;
 
     private const uint SWP_NOSIZE = 0x0001;
     private const uint SWP_NOACTIVATE = 0x0010;
@@ -349,8 +307,14 @@ public sealed partial class LaunchpadWindow : Window
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
 
+    private static readonly nint HWND_TOPMOST = (nint)(-1);
+    private static readonly nint HWND_NOTOPMOST = (nint)(-2);
+
     private const int SM_CXSCREEN = 0;
     private const int SM_CYSCREEN = 1;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int left; public int top; public int right; public int bottom; }
 
     #endregion
 }
