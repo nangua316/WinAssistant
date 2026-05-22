@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "WinAssistant (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "WinAssistant (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
