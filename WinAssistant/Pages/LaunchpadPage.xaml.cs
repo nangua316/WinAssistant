@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -9,25 +10,48 @@ namespace WinAssistant.Pages;
 
 public sealed partial class LaunchpadPage : Page
 {
+    private LaunchpadDragHandler? _dragHandler;
+
     public LaunchpadPageViewModel ViewModel { get; }
 
-    /// <summary>Fired when the user wants to close the launchpad.</summary>
     public event EventHandler? CloseRequested;
+    public event EventHandler<bool>? PinChanged;
+
+    private bool _isPinned;
+    public bool IsPinned
+    {
+        get => _isPinned;
+        set { _isPinned = value; PinButton.IsChecked = value; }
+    }
 
     public LaunchpadPage()
     {
         InitializeComponent();
         ViewModel = new LaunchpadPageViewModel();
-        ViewModel.Items.CollectionChanged += (s, e) => UpdateEmptyState();
+        ViewModel.Items.CollectionChanged += OnItemsChanged;
         ViewModel.PropertyChanged += (s, e) =>
         {
             if (e.PropertyName == nameof(LaunchpadPageViewModel.SearchText))
-                AppGrid.CanReorderItems = string.IsNullOrEmpty(ViewModel.SearchText);
+                UpdateReorderState();
             if (e.PropertyName == nameof(LaunchpadPageViewModel.FilteredItems))
                 SelectFirstItem();
         };
         SizeChanged += (_, _) => UpdateItemSize();
         AppGrid.Loaded += (_, _) => UpdateItemSize();
+        _dragHandler = new LaunchpadDragHandler(
+            AppGrid, DragCanvas,
+            ViewModel.Items,
+            () => ViewModel.FilteredItems,
+            () => !string.IsNullOrWhiteSpace(ViewModel.SearchText),
+            () => ViewModel.SaveItems(),
+            (Brush)Resources["ItemNameBrush"],
+            (Brush)Resources["AccentBrush"]);
+        UpdateReorderState();
+    }
+
+    private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        UpdateEmptyState();
     }
 
     private void SelectFirstItem()
@@ -43,7 +67,6 @@ public sealed partial class LaunchpadPage : Page
         ViewModel.SetXamlRoot(this.XamlRoot);
         SearchBox.Text = "";
         UpdateItemSize();
-        // Retry after layout settles
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             UpdateItemSize();
@@ -51,34 +74,20 @@ public sealed partial class LaunchpadPage : Page
         });
     }
 
-    /// <summary>
-    /// Finds the ItemsWrapGrid panel and sets ItemWidth for 6-column layout.
-    /// Uses VisualTreeHelper to find the panel — ItemsPanelRoot may be null
-    /// at activation time on high-DPI systems.
-    /// </summary>
     private void UpdateItemSize()
     {
         var wrapGrid = FindWrapGrid();
-        if (wrapGrid == null)
-        {
-            Log($"UpdateItemSize: ItemsWrapGrid not found, ActualWidth={ActualWidth}");
-            return;
-        }
-
+        if (wrapGrid == null) return;
         var availableWidth = Math.Max(200, ActualWidth - 40);
-        var maxColumns = 8;
-        var itemWidth = Math.Max(72, (int)(availableWidth / maxColumns));
+        var itemWidth = Math.Max(72, (int)(availableWidth / 8));
         wrapGrid.ItemWidth = itemWidth;
         AppGrid.InvalidateMeasure();
         AppGrid.InvalidateArrange();
-        Log($"UpdateItemSize: ActualWidth={ActualWidth}, availableWidth={availableWidth}, itemWidth={itemWidth}");
     }
 
     private ItemsWrapGrid? FindWrapGrid()
     {
-        // ItemsPanelRoot is the fastest path
         if (AppGrid.ItemsPanelRoot is ItemsWrapGrid wg) return wg;
-        // Fallback: walk the visual tree
         return FindVisualChild<ItemsWrapGrid>(AppGrid);
     }
 
@@ -95,9 +104,24 @@ public sealed partial class LaunchpadPage : Page
         return null;
     }
 
-    private void OnCloseClick(object sender, RoutedEventArgs e)
+    private void OnPinToggle(object sender, RoutedEventArgs e)
     {
-        Close();
+        _isPinned = PinButton.IsChecked == true;
+        PinChanged?.Invoke(this, _isPinned);
+    }
+
+    private async void OnPageRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        var point = e.GetPosition(AppGrid);
+        var hitItem = _dragHandler?.FindItemAt(point);
+        if (hitItem != null) return;
+
+        var menu = new MenuFlyout();
+        var addItem = new MenuFlyoutItem { Text = "+ 添加应用" };
+        addItem.Click += (s, args) => ViewModel.AddAppCommand.Execute(null);
+        menu.Items.Add(addItem);
+        menu.ShowAt((UIElement)sender, e.GetPosition((UIElement)sender));
+        e.Handled = true;
     }
 
     private void OnPageKeyDown(object sender, KeyRoutedEventArgs e)
@@ -114,7 +138,6 @@ public sealed partial class LaunchpadPage : Page
                 Close();
                 e.Handled = true;
                 break;
-
             case Windows.System.VirtualKey.Enter:
                 LaunchSelected();
                 e.Handled = true;
@@ -130,7 +153,6 @@ public sealed partial class LaunchpadPage : Page
                 LaunchSelected();
                 e.Handled = true;
                 break;
-
             case Windows.System.VirtualKey.Down:
                 if (ViewModel.FilteredItems.Count > 0)
                 {
@@ -140,7 +162,6 @@ public sealed partial class LaunchpadPage : Page
                     e.Handled = true;
                 }
                 break;
-
             case Windows.System.VirtualKey.Up:
                 if (AppGrid.SelectedItem != null)
                 {
@@ -159,12 +180,10 @@ public sealed partial class LaunchpadPage : Page
                 LaunchSelected();
                 e.Handled = true;
                 break;
-
             case Windows.System.VirtualKey.Escape:
                 Close();
                 e.Handled = true;
                 break;
-
             case Windows.System.VirtualKey.Up:
                 if (AppGrid.SelectedIndex <= 0)
                 {
@@ -180,11 +199,8 @@ public sealed partial class LaunchpadPage : Page
     {
         if (AppGrid.SelectedItem == null && ViewModel.FilteredItems.Count > 0)
             AppGrid.SelectedIndex = 0;
-
         if (AppGrid.SelectedItem is LaunchpadItemViewModel vm)
         {
-            // Activate first while launchpad is foreground (has foreground privilege),
-            // then close launchpad to reveal the activated window.
             AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
             Close();
         }
@@ -214,52 +230,24 @@ public sealed partial class LaunchpadPage : Page
                 XamlRoot = this.XamlRoot
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
-            {
                 ViewModel.RemoveItem(vm);
-            }
         }
     }
 
-    private void OnDragItemsCompleted(object sender, DragItemsCompletedEventArgs e)
+
+    private void UpdateReorderState()
     {
-        if (e.DropResult == Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move)
-        {
-            ViewModel.SaveItems();
-        }
+        AppGrid.IsItemClickEnabled = string.IsNullOrWhiteSpace(ViewModel.SearchText)
+            || ViewModel.FilteredItems.Count > 0;
     }
 
     private void UpdateEmptyState()
     {
         var hasItems = ViewModel.HasItems;
         var hasFilterResults = ViewModel.FilteredItems.Count > 0;
-
-        if (!hasItems)
-        {
-            EmptyStatePanel.Visibility = Visibility.Visible;
-            NoResultsPanel.Visibility = Visibility.Collapsed;
-        }
-        else if (!hasFilterResults)
-        {
-            EmptyStatePanel.Visibility = Visibility.Collapsed;
-            NoResultsPanel.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            EmptyStatePanel.Visibility = Visibility.Collapsed;
-            NoResultsPanel.Visibility = Visibility.Collapsed;
-        }
+        EmptyStatePanel.Visibility = !hasItems ? Visibility.Visible : Visibility.Collapsed;
+        NoResultsPanel.Visibility = hasItems && !hasFilterResults ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void Close()
-    {
-        CloseRequested?.Invoke(this, EventArgs.Empty);
-    }
-
-    private static void Log(string msg)
-    {
-        try { System.IO.File.AppendAllText(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt"),
-            $"[{DateTime.Now:HH:mm:ss.fff}] LaunchpadPage: {msg}{Environment.NewLine}"); }
-        catch { }
-    }
+    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
 }

@@ -16,6 +16,7 @@ public sealed partial class LaunchpadWindow : Window
     private LaunchpadPage? _page;
     private int _gen;
     private bool _isShowing;
+    private bool _isPinned;
     private readonly nint _hwnd;
     private static ITaskbarList2? _taskbar;
 
@@ -61,10 +62,10 @@ public sealed partial class LaunchpadWindow : Window
             }
         };
 
-        // Auto-close when user clicks outside (deactivate)
+        // Auto-close when user clicks outside (deactivate), unless pinned
         Activated += (_, e) =>
         {
-            if (e.WindowActivationState == WindowActivationState.Deactivated && _isShowing)
+            if (e.WindowActivationState == WindowActivationState.Deactivated && _isShowing && !_isPinned)
                 CloseCore();
         };
 
@@ -114,6 +115,7 @@ public sealed partial class LaunchpadWindow : Window
         {
             _page = new LaunchpadPage();
             _page.CloseRequested += OnCloseRequested;
+            _page.PinChanged += (_, pinned) => _isPinned = pinned;
             ContentScaleHost.Children.Add(_page);
         }
 

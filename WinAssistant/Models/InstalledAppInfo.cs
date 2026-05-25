@@ -53,7 +53,7 @@ public class AppPickerItem : ObservableObject
                 OnPropertyChanged(nameof(AddButtonText));
                 OnPropertyChanged(nameof(AddButtonBackground));
                 OnPropertyChanged(nameof(AddButtonForeground));
-                _addCommand?.NotifyCanExecuteChanged();
+                OnPropertyChanged(nameof(IsInteractive));
             }
         }
     }
@@ -63,14 +63,17 @@ public class AppPickerItem : ObservableObject
 
     /// <summary>Button background color: green for added, accent blue for add.</summary>
     public Brush AddButtonBackground => IsAdded
-        ? new SolidColorBrush(Color.FromArgb(255, 46, 125, 50))
+        ? new SolidColorBrush(Color.FromArgb(255, 80, 80, 80))
         : new SolidColorBrush(Color.FromArgb(255, 0, 103, 192));
 
     /// <summary>Button text color: white for both states.</summary>
     public Brush AddButtonForeground => new SolidColorBrush(Colors.White);
 
-    /// <summary>Command to add this app. Disabled after added.</summary>
-    public ICommand AddCommand => _addCommand ??= new RelayCommand(ExecuteAdd, () => !_isAdded);
+    /// <summary>Whether the add button is interactive (enabled). False when already added.</summary>
+    public bool IsInteractive => !_isAdded;
+
+    /// <summary>Command to add this app.</summary>
+    public ICommand AddCommand => _addCommand ??= new RelayCommand(ExecuteAdd);
 
     private Action<AppPickerItem>? _addAction;
 

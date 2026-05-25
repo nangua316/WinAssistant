@@ -1,0 +1,322 @@
+using System.Collections.ObjectModel;
+using Windows.Foundation;
+using WinAssistant.Models;
+using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
+using WinAssistant.ViewModels;
+
+namespace WinAssistant.Pages;
+
+/// <summary>
+/// Handles custom pointer-based drag reordering for the Launchpad GridView.
+/// Extracted from LaunchpadPage.xaml.cs to keep page lifecycle separate from drag state.
+/// </summary>
+internal sealed class LaunchpadDragHandler
+{
+    private const double DragThreshold = 8;
+
+    private readonly GridView _gridView;
+    private readonly Canvas _dragCanvas;
+    private readonly ObservableCollection<LaunchpadItemViewModel> _items;
+    private readonly Func<ObservableCollection<LaunchpadItemViewModel>> _filteredItemsGetter;
+    private readonly Func<bool> _isSearchActive;
+    private readonly Action _saveItems;
+    private readonly Brush _itemNameBrush;
+    private readonly Brush _accentBrush;
+
+    private LaunchpadItemViewModel? _pressedItem;
+    private Point _pressedPoint;
+    private bool _isDragging;
+    private int _dragStartIndex = -1;
+    private int _dragTargetIndex = -1;
+    private Border? _dragGhost;
+
+    // Placeholder item: replaces the pressed item in the collection during drag,
+    // creating a visual gap that items animate around via RepositionThemeTransition.
+    private LaunchpadItemViewModel? _placeholderItem;
+    private int _originalDragIndex = -1;
+    private DateTime _lastPlaceholderMove = DateTime.MinValue;
+    private int _pendingTargetIndex = -1;
+
+    internal LaunchpadDragHandler(
+        GridView gridView,
+        Canvas dragCanvas,
+        ObservableCollection<LaunchpadItemViewModel> items,
+        Func<ObservableCollection<LaunchpadItemViewModel>> filteredItemsGetter,
+        Func<bool> isSearchActive,
+        Action saveItems,
+        Brush itemNameBrush,
+        Brush accentBrush)
+    {
+        _gridView = gridView;
+        _dragCanvas = dragCanvas;
+        _items = items;
+        _filteredItemsGetter = filteredItemsGetter;
+        _isSearchActive = isSearchActive;
+        _saveItems = saveItems;
+        _itemNameBrush = itemNameBrush;
+        _accentBrush = accentBrush;
+
+        // handledEventsToo:true so we get events even if GridViewItem handles them
+        gridView.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed), true);
+        gridView.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnPointerMoved), true);
+        gridView.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnPointerReleased), true);
+        gridView.AddHandler(UIElement.PointerCanceledEvent, new PointerEventHandler(OnPointerCanceled), true);
+    }
+
+    private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isSearchActive()) return;
+
+        var pt = e.GetCurrentPoint(_gridView);
+        if (!pt.Properties.IsLeftButtonPressed) return;
+
+        var vm = FindItemAt(pt.Position);
+        if (vm == null) return;
+
+        _pressedItem = vm;
+        _pressedPoint = pt.Position;
+        _isDragging = false;
+        _dragStartIndex = _items.IndexOf(vm);
+        _dragTargetIndex = -1;
+    }
+
+    private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (_pressedItem == null) return;
+
+        var pt = e.GetCurrentPoint(_gridView);
+        if (!pt.Properties.IsLeftButtonPressed)
+        {
+            CleanupDrag();
+            return;
+        }
+
+        if (_isDragging)
+        {
+            Canvas.SetLeft(_dragGhost!, pt.Position.X - 45);
+            Canvas.SetTop(_dragGhost!, pt.Position.Y - 55);
+
+            // Calculate insertion index from pointer coordinates (grid math),
+            // independent of collection state → no ping-pong shifts.
+            var newTarget = CalcInsertIndex(pt.Position);
+            _pendingTargetIndex = newTarget;
+
+            // Clamp to valid range: Move() needs index 0..Count-1.
+            if (newTarget >= _items.Count) newTarget = _items.Count - 1;
+
+            if (newTarget >= 0 && newTarget != _dragTargetIndex)
+            {
+                // Throttle: let each RepositionThemeTransition play out before
+                // triggering the next, preventing visual stutter from interrupt.
+                var now = DateTime.UtcNow;
+                if ((now - _lastPlaceholderMove).TotalMilliseconds >= 200)
+                {
+                    var pIdx = _items.IndexOf(_placeholderItem!);
+                    if (pIdx >= 0 && pIdx != newTarget)
+                    {
+                        _items.Move(pIdx, newTarget);
+                        _lastPlaceholderMove = now;
+                    }
+                    _dragTargetIndex = newTarget;
+                }
+            }
+
+            e.Handled = true;
+            return;
+        }
+
+        var dx = pt.Position.X - _pressedPoint.X;
+        var dy = pt.Position.Y - _pressedPoint.Y;
+        if (Math.Sqrt(dx * dx + dy * dy) >= DragThreshold)
+        {
+            StartDrag(e);
+            e.Handled = true;
+        }
+    }
+
+    private void OnPointerReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_pressedItem == null) return;
+
+        if (_isDragging)
+        {
+            // Replace placeholder with the actual pressed item at its drop position
+            var pIdx = _items.IndexOf(_placeholderItem!);
+            if (pIdx >= 0)
+            {
+                _items.RemoveAt(pIdx);
+                _items.Insert(pIdx, _pressedItem!);
+                _saveItems();
+            }
+
+            _placeholderItem = null; // prevent CleanupDrag from restoring original position
+            CleanupDrag();
+            e.Handled = true;
+            return;
+        }
+
+        CleanupDrag();
+    }
+
+    private void OnPointerCanceled(object sender, PointerRoutedEventArgs e) => CleanupDrag();
+
+    private void StartDrag(PointerRoutedEventArgs e)
+    {
+        if (_pressedItem == null) return;
+        _isDragging = true;
+        _pressedItem.IsBeingDragged = true;
+
+        // Replace pressed item with a placeholder so items "part" to show the gap.
+        // The placeholder has Name="" and IconSource=null → renders as empty tile.
+        _originalDragIndex = _dragStartIndex;
+        _placeholderItem = new LaunchpadItemViewModel(new LaunchpadItem { Name = "" });
+        _items[_originalDragIndex] = _placeholderItem;
+        _dragTargetIndex = _originalDragIndex;
+
+        if (_dragGhost == null)
+        {
+            var icon = new Image
+            {
+                Width = 48,
+                Height = 48,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Stretch = Stretch.Uniform
+            };
+            var label = new TextBlock
+            {
+                FontSize = 12,
+                Foreground = _itemNameBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxWidth = 80
+            };
+            var stack = new StackPanel { Spacing = 4, Margin = new Thickness(8) };
+            stack.Children.Add(icon);
+            stack.Children.Add(label);
+
+            _dragGhost = new Border
+            {
+                Width = 90,
+                Height = 100,
+                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xDD, 0x1A, 0x1E, 0x30)),
+                CornerRadius = new CornerRadius(10),
+                BorderBrush = _accentBrush,
+                BorderThickness = new Thickness(1),
+                Child = stack,
+                Visibility = Visibility.Collapsed
+            };
+            _dragCanvas.Children.Add(_dragGhost);
+        }
+
+        var stack2 = (StackPanel)_dragGhost.Child;
+        ((Image)stack2.Children[0]).Source = _pressedItem.IconSource;
+        ((TextBlock)stack2.Children[1]).Text = _pressedItem.Name;
+
+        var pt = e.GetCurrentPoint(_gridView);
+        Canvas.SetLeft(_dragGhost, pt.Position.X - 45);
+        Canvas.SetTop(_dragGhost, pt.Position.Y - 55);
+        _dragGhost.Visibility = Visibility.Visible;
+    }
+
+    private void CleanupDrag()
+    {
+        if (_dragGhost != null)
+            _dragGhost.Visibility = Visibility.Collapsed;
+
+        // Cancel: if placeholder still exists (drag was canceled mid-flight),
+        // restore the pressed item at its original position.
+        if (_placeholderItem != null && _pressedItem != null)
+        {
+            var pIdx = _items.IndexOf(_placeholderItem);
+            if (pIdx >= 0)
+                _items.RemoveAt(pIdx);
+            _items.Insert(_originalDragIndex, _pressedItem);
+        }
+
+        if (_pressedItem != null)
+            _pressedItem.IsBeingDragged = false;
+
+        _placeholderItem = null;
+        _originalDragIndex = -1;
+        _lastPlaceholderMove = DateTime.MinValue;
+        _pendingTargetIndex = -1;
+        _dragStartIndex = -1;
+        _dragTargetIndex = -1;
+        _pressedItem = null;
+        _pressedPoint = default;
+        _isDragging = false;
+    }
+
+    /// <summary>Finds the item at the given point using grid layout calculation.
+    /// Uses the ItemsWrapGrid's slot dimensions (which include margins) and corrects
+    /// for scroll offset so the row calculation matches the logical item index.</summary>
+    internal LaunchpadItemViewModel? FindItemAt(Point point)
+    {
+        var items = _filteredItemsGetter();
+        var wrapGrid = _gridView.ItemsPanelRoot as ItemsWrapGrid;
+        if (wrapGrid == null || items.Count == 0) return null;
+
+        var itemWidth = wrapGrid.ItemWidth;
+        var itemHeight = wrapGrid.ItemHeight;
+        var actualWidth = _gridView.ActualWidth;
+        if (actualWidth <= 0 || itemWidth <= 0) return null;
+
+        var scrollOffset = GetScrollOffset();
+        var padding = _gridView.Padding;
+        var maxColumns = Math.Max(1, (int)(actualWidth / itemWidth));
+        var col = Math.Max(0, (int)((point.X - padding.Left) / itemWidth));
+        var row = Math.Max(0, (int)((point.Y - padding.Top + scrollOffset) / itemHeight));
+        if (col >= maxColumns) col = maxColumns - 1;
+
+        var index = row * maxColumns + col;
+        return index >= 0 && index < items.Count ? items[index] : null;
+    }
+
+    /// <summary>Calculates the logical insertion index from pointer coordinates,
+    /// using the same grid math as FindItemAt but returning the raw index
+    /// (independent of collection state) and allowing up to items.Count
+    /// (insert at end).</summary>
+    private int CalcInsertIndex(Point point)
+    {
+        var wrapGrid = _gridView.ItemsPanelRoot as ItemsWrapGrid;
+        if (wrapGrid == null) return -1;
+
+        var items = _filteredItemsGetter();
+        var itemWidth = wrapGrid.ItemWidth;
+        var itemHeight = wrapGrid.ItemHeight;
+        var actualWidth = _gridView.ActualWidth;
+        if (actualWidth <= 0 || itemWidth <= 0) return -1;
+
+        var scrollOffset = GetScrollOffset();
+        var padding = _gridView.Padding;
+        var maxColumns = Math.Max(1, (int)(actualWidth / itemWidth));
+        var col = Math.Max(0, (int)((point.X - padding.Left) / itemWidth));
+        var row = Math.Max(0, (int)((point.Y - padding.Top + scrollOffset) / itemHeight));
+        if (col >= maxColumns) col = maxColumns - 1;
+
+        var index = row * maxColumns + col;
+        return index >= 0 && index < items.Count ? index : items.Count;
+    }
+
+    private double GetScrollOffset()
+    {
+        var sv = FindVisualChild<ScrollViewer>(_gridView);
+        return sv?.VerticalOffset ?? 0;
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T t) return t;
+            var result = FindVisualChild<T>(child);
+            if (result != null) return result;
+        }
+        return null;
+    }
+}

@@ -33,13 +33,51 @@
                     </Grid>
                     <Button Grid.Column="2" Content="{Binding AddButtonText}"
                             Command="{Binding AddCommand}"
+                            IsEnabled="{Binding IsInteractive}"
                             Background="{Binding AddButtonBackground}"
                             Foreground="{Binding AddButtonForeground}"
+                            Style="{StaticResource FlatButtonStyle}"
                             MinWidth="64" MinHeight="28" Padding="10,2"
                             CornerRadius="4" FontSize="12"
                             VerticalAlignment="Center" />
                 </Grid>
             </DataTemplate>
+
+            <Style x:Key="FlatButtonStyle" TargetType="Button">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Grid CornerRadius="{TemplateBinding CornerRadius}">
+                                <Border x:Name="Bg" Background="{TemplateBinding Background}"
+                                        CornerRadius="{TemplateBinding CornerRadius}" />
+                                <Border x:Name="Overlay" Background="Transparent"
+                                        CornerRadius="{TemplateBinding CornerRadius}" />
+                                <ContentPresenter Content="{TemplateBinding Content}"
+                                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  Margin="{TemplateBinding Padding}"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                                <VisualStateManager.VisualStateGroups>
+                                    <VisualStateGroup x:Name="CommonStates">
+                                        <VisualState x:Name="Normal" />
+                                        <VisualState x:Name="PointerOver">
+                                            <VisualState.Setters>
+                                                <Setter Target="Overlay.Background" Value="#1AFFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Pressed">
+                                            <VisualState.Setters>
+                                                <Setter Target="Overlay.Background" Value="#33FFFFFF" />
+                                            </VisualState.Setters>
+                                        </VisualState>
+                                        <VisualState x:Name="Disabled" />
+                                    </VisualStateGroup>
+                                </VisualStateManager.VisualStateGroups>
+                            </Grid>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

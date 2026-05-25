@@ -21,10 +21,10 @@
 ## Build & Run
 ```powershell
 # Build + restart WinAssistant (run from repo root):
-powershell -Command "Get-Process WinAssistant -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3; dotnet build WinAssistant\WinAssistant.csproj -c Debug --verbosity quiet; Start-Process -FilePath 'WinAssistant\bin\Debug\net9.0-windows10.0.26100.0\win-x64\WinAssistant.exe'"
+powershell -Command "Get-Process WinAssistant -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3; dotnet build WinAssistant\WinAssistant.csproj -c Debug -p:Platform=x64 --verbosity quiet; Start-Process -FilePath 'WinAssistant\bin\x64\Debug\net9.0-windows10.0.26100.0\win-x64\WinAssistant.exe'"
 
 # Kill + restart without rebuild:
-powershell -Command "Get-Process WinAssistant -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3; Start-Process -FilePath 'WinAssistant\bin\Debug\net9.0-windows10.0.26100.0\win-x64\WinAssistant.exe'"
+powershell -Command "Get-Process WinAssistant -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep 3; Start-Process -FilePath 'WinAssistant\bin\x64\Debug\net9.0-windows10.0.26100.0\win-x64\WinAssistant.exe'"
 
 # Debug log:
 powershell -Command 'cat "$env:TEMP\WinAssistant_dbg.txt" -Tail 50'

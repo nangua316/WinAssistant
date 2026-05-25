@@ -53,7 +53,8 @@ public sealed partial class AppPickerControl : UserControl
             .ThenBy(a => a.Name)
             .Select(a =>
             {
-                var added = !string.IsNullOrEmpty(a.AppPath) && existingPaths.Contains(a.AppPath);
+                var added = !string.IsNullOrEmpty(a.AppPath) && existingPaths.Contains(a.AppPath)
+                    || !string.IsNullOrEmpty(a.Aumid) && existingPaths.Contains("aumid::" + a.Aumid);
                 var pi = new AppPickerItem(a.Name, a.AppPath, a.Arguments, a.Aumid, a.UsageCount, null, a.ShortcutPath)
                 {
                     IsAdded = added

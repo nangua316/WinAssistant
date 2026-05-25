@@ -3,16 +3,125 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:vm="using:WinAssistant.ViewModels"
       xmlns:helpers="using:WinAssistant.Helpers"
+      RequestedTheme="Dark"
       KeyDown="OnPageKeyDown">
 
+    <!--
+      Design System: Glassmorphism + Dark Mode
+      Surface: multi-layer translucent with clear opacity hierarchy
+      Layer 0 (page bg):  #B00F1219  deep navy, ~69% opaque
+      Layer 1 (controls):  #14FFFFFF → #1FFFFFFF → #2DFFFFFF  (idle/hover/focus)
+      Accent:              #60A5FA    blue-400, used for pin/drag/highlights
+      Text primary:        #F0F0F5    near white
+      Text secondary:      #889098A8   muted blue-gray
+      Text dim:            #609098A8   very dim
+    -->
+
     <Page.Resources>
+        <!-- Converters -->
         <helpers:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
-        <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="#1AFFFFFF" />
-        <SolidColorBrush x:Key="GridViewItemBackgroundSelected" Color="#4DFFFFFF" />
-        <SolidColorBrush x:Key="GridViewItemBackgroundSelectedPointerOver" Color="#70FFFFFF" />
+        <helpers:BoolToDragOpacityConverter x:Key="BoolToDragOpacityConverter" />
+        <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+        <helpers:BoolToScaleConverter x:Key="BoolToScaleConverter" />
+
+        <!-- ===== Color Palette ===== -->
+        <!-- Surface layers -->
+        <SolidColorBrush x:Key="PageBackgroundBrush" Color="#B00F1219" />
+        <SolidColorBrush x:Key="ControlIdleBrush" Color="#14FFFFFF" />
+        <SolidColorBrush x:Key="ControlHoverBrush" Color="#1FFFFFFF" />
+        <SolidColorBrush x:Key="ControlFocusBrush" Color="#2BFFFFFF" />
+        <SolidColorBrush x:Key="ControlPressedBrush" Color="#3DFFFFFF" />
+
+        <!-- Accent -->
+        <SolidColorBrush x:Key="AccentBrush" Color="#60A5FA" />
+        <SolidColorBrush x:Key="AccentDimBrush" Color="#3060A5FA" />
+        <SolidColorBrush x:Key="AccentStrongBrush" Color="#7060A5FA" />
+
+        <!-- Text -->
+        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F0F0F5" />
+        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#889098A8" />
+        <SolidColorBrush x:Key="TextDimBrush" Color="#609098A8" />
+
+        <!-- Item visuals -->
+        <SolidColorBrush x:Key="ItemIconCircleBrush" Color="#1AFFFFFF" />
+        <SolidColorBrush x:Key="ItemFallbackBrush" Color="#889098A8" />
+        <SolidColorBrush x:Key="ItemNameBrush" Color="#DDF0F0F5" />
+
+        <!-- GridView item state overrides -->
+        <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="#14FFFFFF" />
+        <SolidColorBrush x:Key="GridViewItemBackgroundSelected" Color="#33FFFFFF" />
+        <SolidColorBrush x:Key="GridViewItemBackgroundSelectedPointerOver" Color="#4DFFFFFF" />
+
+        <!-- ===== Pin ToggleButton Style ===== -->
+        <Style x:Key="PinToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#889098A8" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid CornerRadius="8" Background="Transparent">
+                            <Border x:Name="BgBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="8" />
+                            <FontIcon x:Name="PinIcon"
+                                      Glyph="&#xE718;"
+                                      FontSize="16"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background"
+                                                    Value="{StaticResource ControlHoverBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background"
+                                                    Value="{StaticResource ControlPressedBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Checked">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background"
+                                                    Value="{StaticResource AccentDimBrush}" />
+                                            <Setter Target="PinIcon.Foreground"
+                                                    Value="{StaticResource AccentBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background"
+                                                    Value="{StaticResource AccentStrongBrush}" />
+                                            <Setter Target="PinIcon.Foreground" Value="White" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="CheckedPressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background" Value="#9060A5FA" />
+                                            <Setter Target="PinIcon.Foreground" Value="White" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Page.Resources>
 
-    <Grid Background="#8C1A1A1A">
+    <!-- ===== Page Surface ===== -->
+    <Grid Background="{StaticResource PageBackgroundBrush}"
+          RightTapped="OnPageRightTapped">
         <Grid Margin="20,16,20,16">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
@@ -20,44 +129,44 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Top bar: search -->
+            <!-- ===== Search Bar ===== -->
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
                 <TextBox x:Name="SearchBox"
                          PlaceholderText="搜索应用..."
                          Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         MaxWidth="440"
                          HorizontalAlignment="Stretch"
-                         Background="#33FFFFFF"
-                         Foreground="White"
-                         PlaceholderForeground="#88FFFFFF"
+                         Background="{StaticResource ControlIdleBrush}"
+                         Foreground="{StaticResource TextPrimaryBrush}"
+                         PlaceholderForeground="{StaticResource TextDimBrush}"
                          BorderThickness="0"
-                         CornerRadius="8"
-                         Padding="14,10"
-                         FontSize="16"
-                         KeyDown="OnSearchBoxKeyDown" />
-                <Button Grid.Column="1"
-                        Content="✕"
-                        Click="OnCloseClick"
-                        Background="#33FFFFFF"
-                        Foreground="White"
-                        Width="40" Height="40"
-                        Padding="0"
-                        CornerRadius="8"
-                        FontSize="16" />
+                         CornerRadius="10"
+                         Padding="16,11,50,11"
+                         FontSize="14"
+                         KeyDown="OnSearchBoxKeyDown">
+                    <TextBox.Resources>
+                        <SolidColorBrush x:Key="TextControlBackgroundPointerOver"
+                                         Color="#1EFFFFFF" />
+                        <SolidColorBrush x:Key="TextControlBackgroundFocused"
+                                         Color="#2BFFFFFF" />
+                    </TextBox.Resources>
+                </TextBox>
+                <!-- Pin toggle -->
+                <ToggleButton x:Name="PinButton"
+                              Click="OnPinToggle"
+                              Style="{StaticResource PinToggleButtonStyle}"
+                              HorizontalAlignment="Right"
+                              VerticalAlignment="Center"
+                              Margin="0,0,6,0"
+                              ToolTipService.ToolTip="固定窗口" />
             </Grid>
 
-            <!-- App grid -->
+            <!-- ===== App Grid ===== -->
             <GridView Grid.Row="1"
                       x:Name="AppGrid"
                       ItemsSource="{x:Bind ViewModel.FilteredItems, Mode=OneWay}"
-                      CanDragItems="True"
-                      AllowDrop="True"
-                      CanReorderItems="True"
-                      DragItemsCompleted="OnDragItemsCompleted"
+                      CanDragItems="False"
+                      AllowDrop="False"
+                      CanReorderItems="False"
                       SelectionMode="Single"
                       IsItemClickEnabled="True"
                       ItemClick="OnItemClick"
@@ -68,8 +177,8 @@
                 <GridView.ItemsPanel>
                     <ItemsPanelTemplate>
                         <ItemsWrapGrid Orientation="Horizontal"
-                                      ItemWidth="90"
-                                      ItemHeight="110" />
+                                       ItemWidth="90"
+                                       ItemHeight="110" />
                     </ItemsPanelTemplate>
                 </GridView.ItemsPanel>
                 <GridView.ItemContainerStyle>
@@ -79,16 +188,36 @@
                         <Setter Property="Margin" Value="4" />
                         <Setter Property="BorderThickness" Value="0" />
                         <Setter Property="MaxWidth" Value="120" />
+                        <Setter Property="Clip" Value="{x:Null}" />
                     </Style>
                 </GridView.ItemContainerStyle>
+                <GridView.ItemContainerTransitions>
+                    <TransitionCollection>
+                        <RepositionThemeTransition IsStaggeringEnabled="False" />
+                    </TransitionCollection>
+                </GridView.ItemContainerTransitions>
                 <GridView.ItemTemplate>
                     <DataTemplate x:DataType="vm:LaunchpadItemViewModel">
-                        <Grid>
+                        <Grid Tag="{x:Bind}"
+                              Opacity="{x:Bind IsBeingDragged, Mode=OneWay, Converter={StaticResource BoolToDragOpacityConverter}}"
+                              RenderTransformOrigin="0.5,0.5">
+                            <Grid.RenderTransform>
+                                <ScaleTransform
+                                    ScaleX="{x:Bind IsBeingDragged, Mode=OneWay, Converter={StaticResource BoolToScaleConverter}}"
+                                    ScaleY="{x:Bind IsBeingDragged, Mode=OneWay, Converter={StaticResource BoolToScaleConverter}}" />
+                            </Grid.RenderTransform>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="*" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
+                            <!-- Drag target highlight -->
+                            <Border Grid.RowSpan="2"
+                                    Background="{StaticResource AccentDimBrush}"
+                                    CornerRadius="8"
+                                    Visibility="{x:Bind IsDragOverTarget, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+
+                            <!-- Icon area -->
                             <Border Width="84" Height="84"
                                     Background="Transparent"
                                     HorizontalAlignment="Center"
@@ -99,17 +228,19 @@
                                     </MenuFlyout>
                                 </Border.ContextFlyout>
                                 <Grid>
+                                    <!-- Fallback: circle + letter -->
                                     <Ellipse Width="52" Height="52"
-                                             Fill="#33FFFFFF"
+                                             Fill="{StaticResource ItemIconCircleBrush}"
                                              VerticalAlignment="Center"
                                              HorizontalAlignment="Center"
                                              Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
                                     <TextBlock Text="{x:Bind FallbackChar}"
                                                FontSize="22"
-                                               Foreground="#88FFFFFF"
+                                               Foreground="{StaticResource ItemFallbackBrush}"
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
                                                Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
+                                    <!-- Actual icon -->
                                     <Image Source="{x:Bind IconSource, Mode=OneWay}"
                                            Width="52" Height="52"
                                            VerticalAlignment="Center"
@@ -117,9 +248,10 @@
                                 </Grid>
                             </Border>
 
+                            <!-- App name -->
                             <TextBlock Grid.Row="1"
                                        Text="{x:Bind Name}"
-                                       Foreground="White"
+                                       Foreground="{StaticResource ItemNameBrush}"
                                        FontSize="12"
                                        TextAlignment="Center"
                                        TextWrapping="NoWrap"
@@ -133,60 +265,59 @@
                 </GridView.ItemTemplate>
             </GridView>
 
-            <!-- Empty state -->
+            <!-- Drag ghost overlay (on top of everything, ignores hit testing) -->
+            <Canvas x:Name="DragCanvas" Grid.Row="1" IsHitTestVisible="False" />
+
+            <!-- ===== Empty State ===== -->
             <StackPanel Grid.Row="1"
                         x:Name="EmptyStatePanel"
                         Visibility="Collapsed"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Center"
                         Spacing="8">
-                <FontIcon Glyph="&#xE710;" FontSize="40" Foreground="#66FFFFFF"
+                <FontIcon Glyph="&#xE710;"
+                          FontSize="40"
+                          Foreground="{StaticResource TextDimBrush}"
                           HorizontalAlignment="Center" />
                 <TextBlock Text="Launchpad 还没有应用"
-                           Foreground="#88FFFFFF" FontSize="15"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="15"
                            HorizontalAlignment="Center" />
                 <TextBlock Text="点击下方 + 添加应用 按钮添加"
-                           Foreground="#66FFFFFF" FontSize="12"
+                           Foreground="{StaticResource TextDimBrush}"
+                           FontSize="12"
                            HorizontalAlignment="Center" />
             </StackPanel>
 
-            <!-- No results -->
+            <!-- ===== No Results ===== -->
             <StackPanel Grid.Row="1"
                         x:Name="NoResultsPanel"
                         Visibility="Collapsed"
                         VerticalAlignment="Center"
                         HorizontalAlignment="Center"
                         Spacing="8">
-                <FontIcon Glyph="&#xE11A;" FontSize="40" Foreground="#66FFFFFF"
+                <FontIcon Glyph="&#xE11A;"
+                          FontSize="40"
+                          Foreground="{StaticResource TextDimBrush}"
                           HorizontalAlignment="Center" />
                 <TextBlock Text="未找到匹配的应用"
-                           Foreground="#88FFFFFF" FontSize="15"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           FontSize="15"
                            HorizontalAlignment="Center" />
                 <TextBlock Text="尝试其他关键词"
-                           Foreground="#66FFFFFF" FontSize="12"
+                           Foreground="{StaticResource TextDimBrush}"
+                           FontSize="12"
                            HorizontalAlignment="Center" />
             </StackPanel>
 
-            <!-- Bottom bar -->
-            <Grid Grid.Row="2" Margin="0,8,0,0">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <!-- ===== Bottom Bar ===== -->
+            <Border Grid.Row="2" Margin="0,8,0,0" Padding="0,4"
+                    Background="Transparent">
                 <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                           Foreground="#66FFFFFF"
-                           FontSize="13"
+                           Foreground="{StaticResource TextDimBrush}"
+                           FontSize="12"
                            VerticalAlignment="Center" />
-                <Button Grid.Column="2"
-                        Content="+ 添加应用"
-                        Command="{x:Bind ViewModel.AddAppCommand}"
-                        Background="#33FFFFFF"
-                        Foreground="White"
-                        Padding="14,6"
-                        CornerRadius="6"
-                        FontSize="13" />
-            </Grid>
+            </Border>
         </Grid>
     </Grid>
 </Page>

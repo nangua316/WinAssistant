@@ -28,6 +28,9 @@ public class LaunchpadPageViewModel : ObservableObject
         _items.CollectionChanged += OnItemsCollectionChanged;
     }
 
+    /// <summary>True while LoadItems is running, suppresses auto-save.</summary>
+    public bool IsLoading { get; private set; }
+
     public void SetXamlRoot(Microsoft.UI.Xaml.XamlRoot root) => _xamlRoot = root;
     public void SetXamlRootGetter(Func<Microsoft.UI.Xaml.XamlRoot?> getter) => _xamlRootGetter = getter;
 
@@ -53,6 +56,7 @@ public class LaunchpadPageViewModel : ObservableObject
 
     public void LoadItems()
     {
+        IsLoading = true;
         var settings = _settingsService.Load();
         var viewModels = settings.LaunchpadItems.Select(m => new LaunchpadItemViewModel(m)).ToList();
 
@@ -62,6 +66,7 @@ public class LaunchpadPageViewModel : ObservableObject
 
         foreach (var vm in _items)
             PreloadIcon(vm);
+        IsLoading = false;
     }
 
     public void SaveItems()
@@ -149,9 +154,14 @@ public class LaunchpadPageViewModel : ObservableObject
 
     private async Task AddAppAsync()
     {
-        var existingPaths = new HashSet<string>(_items
-            .Where(i => !string.IsNullOrEmpty(i.Model.AppPath))
-            .Select(i => i.Model.AppPath), StringComparer.OrdinalIgnoreCase);
+        var existingPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var i in _items)
+        {
+            if (!string.IsNullOrEmpty(i.Model.AppPath))
+                existingPaths.Add(i.Model.AppPath);
+            if (!string.IsNullOrEmpty(i.Model.Aumid))
+                existingPaths.Add("aumid::" + i.Model.Aumid);
+        }
 
         var picker = new Controls.AppPickerControl();
         picker.SetExistingPaths(existingPaths);
@@ -252,5 +262,19 @@ public class LaunchpadItemViewModel : ObservableObject
     {
         get => _iconSource;
         set => SetProperty(ref _iconSource, value);
+    }
+
+    private bool _isBeingDragged;
+    public bool IsBeingDragged
+    {
+        get => _isBeingDragged;
+        set => SetProperty(ref _isBeingDragged, value);
+    }
+
+    private bool _isDragOverTarget;
+    public bool IsDragOverTarget
+    {
+        get => _isDragOverTarget;
+        set => SetProperty(ref _isDragOverTarget, value);
     }
 }
