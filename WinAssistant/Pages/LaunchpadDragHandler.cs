@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using WinAssistant.ViewModels;
 
 namespace WinAssistant.Pages;
@@ -37,8 +38,9 @@ internal sealed class LaunchpadDragHandler
     // creating a visual gap that items animate around via RepositionThemeTransition.
     private LaunchpadItemViewModel? _placeholderItem;
     private int _originalDragIndex = -1;
-    private DateTime _lastPlaceholderMove = DateTime.MinValue;
     private int _pendingTargetIndex = -1;
+    private readonly List<GridViewItem> _disabledContainers = new();
+    private readonly DispatcherTimer _dwellTimer;
 
     internal LaunchpadDragHandler(
         GridView gridView,
@@ -59,11 +61,32 @@ internal sealed class LaunchpadDragHandler
         _itemNameBrush = itemNameBrush;
         _accentBrush = accentBrush;
 
+        _dwellTimer = new DispatcherTimer();
+        _dwellTimer.Interval = TimeSpan.FromMilliseconds(300);
+        _dwellTimer.Tick += (_, _) =>
+        {
+            _dwellTimer.Stop();
+            if (_pendingTargetIndex >= 0 && _placeholderItem != null)
+            {
+                var pIdx = _items.IndexOf(_placeholderItem);
+                if (pIdx >= 0 && pIdx != _pendingTargetIndex)
+                    _items.Move(pIdx, _pendingTargetIndex);
+                _dragTargetIndex = _pendingTargetIndex;
+            }
+        };
+
         // handledEventsToo:true so we get events even if GridViewItem handles them
         gridView.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed), true);
         gridView.AddHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnPointerMoved), true);
         gridView.AddHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnPointerReleased), true);
         gridView.AddHandler(UIElement.PointerCanceledEvent, new PointerEventHandler(OnPointerCanceled), true);
+
+        // Catch newly created/recycled containers during drag and disable hit-test
+        gridView.ContainerContentChanging += (_, args) =>
+        {
+            if (_isDragging && args.ItemContainer is GridViewItem c)
+                c.IsHitTestVisible = false;
+        };
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
@@ -109,19 +132,12 @@ internal sealed class LaunchpadDragHandler
 
             if (newTarget >= 0 && newTarget != _dragTargetIndex)
             {
-                // Throttle: let each RepositionThemeTransition play out before
-                // triggering the next, preventing visual stutter from interrupt.
-                var now = DateTime.UtcNow;
-                if ((now - _lastPlaceholderMove).TotalMilliseconds >= 200)
-                {
-                    var pIdx = _items.IndexOf(_placeholderItem!);
-                    if (pIdx >= 0 && pIdx != newTarget)
-                    {
-                        _items.Move(pIdx, newTarget);
-                        _lastPlaceholderMove = now;
-                    }
-                    _dragTargetIndex = newTarget;
-                }
+                // Dwell: wait for pointer to settle before moving placeholder.
+                // Moving quickly across items won't shuffle them — only a pause
+                // of ~300ms triggers the reposition, matching user intent.
+                _dwellTimer.Stop();
+                _dwellTimer.Start();
+                _dragTargetIndex = newTarget;
             }
 
             e.Handled = true;
@@ -143,14 +159,23 @@ internal sealed class LaunchpadDragHandler
 
         if (_isDragging)
         {
-            // Replace placeholder with the actual pressed item at its drop position
+            _dwellTimer.Stop();
+
+            // Calculate drop position from pointer coordinates (not placeholder position)
+            var dropIdx = CalcInsertIndex(e.GetCurrentPoint(_gridView).Position);
+            if (dropIdx > _items.Count) dropIdx = _items.Count;
+            if (dropIdx < 0) dropIdx = 0;
+
             var pIdx = _items.IndexOf(_placeholderItem!);
             if (pIdx >= 0)
-            {
                 _items.RemoveAt(pIdx);
-                _items.Insert(pIdx, _pressedItem!);
-                _saveItems();
-            }
+
+            // Adjust drop index if placeholder was before it
+            var insertIdx = dropIdx;
+            if (pIdx >= 0 && pIdx < dropIdx) insertIdx--;
+
+            _items.Insert(insertIdx, _pressedItem!);
+            _saveItems();
 
             _placeholderItem = null; // prevent CleanupDrag from restoring original position
             CleanupDrag();
@@ -169,10 +194,25 @@ internal sealed class LaunchpadDragHandler
         _isDragging = true;
         _pressedItem.IsBeingDragged = true;
 
+        // Disable hover effects during drag
+        _disabledContainers.Clear();
+        for (int i = 0; i < _items.Count; i++)
+        {
+            if (_gridView.ContainerFromIndex(i) is GridViewItem c)
+            {
+                c.IsHitTestVisible = false;
+                _disabledContainers.Add(c);
+            }
+        }
+
         // Replace pressed item with a placeholder so items "part" to show the gap.
         // The placeholder has Name="" and IconSource=null → renders as empty tile.
         _originalDragIndex = _dragStartIndex;
-        _placeholderItem = new LaunchpadItemViewModel(new LaunchpadItem { Name = "" });
+        _placeholderItem = new LaunchpadItemViewModel(new LaunchpadItem { Name = "" })
+        {
+            // Non-null IconSource keeps the fallback circle+letter hidden.
+            IconSource = new BitmapImage()
+        };
         _items[_originalDragIndex] = _placeholderItem;
         _dragTargetIndex = _originalDragIndex;
 
@@ -226,6 +266,11 @@ internal sealed class LaunchpadDragHandler
         if (_dragGhost != null)
             _dragGhost.Visibility = Visibility.Collapsed;
 
+        // Restore container hit-testing (re-enable hover effects)
+        foreach (var c in _disabledContainers)
+            c.IsHitTestVisible = true;
+        _disabledContainers.Clear();
+
         // Cancel: if placeholder still exists (drag was canceled mid-flight),
         // restore the pressed item at its original position.
         if (_placeholderItem != null && _pressedItem != null)
@@ -239,9 +284,9 @@ internal sealed class LaunchpadDragHandler
         if (_pressedItem != null)
             _pressedItem.IsBeingDragged = false;
 
+        _dwellTimer.Stop();
         _placeholderItem = null;
         _originalDragIndex = -1;
-        _lastPlaceholderMove = DateTime.MinValue;
         _pendingTargetIndex = -1;
         _dragStartIndex = -1;
         _dragTargetIndex = -1;
