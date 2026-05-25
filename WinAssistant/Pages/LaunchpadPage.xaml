@@ -141,6 +141,7 @@
                          BorderThickness="0"
                          CornerRadius="10"
                          Padding="16,11,50,11"
+                         Margin="0,0,48,0"
                          FontSize="14"
                          KeyDown="OnSearchBoxKeyDown">
                     <TextBox.Resources>
@@ -224,7 +225,7 @@
                                     VerticalAlignment="Center">
                                 <Border.ContextFlyout>
                                     <MenuFlyout>
-                                        <MenuFlyoutItem Text="移除" Click="OnRemoveItem" />
+                                        <MenuFlyoutItem Text="{x:Bind ContextMenuText}" Click="OnRemoveItem" />
                                     </MenuFlyout>
                                 </Border.ContextFlyout>
                                 <Grid>

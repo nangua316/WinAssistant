@@ -56,6 +56,11 @@ public sealed partial class LaunchpadPage : Page
 
     private void SelectFirstItem()
     {
+        if (string.IsNullOrWhiteSpace(ViewModel.SearchText))
+        {
+            AppGrid.SelectedItem = null;
+            return;
+        }
         if (ViewModel.FilteredItems.Count > 0 && AppGrid.SelectedItem == null)
             App.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
                 () => AppGrid.SelectedIndex = 0);
@@ -66,6 +71,7 @@ public sealed partial class LaunchpadPage : Page
         ViewModel.LoadItems();
         ViewModel.SetXamlRoot(this.XamlRoot);
         SearchBox.Text = "";
+        AppGrid.SelectedItem = null;
         UpdateItemSize();
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
@@ -103,6 +109,7 @@ public sealed partial class LaunchpadPage : Page
         }
         return null;
     }
+
 
     private void OnPinToggle(object sender, RoutedEventArgs e)
     {
@@ -210,8 +217,15 @@ public sealed partial class LaunchpadPage : Page
     {
         if (e.ClickedItem is LaunchpadItemViewModel vm)
         {
-            AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
-            Close();
+            if (vm.IsUnadded)
+            {
+                ViewModel.AddUnaddedItem(vm);
+            }
+            else
+            {
+                AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
+                Close();
+            }
         }
     }
 
@@ -220,6 +234,12 @@ public sealed partial class LaunchpadPage : Page
         if (sender is MenuFlyoutItem item &&
             item.DataContext is LaunchpadItemViewModel vm)
         {
+            if (vm.IsUnadded)
+            {
+                // Just remove from the filter results; not a real item.
+                ViewModel.FilteredItems.Remove(vm);
+                return;
+            }
             var dialog = new ContentDialog
             {
                 Title = "移除应用",

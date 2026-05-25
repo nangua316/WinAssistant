@@ -18,6 +18,7 @@ public class LaunchpadPageViewModel : ObservableObject
     private ObservableCollection<LaunchpadItemViewModel> _filteredItems = [];
     private string _searchText = "";
     private CancellationTokenSource? _searchCts;
+    private List<(LaunchpadItem Item, string Pinyin)>? _allAppsCache;
     private Microsoft.UI.Xaml.XamlRoot? _xamlRoot;
     private Func<Microsoft.UI.Xaml.XamlRoot?>? _xamlRootGetter;
 
@@ -67,6 +68,39 @@ public class LaunchpadPageViewModel : ObservableObject
         foreach (var vm in _items)
             PreloadIcon(vm);
         IsLoading = false;
+
+        // Load all installed apps in background for search-as-you-type.
+        _ = Task.Run(() =>
+        {
+            var apps = AppScanner.ScanInstalledApps();
+            var cache = apps
+                .Where(a => !string.IsNullOrWhiteSpace(a.Name))
+                .Select(a => (Item: new LaunchpadItem
+                {
+                    Name = a.Name,
+                    AppPath = a.AppPath,
+                    Arguments = a.Arguments,
+                    Aumid = a.Aumid
+                }, Pinyin: ComputePinyin(a.Name)))
+                .ToList();
+            App.DispatcherQueue.TryEnqueue(() =>
+            {
+                _allAppsCache = cache;
+                // Re-run filter now that cache is ready so unadded items appear.
+                if (!string.IsNullOrWhiteSpace(_searchText))
+                    ApplyFilter();
+            });
+        });
+    }
+
+    private static string ComputePinyin(string name)
+    {
+        var initials = PinyinHelper.GetInitials(name);
+        var full = PinyinHelper.GetPinyin(name);
+        if (string.IsNullOrEmpty(initials)) return full;
+        if (string.Equals(initials, full, StringComparison.OrdinalIgnoreCase))
+            return full;
+        return $"{initials} {full}";
     }
 
     public void SaveItems()
@@ -96,38 +130,61 @@ public class LaunchpadPageViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(_searchText))
         {
-            // Same reference: GridView sees _items changes directly via INCC,
-            // and SaveItems doesn't need to sync separate collections.
             FilteredItems = _items;
         }
         else
         {
             var query = _searchText.Trim();
-            var filtered = _items
-                .Where(i => FuzzyMatch(i.Name, query) || FuzzyMatch(i.PinyinSearchData, query))
+            // Search from user's items.
+            var results = _items
+                .Where(i => SearchHelper.FuzzyMatch(i.Name, query) || SearchHelper.FuzzyMatchPinyin(i.PinyinSearchData, query))
+                .Select(i => (vm: i, isUnadded: false))
                 .ToList();
-            FilteredItems = new ObservableCollection<LaunchpadItemViewModel>(filtered);
+
+            // Also search from all-apps cache for unadded items.
+            var addedPaths = new HashSet<string>(_items
+                .Where(i => !string.IsNullOrEmpty(i.Model.AppPath))
+                .Select(i => i.Model.AppPath), StringComparer.OrdinalIgnoreCase);
+            var addedAumids = new HashSet<string>(_items
+                .Where(i => !string.IsNullOrEmpty(i.Model.Aumid))
+                .Select(i => i.Model.Aumid), StringComparer.OrdinalIgnoreCase);
+
+            if (_allAppsCache != null)
+            {
+                foreach (var (cachedItem, pinyin) in _allAppsCache)
+                {
+                    if (!SearchHelper.FuzzyMatch(cachedItem.Name, query) && !SearchHelper.FuzzyMatchPinyin(pinyin, query))
+                        continue;
+                    // Skip if already in user's items.
+                    if (!string.IsNullOrEmpty(cachedItem.AppPath) && addedPaths.Contains(cachedItem.AppPath))
+                        continue;
+                    if (!string.IsNullOrEmpty(cachedItem.Aumid) && addedAumids.Contains(cachedItem.Aumid))
+                        continue;
+                    var vm = new LaunchpadItemViewModel(cachedItem, pinyin) { IsUnadded = true };
+                    var iconSize = GetScaledIconSize(64);
+                    LoadIconAsync(vm.Model.AppPath, vm.Model.Aumid, iconSize, icon => vm.IconSource = icon);
+                    results.Add((vm, isUnadded: true));
+                }
+            }
+
+            // Sort: user's items first, then unadded cache items.
+            results = results.OrderBy(r => r.isUnadded).ToList();
+            FilteredItems = new ObservableCollection<LaunchpadItemViewModel>(results.Select(r => r.vm));
         }
     }
 
-    private static bool FuzzyMatch(string text, string query)
+    /// <summary>
+    /// Add a previously unadded cache item (user clicked to add it).
+    /// </summary>
+    internal void AddUnaddedItem(LaunchpadItemViewModel vm)
     {
-        if (string.IsNullOrEmpty(query)) return true;
-        if (string.IsNullOrEmpty(text)) return false;
-
-        if (text.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
-
-        int ti = 0;
-        foreach (var qc in query)
-        {
-            while (ti < text.Length &&
-                   char.ToLowerInvariant(text[ti]) != char.ToLowerInvariant(qc))
-                ti++;
-            if (ti >= text.Length) return false;
-            ti++;
-        }
-        return true;
+        if (!vm.IsUnadded) return;
+        vm.IsUnadded = false;
+        _items.Add(vm);
+        SaveItems();
+        PreloadIcon(vm);
     }
+
 
     private void DebounceApplyFilter()
     {
@@ -247,6 +304,20 @@ public class LaunchpadItemViewModel : ObservableObject
     public string AppPath => Model.AppPath;
     public string FallbackChar => Name.Length > 0 ? Name[..1] : "?";
 
+    private bool _isUnadded;
+    /// <summary>True when this item comes from the all-apps cache and is not yet added.</summary>
+    public bool IsUnadded
+    {
+        get => _isUnadded;
+        set
+        {
+            if (SetProperty(ref _isUnadded, value))
+                OnPropertyChanged(nameof(ContextMenuText));
+        }
+    }
+
+    public string ContextMenuText => IsUnadded ? "添加" : "移除";
+
     // Pinyin search data: initials + full pinyin, for matching against user input
     private readonly string _pinyinSearchData;
     public string PinyinSearchData => _pinyinSearchData;
@@ -255,7 +326,10 @@ public class LaunchpadItemViewModel : ObservableObject
     {
         var initials = PinyinHelper.GetInitials(name);
         var full = PinyinHelper.GetPinyin(name);
-        return string.IsNullOrEmpty(initials) ? full : $"{initials} {full}";
+        if (string.IsNullOrEmpty(initials)) return full;
+        if (string.Equals(initials, full, StringComparison.OrdinalIgnoreCase))
+            return full;
+        return $"{initials} {full}";
     }
 
     public ImageSource? IconSource

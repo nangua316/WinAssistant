@@ -114,6 +114,9 @@ public class AppPickerItem : ObservableObject
     {
         var initials = PinyinHelper.GetInitials(name);
         var full = PinyinHelper.GetPinyin(name);
-        return string.IsNullOrEmpty(initials) ? full : $"{initials} {full}";
+        if (string.IsNullOrEmpty(initials)) return full;
+        if (string.Equals(initials, full, StringComparison.OrdinalIgnoreCase))
+            return full;
+        return $"{initials} {full}";
     }
 }

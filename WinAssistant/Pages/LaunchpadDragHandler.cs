@@ -125,16 +125,13 @@ internal sealed class LaunchpadDragHandler
             // Calculate insertion index from pointer coordinates (grid math),
             // independent of collection state → no ping-pong shifts.
             var newTarget = CalcInsertIndex(pt.Position);
+            // Clamp to 0..Count-1 for Move() safety.
+            if (newTarget >= _items.Count) newTarget = _items.Count - 1;
+            if (newTarget < 0) newTarget = 0;
             _pendingTargetIndex = newTarget;
 
-            // Clamp to valid range: Move() needs index 0..Count-1.
-            if (newTarget >= _items.Count) newTarget = _items.Count - 1;
-
-            if (newTarget >= 0 && newTarget != _dragTargetIndex)
+            if (newTarget != _dragTargetIndex)
             {
-                // Dwell: wait for pointer to settle before moving placeholder.
-                // Moving quickly across items won't shuffle them — only a pause
-                // of ~300ms triggers the reposition, matching user intent.
                 _dwellTimer.Stop();
                 _dwellTimer.Start();
                 _dragTargetIndex = newTarget;
@@ -210,10 +207,13 @@ internal sealed class LaunchpadDragHandler
         _originalDragIndex = _dragStartIndex;
         _placeholderItem = new LaunchpadItemViewModel(new LaunchpadItem { Name = "" })
         {
-            // Non-null IconSource keeps the fallback circle+letter hidden.
+            // Non-null IconSource keeps the fallback circle+letter hidden via NullToCollapsedConverter.
             IconSource = new BitmapImage()
         };
-        _items[_originalDragIndex] = _placeholderItem;
+        // Remove the pressed item first so the grid has a real gap (count decreases by 1),
+        // triggering RepositionThemeTransition to animate items into the empty slot.
+        _items.RemoveAt(_originalDragIndex);
+        _items.Insert(_originalDragIndex, _placeholderItem);
         _dragTargetIndex = _originalDragIndex;
 
         if (_dragGhost == null)
@@ -341,6 +341,12 @@ internal sealed class LaunchpadDragHandler
         var col = Math.Max(0, (int)((point.X - padding.Left) / itemWidth));
         var row = Math.Max(0, (int)((point.Y - padding.Top + scrollOffset) / itemHeight));
         if (col >= maxColumns) col = maxColumns - 1;
+
+        var cellX = padding.Left + col * itemWidth;
+        // Past cell midpoint → insert after this item.
+        if (point.X > cellX + itemWidth / 2)
+            col++;
+        if (col >= maxColumns) { col = 0; row++; }
 
         var index = row * maxColumns + col;
         return index >= 0 && index < items.Count ? index : items.Count;
