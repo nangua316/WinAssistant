@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using Interop.UIAutomationClient;
 
 namespace WinAssistant.Helpers;
 
@@ -13,112 +14,54 @@ public static class AppLauncher
         {
             Log($"LaunchOrActivate: {appPath} aumid={aumid}");
 
-            // UWP/appx apps must launch via AUMID (shell:AppsFolder) to initialize properly.
-            if (!string.IsNullOrEmpty(aumid))
-            {
-                Log($"Launch via AUMID: {aumid}");
-                Process.Start(new ProcessStartInfo
-                {
-                    FileName = $"shell:AppsFolder\\{aumid}",
-                    UseShellExecute = true
-                });
-                return "launch";
-            }
-
             if (!string.IsNullOrEmpty(appPath) && File.Exists(appPath))
             {
                 var appDir = Path.GetDirectoryName(appPath);
                 nint hWnd = nint.Zero;
 
-                // Find existing visible window from this app.
-                // Do NOT search hidden/tray windows — apps minimized to tray
-                // (e.g. WeChat) need to be launched fresh so their own
-                // initialization logic renders the UI properly.
                 if (!string.IsNullOrEmpty(appDir))
+                {
+                    // Step 1: find a visible window from this app's process
                     hWnd = FindWindowFromDir(appDir);
 
-                if (hWnd != nint.Zero)
-                {
-                    var fg = GetForegroundWindow();
-                    bool isForeground;
-                    if (hWnd == fg)
+                    if (hWnd != nint.Zero)
                     {
-                        isForeground = true;
-                    }
-                    else
-                    {
-                        GetWindowThreadProcessId(fg, out uint fgPid);
-                        GetWindowThreadProcessId(hWnd, out uint appPid);
-                        isForeground = fgPid == appPid && appPid != 0;
-                    }
-
-                    if (isForeground)
-                    {
-                        Log($"Minimize hWnd={hWnd}");
-                        ShowWindow(hWnd, SW_MINIMIZE);
-                        return "minimize";
-                    }
-
-                    Log($"Activate hWnd={hWnd} visible={IsWindowVisible(hWnd)} title=\"{GetWindowText(hWnd)}\"");
-
-                    var curFg = GetForegroundWindow();
-                    Log($"Current foreground: hWnd={curFg} title=\"{GetWindowText(curFg)}\"");
-
-                    GetWindowThreadProcessId(hWnd, out uint tgtPid);
-
-                    // Restore from minimized/hidden state
-                    ShowWindowAsync(hWnd, SW_SHOW);
-                    ShowWindowAsync(hWnd, SW_RESTORE);
-
-                    // PowerToys SendInput trick
-                    var input = new INPUT { type = INPUT_MOUSE };
-                    SendInput(1, [input], Marshal.SizeOf<INPUT>());
-
-                    // Try SetForegroundWindow
-                    SetForegroundWindow(hWnd);
-
-                    // If still not foreground → AttachThreadInput (with null-safety)
-                    var fgAfter = GetForegroundWindow();
-                    if (fgAfter != hWnd && fgAfter != nint.Zero)
-                    {
-                        var tgtTid = GetWindowThreadProcessId(hWnd, out _);
-                        var fgTid = GetWindowThreadProcessId(fgAfter, out _);
-                        if (tgtTid != fgTid && fgTid != 0)
+                        var title = GetWindowText(hWnd);
+                        if (!string.IsNullOrEmpty(title))
                         {
-                            AttachThreadInput(tgtTid, fgTid, true);
-                            SetForegroundWindow(hWnd);
-                            AttachThreadInput(tgtTid, fgTid, false);
+                            // Genuine window (has a title) — activate or minimize
+                            return ActivateOrMinimizeWindow(hWnd);
                         }
+
+                        // Empty title: likely a helper/splash, not the real window.
+                        // Fall through to hidden window search for tray-restore.
+                        Log($"Visible window empty title hWnd={hWnd}, trying hidden...");
                     }
 
-                    // Verify
-                    fgAfter = GetForegroundWindow();
-                    if (fgAfter != nint.Zero)
+                    // Step 2: try hidden windows (tray apps)
+                    var hidden = FindHiddenWindowFromDir(appDir);
+                    if (hidden != nint.Zero)
                     {
-                        GetWindowThreadProcessId(fgAfter, out uint fgPidAfter);
-                        if (fgPidAfter != tgtPid)
-                        {
-                            Log($"Activation failed (fg={fgPidAfter} target={tgtPid}), fallback to launch");
-                            Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
-                            return "launch";
-                        }
-                    }
-                    else
-                    {
-                        Log($"Activation failed (no foreground), fallback to launch");
-                        Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
-                        return "launch";
+                        // Only try multi-strategy restore for packaged/UWP apps
+                        // (e.g. Doubao). Classic Win32 apps (e.g. WeChat) get
+                        // LaunchFresh to avoid white page / broken compositor.
+                        if (IsWindowFromPackagedApp(hidden))
+                            return ActivateHiddenWindow(hidden, appPath, arguments, aumid);
+                        else
+                            return LaunchFresh(appPath, arguments, aumid);
                     }
 
-                    return "activate";
+                    // Step 3: no hidden window found, but we had a visible empty-title
+                    // window — try it as last resort (better than nothing).
+                    if (hWnd != nint.Zero)
+                        return ActivateOrMinimizeWindow(hWnd);
                 }
 
-                Log($"Launch new: {appPath}");
-                Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
-                return "launch";
+                // Step 4: no window at all, launch fresh
+                return LaunchFresh(appPath, arguments, aumid);
             }
 
-            Log($"App not found: {appPath}");
+            return LaunchFresh(appPath, arguments, aumid);
         }
         catch (Exception ex)
         {
@@ -128,47 +71,194 @@ public static class AppLauncher
         return "";
     }
 
-    private static nint FindWindowFromDir(string appDir)
+    private static string ActivateOrMinimizeWindow(nint hWnd)
     {
-        return FindBestWindowByDir(appDir, requireVisible: true);
+        var fg = GetForegroundWindow();
+        bool isForeground;
+        if (hWnd == fg)
+        {
+            isForeground = true;
+        }
+        else
+        {
+            GetWindowThreadProcessId(fg, out uint fgPid);
+            GetWindowThreadProcessId(hWnd, out uint appPid);
+            isForeground = fgPid == appPid && appPid != 0;
+        }
+
+        if (isForeground)
+        {
+            Log($"Minimize hWnd={hWnd}");
+            ShowWindow(hWnd, SW_MINIMIZE);
+            return "minimize";
+        }
+
+        Log($"Activate hWnd={hWnd} visible={IsWindowVisible(hWnd)} title=\"{GetWindowText(hWnd)}\"");
+
+        var curFg = GetForegroundWindow();
+        Log($"Current foreground: hWnd={curFg} title=\"{GetWindowText(curFg)}\"");
+
+        ShowWindowAsync(hWnd, SW_SHOW);
+        ShowWindowAsync(hWnd, SW_RESTORE);
+
+        // PowerToys SendInput trick
+        var input = new INPUT { type = INPUT_MOUSE };
+        SendInput(1, [input], Marshal.SizeOf<INPUT>());
+
+        SetForegroundWindow(hWnd);
+
+        // AttachThreadInput fallback
+        var fgAfter = GetForegroundWindow();
+        if (fgAfter != hWnd && fgAfter != nint.Zero)
+        {
+            var tgtTid = GetWindowThreadProcessId(hWnd, out _);
+            var fgTid = GetWindowThreadProcessId(fgAfter, out _);
+            if (tgtTid != fgTid && fgTid != 0)
+            {
+                AttachThreadInput(tgtTid, fgTid, true);
+                SetForegroundWindow(hWnd);
+                AttachThreadInput(tgtTid, fgTid, false);
+            }
+        }
+
+        Log($"Activate done fg={fgAfter}");
+        return "activate";
     }
 
-    private static nint FindWindowFromDirFast(string? appDir)
+    private static string ActivateHiddenWindow(nint hWnd, string appPath, string arguments, string aumid)
     {
-        if (string.IsNullOrEmpty(appDir))
-            return nint.Zero;
+        Log($"Activate packaged hidden hWnd={hWnd} title=\"{GetWindowText(hWnd)}\"");
 
-        var fg = GetForegroundWindow();
-        if (fg == nint.Zero) return nint.Zero;
-
-        GetWindowThreadProcessId(fg, out uint pid);
-        if (pid == 0) return nint.Zero;
-
-        var hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-        if (hProcess == nint.Zero) return nint.Zero;
-
+        // 1. DWM uncloak — Windows 10/11 may cloak tray windows via DWM
         try
         {
-            var sb = new StringBuilder(MAX_PATH_BUFFER);
-            int size = sb.Capacity;
-            if (QueryFullProcessImageNameW(hProcess, 0, sb, ref size))
+            int cloaked = 0;
+            int hr = DwmGetWindowAttribute(hWnd, DWMWA_CLOAKED, ref cloaked, sizeof(int));
+            if (hr == 0 && cloaked != 0)
             {
-                var path = sb.ToString();
-                appDir = appDir.TrimEnd('\\');
-                if (path.StartsWith(appDir, StringComparison.OrdinalIgnoreCase) &&
-                    path.Length > appDir.Length + 1 &&
-                    (path[appDir.Length] == '\\' || path[appDir.Length] == '/'))
+                int falseVal = 0;
+                DwmSetWindowAttribute(hWnd, DWMWA_CLOAK, ref falseVal, sizeof(int));
+                Log($"Uncloaked window (was cloaked={cloaked})");
+            }
+        }
+        catch { }
+
+        // 2. UI Automation SetWindowVisualState — goes through app's own UIA provider
+        //    (runs inside the target process, proper initialization path)
+        try
+        {
+            Log($"Trying UIA SetWindowVisualState (COM interop)...");
+            var uia = new CUIAutomation();
+            var element = uia.ElementFromHandle(hWnd);
+            if (element != null)
+            {
+                var patternObj = element.GetCurrentPattern(10024); // UIA_WindowPatternId
+                if (patternObj is IUIAutomationWindowPattern wp)
                 {
-                    return fg;
+                    wp.SetWindowVisualState(WindowVisualState.WindowVisualState_Normal);
+                    Thread.Sleep(200);
+                    if (IsWindowVisible(hWnd))
+                    {
+                        Log($"UIA activation succeeded");
+                        goto Foreground;
+                    }
                 }
             }
         }
-        finally
+        catch (Exception ex)
         {
-            CloseHandle(hProcess);
+            Log($"UIA activation failed: {ex.Message}");
         }
 
-        return nint.Zero;
+        // 3. SC_RESTORE through app's WndProc (synchronous)
+        SendMessageTimeout(hWnd, WM_SYSCOMMAND, SC_RESTORE, 0,
+            SMTO_ABORTIFHUNG | SMTO_NORMAL, 500, out _);
+        Thread.Sleep(100);
+        if (IsWindowVisible(hWnd))
+        {
+            Log($"SC_RESTORE succeeded");
+            goto Foreground;
+        }
+
+        // 4. PowerToys approach — SendInput + SetForegroundWindow
+        var input = new INPUT { type = INPUT_MOUSE };
+        SendInput(1, [input], Marshal.SizeOf<INPUT>());
+        SetForegroundWindow(hWnd);
+
+        var fgAfter = GetForegroundWindow();
+        if (fgAfter != hWnd && fgAfter != nint.Zero)
+        {
+            var tgtTid = GetWindowThreadProcessId(hWnd, out _);
+            var fgTid = GetWindowThreadProcessId(fgAfter, out _);
+            if (tgtTid != fgTid && fgTid != 0)
+            {
+                AttachThreadInput(tgtTid, fgTid, true);
+                SetForegroundWindow(hWnd);
+                AttachThreadInput(tgtTid, fgTid, false);
+            }
+        }
+
+        Thread.Sleep(100);
+        if (IsWindowVisible(hWnd))
+        {
+            Log($"PowerToys approach succeeded");
+            goto Foreground;
+        }
+
+        // Fallback: launch fresh synchronously
+        Log($"All hidden window strategies failed, launching fresh");
+        LaunchFresh(appPath, arguments, aumid);
+        return "launch";
+
+    Foreground:
+        // PowerToys approach to bring window to foreground
+        var fgInput = new INPUT { type = INPUT_MOUSE };
+        SendInput(1, [fgInput], Marshal.SizeOf<INPUT>());
+        SetForegroundWindow(hWnd);
+
+        var fgCurrent = GetForegroundWindow();
+        if (fgCurrent != hWnd && fgCurrent != nint.Zero)
+        {
+            var tgtTid = GetWindowThreadProcessId(hWnd, out _);
+            var fgTid = GetWindowThreadProcessId(fgCurrent, out _);
+            if (tgtTid != fgTid && fgTid != 0)
+            {
+                AttachThreadInput(tgtTid, fgTid, true);
+                SetForegroundWindow(hWnd);
+                AttachThreadInput(tgtTid, fgTid, false);
+            }
+        }
+
+        return "activate";
+    }
+
+    private static string LaunchFresh(string appPath, string arguments, string aumid)
+    {
+        if (!string.IsNullOrEmpty(aumid))
+        {
+            Log($"Launch via AUMID: {aumid}");
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = $"shell:AppsFolder\\{aumid}",
+                UseShellExecute = true
+            });
+            return "launch";
+        }
+
+        if (!string.IsNullOrEmpty(appPath) && File.Exists(appPath))
+        {
+            Log($"Launch new: {appPath}");
+            Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
+            return "launch";
+        }
+
+        Log($"App not found: {appPath}");
+        return "";
+    }
+
+    private static nint FindWindowFromDir(string appDir)
+    {
+        return FindBestWindowByDir(appDir, requireVisible: true);
     }
 
     private static nint FindHiddenWindowFromDir(string appDir)
@@ -291,6 +381,16 @@ public static class AppLauncher
     private const int WS_EX_TOOLWINDOW = 0x00000080;
     private const int WS_EX_APPWINDOW = 0x00040000;
 
+    // DWM cloaking
+    private const uint DWMWA_CLOAK = 14;
+    private const uint DWMWA_CLOAKED = 15;
+
+    // Window messages
+    private const uint WM_SYSCOMMAND = 0x0112;
+    private const nint SC_RESTORE = 0xF120;
+    private const uint SMTO_NORMAL = 0x0000;
+    private const uint SMTO_ABORTIFHUNG = 0x0002;
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextW(nint hWnd, StringBuilder lpString, int nMaxCount);
 
@@ -316,6 +416,8 @@ public static class AppLauncher
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SendMessageTimeout(nint hWnd, uint Msg, nint wParam, nint lParam, uint fuFlags, uint uTimeout, out nint lpdwResult);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct INPUT
@@ -338,12 +440,37 @@ public static class AppLauncher
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int left; public int top; public int right; public int bottom; }
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmGetWindowAttribute(nint hwnd, uint attr, ref int attrValue, int attrSize);
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(nint hwnd, uint attr, ref int attrValue, int attrSize);
+
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool QueryFullProcessImageNameW(nint hProcess, int dwFlags, StringBuilder lpExeName, ref int lpdwSize);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern nint OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(nint hObject);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetPackageFamilyName(nint hProcess, ref uint bufferLength, StringBuilder? packageFamilyName);
+
+    private static bool IsWindowFromPackagedApp(nint hWnd)
+    {
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        var hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (hProcess == nint.Zero) return false;
+        try
+        {
+            uint length = 256;
+            var sb = new StringBuilder(256);
+            int result = GetPackageFamilyName(hProcess, ref length, sb);
+            // 0=success, 122=ERROR_INSUFFICIENT_BUFFER (packaged, buffer too small),
+            // 15700=APPMODEL_ERROR_NO_PACKAGE (not a packaged app)
+            return result == 0 || result == 122;
+        }
+        finally { CloseHandle(hProcess); }
+    }
 
     private delegate bool EnumWindowsProc(nint hWnd, nint lParam);
 }

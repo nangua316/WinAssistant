@@ -3,7 +3,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
-    <Grid x:Name="RootGrid" Background="Transparent">
+    <Grid x:Name="RootGrid" Background="#FF1A1A1A">
         <!-- ContentScaleHost is what we animate (scale only).
              RootGrid's dark background stays full-size at all times. -->
         <Grid x:Name="ContentScaleHost" />

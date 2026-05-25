@@ -111,7 +111,7 @@
                                                HorizontalAlignment="Center"
                                                Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
                                     <Image Source="{x:Bind IconSource, Mode=OneWay}"
-                                           Width="64" Height="64"
+                                           Width="52" Height="52"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center" />
                                 </Grid>

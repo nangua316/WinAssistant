@@ -156,10 +156,29 @@ internal class AppPickerViewModel
         _filteredApps.Clear();
         var source = string.IsNullOrWhiteSpace(searchText)
             ? _allApps
-            : _allApps.Where(a => a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase)
-                               || a.AppPath.Contains(searchText, StringComparison.OrdinalIgnoreCase)
-                               || a.PinyinSearchData.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+            : _allApps.Where(a => FuzzyMatch(a.Name, searchText)
+                               || FuzzyMatch(a.AppPath, searchText)
+                               || FuzzyMatch(a.PinyinSearchData, searchText));
         foreach (var item in source)
             _filteredApps.Add(item);
+    }
+
+    private static bool FuzzyMatch(string text, string query)
+    {
+        if (string.IsNullOrEmpty(query)) return true;
+        if (string.IsNullOrEmpty(text)) return false;
+
+        if (text.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
+
+        int ti = 0;
+        foreach (var qc in query)
+        {
+            while (ti < text.Length &&
+                   char.ToLowerInvariant(text[ti]) != char.ToLowerInvariant(qc))
+                ti++;
+            if (ti >= text.Length) return false;
+            ti++;
+        }
+        return true;
     }
 }

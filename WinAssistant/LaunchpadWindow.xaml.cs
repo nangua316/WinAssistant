@@ -208,16 +208,10 @@ public sealed partial class LaunchpadWindow : Window
         return (physW * 96 / dpi, physH * 96 / dpi);
     }
 
-    /// <summary>Window size in PHYSICAL pixels (~95% width, ~85% height), minimum 860x750.</summary>
+    /// <summary>Window size in PHYSICAL pixels, fixed 1600x1200.</summary>
     private (int w, int h) CalcWindowSize()
     {
-        var (sw, sh) = GetVirtualScreenSize();
-        var dpi = GetDpiForWindow(_hwnd);
-        if (dpi == 0) dpi = 96;
-        var dipW = Math.Max(860, (int)(sw * 0.95));
-        var dipH = Math.Max(750, (int)(sh * 0.85));
-        // Convert DIPs → physical pixels for MoveAndResize
-        return (dipW * dpi / 96, dipH * dpi / 96);
+        return (1600, 1200);
     }
 
     private static void Log(string msg)
