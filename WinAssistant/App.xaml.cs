@@ -3,6 +3,7 @@ using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Win32;
+using Windows.System;
 using Windows.UI;
 using WinAssistant.Services;
 using WinAssistant.ViewModels;
@@ -112,11 +113,44 @@ public partial class App : Application
         DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
         // LaunchpadWindow is created lazily on first Open() call
         // — no flash at startup.
+
+        // Register global launchpad trigger handlers (not tied to MainPage lifecycle)
+        DoubleKeyDetector.Triggered += OnLaunchpadTriggered;
+        WinKeyInterceptor.WinKeyPressed += OnLaunchpadTriggered;
+
+        // Start the launchpad trigger detector based on saved settings
+        var settings = SettingsService.Load();
+        if (settings.IsLaunchpadEnabled)
+        {
+            var trigger = string.IsNullOrEmpty(settings.LaunchpadTrigger) ? "DoubleCtrl" : settings.LaunchpadTrigger;
+            if (trigger == "SingleWin")
+            {
+                WinKeyInterceptor.Start();
+            }
+            else
+            {
+                var vk = trigger switch
+                {
+                    "DoubleAlt" => Windows.System.VirtualKey.Menu,
+                    "DoubleShift" => Windows.System.VirtualKey.Shift,
+                    "DoubleWin" => Windows.System.VirtualKey.LeftWindows,
+                    _ => Windows.System.VirtualKey.Control
+                };
+                DoubleKeyDetector.Start(vk);
+            }
+        }
+
         WinAssistant.Services.AppScanner.PreloadCache();
 
         // Apply system theme to the root visual and poll for changes.
         ApplyThemeToRoot();
         StartThemeListener();
+    }
+
+    private static void OnLaunchpadTriggered(object? sender, EventArgs e)
+    {
+        if (SettingsService.Load().IsLaunchpadEnabled)
+            DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
     }
 
     private static void ActivateExistingInstance()

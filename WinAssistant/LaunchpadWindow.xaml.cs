@@ -20,6 +20,7 @@ public sealed partial class LaunchpadWindow : Window
     private readonly nint _hwnd;
     private static ITaskbarList2? _taskbar;
     private long _lastOpenTicks;
+    private Microsoft.UI.Xaml.DispatcherTimer? _focusTimer;
 
     public LaunchpadWindow()
     {
@@ -59,18 +60,6 @@ public sealed partial class LaunchpadWindow : Window
             if (_isShowing)
             {
                 e.Cancel = true;
-                CloseCore();
-            }
-        };
-
-        // Auto-close when user clicks outside (deactivate), unless pinned
-        // or within 200ms of opening (prevents immediate close from tray click)
-        Activated += (_, e) =>
-        {
-            if (e.WindowActivationState == WindowActivationState.Deactivated && _isShowing && !_isPinned)
-            {
-                var elapsed = (DateTime.UtcNow.Ticks - _lastOpenTicks) / TimeSpan.TicksPerMillisecond;
-                if (elapsed < 200) return;
                 CloseCore();
             }
         };
@@ -159,6 +148,7 @@ public sealed partial class LaunchpadWindow : Window
 
         _isShowing = true;
         DeleteFromTaskbar();
+        StartFocusTimer();
 
         // Log actual window size for debugging
         if (GetWindowRect(_hwnd, out var wrect))
@@ -192,6 +182,7 @@ public sealed partial class LaunchpadWindow : Window
     private void ForceHide()
     {
         _isShowing = false;
+        StopFocusTimer();
 
         var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
         if (inner != null)
@@ -203,11 +194,45 @@ public sealed partial class LaunchpadWindow : Window
         DeleteFromTaskbar();
     }
 
+    private void StartFocusTimer()
+    {
+        StopFocusTimer();
+        _focusTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        _focusTimer.Interval = TimeSpan.FromMilliseconds(150);
+        _focusTimer.Tick += OnFocusTick;
+        _focusTimer.Start();
+    }
+
+    private void StopFocusTimer()
+    {
+        if (_focusTimer != null)
+        {
+            _focusTimer.Stop();
+            _focusTimer.Tick -= OnFocusTick;
+            _focusTimer = null;
+        }
+    }
+
+    private void OnFocusTick(object? sender, object e)
+    {
+        if (!_isShowing || _isPinned) return;
+
+        var elapsed = (DateTime.UtcNow.Ticks - _lastOpenTicks) / TimeSpan.TicksPerMillisecond;
+        if (elapsed < 200) return;
+
+        var foreground = GetForegroundWindow();
+        if (foreground != _hwnd)
+            CloseCore();
+    }
+
     private void MakeToolWindow()
     {
         var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
-        exStyle &= ~WS_EX_APPWINDOW;
+        exStyle = (exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
         SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+        // Force taskbar to re-evaluate extended styles
+        SetWindowPos(_hwnd, nint.Zero, 0, 0, 0, 0,
+            SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
 
     /// <summary>Virtual screen size in DIPs (DPI-independent pixels).</summary>

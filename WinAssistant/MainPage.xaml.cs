@@ -17,8 +17,6 @@ public sealed partial class MainPage : Page
     {
         InitializeComponent();
         ViewModel = App.GetService<MainPageViewModel>();
-        App.DoubleKeyDetector.Triggered += OnLaunchpadTriggered;
-        App.WinKeyInterceptor.WinKeyPressed += OnLaunchpadTriggered;
     }
 
     private ListViewDragReorder? _reorder;
@@ -34,8 +32,6 @@ public sealed partial class MainPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         App.HotKeyService.HotKeyPressed -= OnHotKeyPressed;
-        App.DoubleKeyDetector.Triggered -= OnLaunchpadTriggered;
-        App.WinKeyInterceptor.WinKeyPressed -= OnLaunchpadTriggered;
     }
 
     private void OnHotKeyPressed(object? sender, HotKeyBinding binding)
@@ -97,12 +93,6 @@ public sealed partial class MainPage : Page
             vm.IconSource = bitmap;
         }
         catch { }
-    }
-
-    private void OnLaunchpadTriggered(object? sender, EventArgs e)
-    {
-        if (!ViewModel.IsLaunchpadEnabled) return;
-        App.LaunchpadWindow.Open();
     }
 
     private async void OnSettingsClick(object sender, RoutedEventArgs e)
