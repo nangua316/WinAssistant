@@ -21,9 +21,13 @@ public sealed partial class MainPage : Page
         App.WinKeyInterceptor.WinKeyPressed += OnLaunchpadTriggered;
     }
 
+    private ListViewDragReorder? _reorder;
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         ViewModel.LoadSettings();
+        // Must init after LoadSettings, which creates the Bindings collection
+        _reorder = new ListViewDragReorder(BindingListView, ViewModel.Bindings, ViewModel.SaveSettings);
         App.HotKeyService.HotKeyPressed += OnHotKeyPressed;
     }
 
@@ -93,14 +97,6 @@ public sealed partial class MainPage : Page
             vm.IconSource = bitmap;
         }
         catch { }
-    }
-
-    private void OnDragItemsStarting(object sender, DragItemsStartingEventArgs e) { }
-
-    private void OnDragItemsCompleted(object sender, DragItemsCompletedEventArgs e)
-    {
-        if (e.DropResult == Windows.ApplicationModel.DataTransfer.DataPackageOperation.Move)
-            ViewModel.SaveSettings();
     }
 
     private void OnLaunchpadTriggered(object? sender, EventArgs e)

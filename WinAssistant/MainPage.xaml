@@ -40,11 +40,6 @@
         <Grid Grid.Row="1">
             <ListView x:Name="BindingListView"
                   SelectionMode="Single"
-                  CanDragItems="True"
-                  AllowDrop="True"
-                  CanReorderItems="True"
-                  DragItemsStarting="OnDragItemsStarting"
-                  DragItemsCompleted="OnDragItemsCompleted"
                   ItemsSource="{x:Bind ViewModel.Bindings, Mode=OneWay}">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
