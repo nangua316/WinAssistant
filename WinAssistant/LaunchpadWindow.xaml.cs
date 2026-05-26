@@ -3,7 +3,6 @@ using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
-using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.UI.Composition;
@@ -31,9 +30,6 @@ public sealed partial class LaunchpadWindow : Window
         // Dark mode
         var darkMode = 1;
         DwmSetWindowAttribute(_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
-
-        // Acrylic backdrop (blur + tint)
-        SystemBackdrop = new DesktopAcrylicBackdrop();
 
         // Popup — no taskbar entry, no caption buttons
         MakeToolWindow();
@@ -122,49 +118,50 @@ public sealed partial class LaunchpadWindow : Window
         _page.ViewModel.SetXamlRootGetter(() => _page?.XamlRoot);
         _page.Activate();
 
-        // Show window
+        // Show the window offscreen so DWM's white flash is invisible to the
+        // user. After ~60ms (WinUI's first composition frames are done), move
+        // it onscreen and activate.
         MakeToolWindow();
-        ShowWindow(_hwnd, SW_SHOW);
-        // Size to ~95% of screen (physical pixels), centered
-        var dpi = GetDpiForWindow(_hwnd);
-        if (dpi == 0) dpi = 96;
         var (winW, winH) = CalcWindowSize();
-        var physW = GetSystemMetrics(SM_CXSCREEN);
-        var physH = GetSystemMetrics(SM_CYSCREEN);
-        AppWindow.MoveAndResize(new RectInt32((physW - winW) / 2, (physH - winH) / 2, winW, winH));
-
-        // Force window to top (use HWND_TOPMOST temporarily, then restore)
-        SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-        var fgHwnd = GetForegroundWindow();
-        var fgThreadId = GetWindowThreadProcessId(fgHwnd, out _);
-        var myThreadId = GetWindowThreadProcessId(_hwnd, out _);
-        if (fgThreadId != myThreadId)
-            AttachThreadInput(myThreadId, fgThreadId, true);
-        SetForegroundWindow(_hwnd);
-        BringWindowToTop(_hwnd);
-        if (fgThreadId != myThreadId)
-            AttachThreadInput(myThreadId, fgThreadId, false);
-        SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+        AppWindow.MoveAndResize(new RectInt32(-9999, -9999, winW, winH));
+        ShowWindow(_hwnd, SW_SHOW);
 
         _isShowing = true;
         DeleteFromTaskbar();
-        StartFocusTimer();
 
-        // Log actual window size for debugging
-        if (GetWindowRect(_hwnd, out var wrect))
-            Log($"Window: {wrect.right - wrect.left}x{wrect.bottom - wrect.top} at ({wrect.left},{wrect.top}), page ActualWidth={_page?.ActualWidth}");
+        var moveTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        moveTimer.Interval = TimeSpan.FromMilliseconds(60);
+        moveTimer.Tick += (s, e) =>
+        {
+            moveTimer.Stop();
+            if (!_isShowing) return; // Was closed during the delay
+            if (currentGen != _gen) return; // Superseded
 
-        // Fade in
-        var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
-        if (inner == null) return;
-        inner.Opacity = 0;
+            var physW = GetSystemMetrics(SM_CXSCREEN);
+            var physH = GetSystemMetrics(SM_CYSCREEN);
+            var cx = (physW - winW) / 2;
+            var cy = (physH - winH) / 2;
+            SetWindowPos(_hwnd, nint.Zero, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
 
-        var compositor = inner.Compositor;
-        var fadeIn = compositor.CreateScalarKeyFrameAnimation();
-        fadeIn.InsertKeyFrame(0, 0);
-        fadeIn.InsertKeyFrame(1, 1);
-        fadeIn.Duration = TimeSpan.FromMilliseconds(150);
-        inner.StartAnimation("Opacity", fadeIn);
+            // Force window to top and foreground
+            SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+            var fgHwnd = GetForegroundWindow();
+            var fgThreadId = GetWindowThreadProcessId(fgHwnd, out _);
+            var myThreadId = GetWindowThreadProcessId(_hwnd, out _);
+            if (fgThreadId != myThreadId)
+                AttachThreadInput(myThreadId, fgThreadId, true);
+            SetForegroundWindow(_hwnd);
+            BringWindowToTop(_hwnd);
+            if (fgThreadId != myThreadId)
+                AttachThreadInput(myThreadId, fgThreadId, false);
+            SetWindowPos(_hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
+
+            StartFocusTimer();
+
+            if (GetWindowRect(_hwnd, out var wrect))
+                Log($"Window: {wrect.right - wrect.left}x{wrect.bottom - wrect.top} at ({wrect.left},{wrect.top}), page ActualWidth={_page?.ActualWidth}");
+        };
+        moveTimer.Start();
     }
 
     private void OnCloseRequested(object? sender, EventArgs e)
@@ -175,7 +172,6 @@ public sealed partial class LaunchpadWindow : Window
 
     private void CloseCore()
     {
-        // Hide immediately — no fade-out delay so the launched app can take focus.
         ForceHide();
     }
 
@@ -183,12 +179,6 @@ public sealed partial class LaunchpadWindow : Window
     {
         _isShowing = false;
         StopFocusTimer();
-
-        var inner = ElementCompositionPreview.GetElementVisual(ContentScaleHost);
-        if (inner != null)
-        {
-            inner.Opacity = 1;
-        }
 
         ShowWindow(_hwnd, SW_HIDE);
         DeleteFromTaskbar();
@@ -235,17 +225,6 @@ public sealed partial class LaunchpadWindow : Window
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
 
-    /// <summary>Virtual screen size in DIPs (DPI-independent pixels).</summary>
-    private (int w, int h) GetVirtualScreenSize()
-    {
-        var dpi = GetDpiForWindow(_hwnd);
-        if (dpi == 0) dpi = 96; // fallback
-        var physW = GetSystemMetrics(SM_CXSCREEN);
-        var physH = GetSystemMetrics(SM_CYSCREEN);
-        // Convert physical → virtual: virtual = physical * 96 / dpi
-        return (physW * 96 / dpi, physH * 96 / dpi);
-    }
-
     /// <summary>Window size in PHYSICAL pixels, fixed 1600x1200.</summary>
     private (int w, int h) CalcWindowSize()
     {
@@ -282,9 +261,6 @@ public sealed partial class LaunchpadWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetCurrentThreadId();
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -326,8 +302,6 @@ public sealed partial class LaunchpadWindow : Window
     private const int DWMWCP_ROUND = 2;
 
     private const uint SWP_NOSIZE = 0x0001;
-    private const uint SWP_NOACTIVATE = 0x0010;
-    private const uint SWP_SHOWWINDOW = 0x0040;
     private const uint SWP_FRAMECHANGED = 0x0020;
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;

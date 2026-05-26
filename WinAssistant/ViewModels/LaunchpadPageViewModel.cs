@@ -128,48 +128,114 @@ public class LaunchpadPageViewModel : ObservableObject
 
     private void ApplyFilter()
     {
+        var items = BuildFilteredList();
+        SyncToFiltered(items);
+    }
+
+    private List<LaunchpadItemViewModel> BuildFilteredList()
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+            return [.. _items];
+
+        var query = _searchText.Trim();
+        // Search from user's items.
+        var results = _items
+            .Where(i => SearchHelper.FuzzyMatch(i.Name, query) || SearchHelper.FuzzyMatchPinyin(i.PinyinSearchData, query))
+            .Select(i => (vm: i, isUnadded: false))
+            .ToList();
+
+        // Also search from all-apps cache for unadded items.
+        var addedPaths = new HashSet<string>(_items
+            .Where(i => !string.IsNullOrEmpty(i.Model.AppPath))
+            .Select(i => i.Model.AppPath), StringComparer.OrdinalIgnoreCase);
+        var addedAumids = new HashSet<string>(_items
+            .Where(i => !string.IsNullOrEmpty(i.Model.Aumid))
+            .Select(i => i.Model.Aumid), StringComparer.OrdinalIgnoreCase);
+
+        if (_allAppsCache != null)
+        {
+            foreach (var (cachedItem, pinyin) in _allAppsCache)
+            {
+                if (!SearchHelper.FuzzyMatch(cachedItem.Name, query) && !SearchHelper.FuzzyMatchPinyin(pinyin, query))
+                    continue;
+                // Skip if already in user's items.
+                if (!string.IsNullOrEmpty(cachedItem.AppPath) && addedPaths.Contains(cachedItem.AppPath))
+                    continue;
+                if (!string.IsNullOrEmpty(cachedItem.Aumid) && addedAumids.Contains(cachedItem.Aumid))
+                    continue;
+                var vm = new LaunchpadItemViewModel(cachedItem, pinyin) { IsUnadded = true };
+                var iconSize = GetScaledIconSize(64);
+                LoadIconAsync(vm.Model.AppPath, vm.Model.Aumid, iconSize, icon => vm.IconSource = icon);
+                results.Add((vm, isUnadded: true));
+            }
+        }
+
+        // Sort: user's items first, then unadded cache items.
+        return results.OrderBy(r => r.isUnadded).Select(r => r.vm).ToList();
+    }
+
+    /// <summary>Sync _filteredItems to match target list, avoiding CollectionReset
+    /// (which resets GridView scroll position) when not searching.</summary>
+    private void SyncToFiltered(List<LaunchpadItemViewModel> target)
+    {
         if (string.IsNullOrWhiteSpace(_searchText))
         {
-            FilteredItems = _items;
+            SyncIncremental(target);
         }
         else
         {
-            var query = _searchText.Trim();
-            // Search from user's items.
-            var results = _items
-                .Where(i => SearchHelper.FuzzyMatch(i.Name, query) || SearchHelper.FuzzyMatchPinyin(i.PinyinSearchData, query))
-                .Select(i => (vm: i, isUnadded: false))
-                .ToList();
+            // Search active: full rebuild — user expects layout change, scroll reset is fine.
+            _filteredItems.Clear();
+            foreach (var item in target)
+                _filteredItems.Add(item);
+        }
+    }
 
-            // Also search from all-apps cache for unadded items.
-            var addedPaths = new HashSet<string>(_items
-                .Where(i => !string.IsNullOrEmpty(i.Model.AppPath))
-                .Select(i => i.Model.AppPath), StringComparer.OrdinalIgnoreCase);
-            var addedAumids = new HashSet<string>(_items
-                .Where(i => !string.IsNullOrEmpty(i.Model.Aumid))
-                .Select(i => i.Model.Aumid), StringComparer.OrdinalIgnoreCase);
+    /// <summary>In-place sync: remove, insert, reorder — no Clear(), preserves scroll.</summary>
+    private void SyncIncremental(List<LaunchpadItemViewModel> target)
+    {
+        // Remove items no longer in the target.
+        for (int i = _filteredItems.Count - 1; i >= 0; i--)
+        {
+            if (!target.Contains(_filteredItems[i]))
+                _filteredItems.RemoveAt(i);
+        }
 
-            if (_allAppsCache != null)
+        // Align order and insert any missing items.
+        int fi = 0;
+        for (int ti = 0; ti < target.Count; ti++)
+        {
+            if (fi >= _filteredItems.Count)
             {
-                foreach (var (cachedItem, pinyin) in _allAppsCache)
+                _filteredItems.Add(target[ti]);
+                fi++;
+            }
+            else if (ReferenceEquals(_filteredItems[fi], target[ti]))
+            {
+                fi++;
+            }
+            else
+            {
+                // Look for target[ti] later in _filteredItems.
+                int foundAt = -1;
+                for (int j = fi + 1; j < _filteredItems.Count; j++)
                 {
-                    if (!SearchHelper.FuzzyMatch(cachedItem.Name, query) && !SearchHelper.FuzzyMatchPinyin(pinyin, query))
-                        continue;
-                    // Skip if already in user's items.
-                    if (!string.IsNullOrEmpty(cachedItem.AppPath) && addedPaths.Contains(cachedItem.AppPath))
-                        continue;
-                    if (!string.IsNullOrEmpty(cachedItem.Aumid) && addedAumids.Contains(cachedItem.Aumid))
-                        continue;
-                    var vm = new LaunchpadItemViewModel(cachedItem, pinyin) { IsUnadded = true };
-                    var iconSize = GetScaledIconSize(64);
-                    LoadIconAsync(vm.Model.AppPath, vm.Model.Aumid, iconSize, icon => vm.IconSource = icon);
-                    results.Add((vm, isUnadded: true));
+                    if (ReferenceEquals(_filteredItems[j], target[ti]))
+                    { foundAt = j; break; }
+                }
+                if (foundAt >= 0)
+                {
+                    var item = _filteredItems[foundAt];
+                    _filteredItems.RemoveAt(foundAt);
+                    _filteredItems.Insert(fi, item);
+                    fi++;
+                }
+                else
+                {
+                    _filteredItems.Insert(fi, target[ti]);
+                    fi++;
                 }
             }
-
-            // Sort: user's items first, then unadded cache items.
-            results = results.OrderBy(r => r.isUnadded).ToList();
-            FilteredItems = new ObservableCollection<LaunchpadItemViewModel>(results.Select(r => r.vm));
         }
     }
 
@@ -256,22 +322,32 @@ public class LaunchpadPageViewModel : ObservableObject
         LoadIconAsync(vm.Model.AppPath, vm.Model.Aumid, size, icon => vm.IconSource = icon);
     }
 
+    private static readonly SemaphoreSlim _iconLoadThrottle = new(3, 3);
+
     private static void LoadIconAsync(string appPath, string aumid, int targetSize, Action<ImageSource> onLoaded)
     {
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
-            var tempFile = IconHelper.ExtractAppIconToAppData(appPath, targetSize, aumid: aumid);
-            if (tempFile == null) return;
-            App.DispatcherQueue.TryEnqueue(() =>
+            await _iconLoadThrottle.WaitAsync();
+            try
             {
-                try
+                var tempFile = IconHelper.ExtractAppIconToAppData(appPath, targetSize, aumid: aumid);
+                if (tempFile == null) return;
+                App.DispatcherQueue.TryEnqueue(() =>
                 {
-                    var bitmap = new BitmapImage();
-                    bitmap.UriSource = new Uri(tempFile);
-                    onLoaded(bitmap);
-                }
-                catch { }
-            });
+                    try
+                    {
+                        var bitmap = new BitmapImage();
+                        bitmap.UriSource = new Uri(tempFile);
+                        onLoaded(bitmap);
+                    }
+                    catch { }
+                });
+            }
+            finally
+            {
+                _iconLoadThrottle.Release();
+            }
         });
     }
 

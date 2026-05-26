@@ -10,9 +10,11 @@ namespace WinAssistant.Services;
 
 public static class AppScanner
 {
+#if DEBUG
     private static readonly string? LogPath = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WinAssistant", "scanner_debug.log");
+#endif
 
     private static List<InstalledAppInfo>? _cachedApps;
     private static readonly System.Threading.SemaphoreSlim _scanLock = new(1, 1);
@@ -114,14 +116,15 @@ public static class AppScanner
             }
         }
 
-        // Log sources for all entries to debug file
-        LogSources(sources);
-
         // Basic validity: must have an existing .exe path, not a Windows system binary
         var valid = apps.Values
             .Where(a => !string.IsNullOrEmpty(a.AppPath) && File.Exists(a.AppPath) && a.AppPath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
             .Where(a => !AppFilter.IsWindowsSystemBinary(a.AppPath))
             .ToList();
+
+#if DEBUG
+        // Log sources for all entries to debug file
+        LogSources(sources);
 
         // Debug log
         try
@@ -141,11 +144,9 @@ public static class AppScanner
             }
             File.WriteAllLines(LogPath, logLines);
 
-            // USAGE summary: append at the end so it's always visible in the log
             File.AppendAllText(LogPath,
                 $"\n[USAGE] matched {matched}/{total} apps, usageCounts has {usageCounts.Count} entries\n");
 
-            // Log top matched apps for debugging
             var topMatches = apps.Values
                 .Where(a => a.UsageCount > 0)
                 .OrderByDescending(a => a.UsageCount)
@@ -155,6 +156,7 @@ public static class AppScanner
                 File.AppendAllText(LogPath, "[USAGE] " + line + "\n");
         }
         catch { }
+#endif
 
         // Valid entries, filtered, dedup by path, sorted by name
         return [.. valid
