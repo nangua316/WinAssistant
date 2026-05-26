@@ -105,14 +105,20 @@ public static class AppScanner
 
         // 8. Populate usage counts from Windows FeatureUsage tracking
         var usageCounts = GetAppUsageCounts();
+#if DEBUG
         int matched = 0, total = 0;
+#endif
         foreach (var app in apps.Values)
         {
+#if DEBUG
             total++;
+#endif
             if (usageCounts.TryGetValue(app.AppPath, out var count))
             {
                 app.UsageCount = count;
+#if DEBUG
                 matched++;
+#endif
             }
         }
 
@@ -168,6 +174,7 @@ public static class AppScanner
             .OrderBy(a => a.Name)];
     }
 
+#if DEBUG
     private static void LogSources(Dictionary<string, string> sources)
     {
         try
@@ -184,10 +191,11 @@ public static class AppScanner
             {
                 lines.Add($"[{kvp.Value}] {kvp.Key}");
             }
-            File.AppendAllLines(LogPath, lines);   // append so USAGE data isn't lost
+            File.AppendAllLines(LogPath, lines);
         }
         catch { }
     }
+#endif
 
     private static void ScanShortcuts(string directory, Dictionary<string, InstalledAppInfo> apps, Dictionary<string, string> sources)
     {
@@ -1214,7 +1222,7 @@ public static class AppScanner
                 if (!result.TryGetValue(path, out var existing) || count > existing)
                     result[path] = count;
             }
-            // Write detailed scan stats to temp file (LogPath is overwritten by scanner log)
+#if DEBUG
             var tmpLog = Path.Combine(Path.GetTempPath(), "WinAssistant_usage_debug.txt");
             try
             {
@@ -1222,15 +1230,18 @@ public static class AppScanner
                     $"[{DateTime.Now:HH:mm:ss}] scan: total={totalValues} skipPid={skippedPid} notInt={notInt} notResolved={notResolved} notExists={notExists} resolved={resolved}\n");
             }
             catch { }
+#endif
         }
         catch { }
 
+#if DEBUG
         try
         {
             File.AppendAllText(Path.Combine(Path.GetTempPath(), "WinAssistant_usage_debug.txt"),
                 $"[{DateTime.Now:HH:mm:ss}] AppSwitched resolved {result.Count} paths, cache has {knownFolderCache.Count} GUIDs\n");
         }
         catch { }
+#endif
 
         return result;
     }
