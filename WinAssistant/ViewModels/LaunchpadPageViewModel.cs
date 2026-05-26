@@ -55,19 +55,40 @@ public class LaunchpadPageViewModel : ObservableObject
 
     public ICommand AddAppCommand { get; }
 
+    private bool _itemsLoaded;
+
     public void LoadItems()
     {
+        if (_itemsLoaded)
+        {
+            // Items already in memory, just ensure filter is in sync.
+            ApplyFilter();
+            IsLoading = false;
+            return;
+        }
+        _itemsLoaded = true;
         IsLoading = true;
         var settings = _settingsService.Load();
         var viewModels = settings.LaunchpadItems.Select(m => new LaunchpadItemViewModel(m)).ToList();
 
+        // Pre-set cached icons synchronously BEFORE adding to grid,
+        // so items render with icons on first frame (no fallback→icon pop-in).
+        var size = GetScaledIconSize(64);
+        var pendingIcons = new List<LaunchpadItemViewModel>();
+        foreach (var vm in viewModels)
+        {
+            if (!TrySetCachedIcon(vm, size))
+                pendingIcons.Add(vm);
+        }
+
         _items.Clear();
         foreach (var vm in viewModels)
             _items.Add(vm);
-
-        foreach (var vm in _items)
-            PreloadIcon(vm);
         IsLoading = false;
+
+        // Load remaining (uncached) icons in background.
+        if (pendingIcons.Count > 0)
+            _ = LoadIconsBatchAsync(pendingIcons, size);
 
         // Load all installed apps in background for search-as-you-type.
         _ = Task.Run(() =>
@@ -90,6 +111,53 @@ public class LaunchpadPageViewModel : ObservableObject
                 if (!string.IsNullOrWhiteSpace(_searchText))
                     ApplyFilter();
             });
+        });
+    }
+
+    /// <summary>If a cached icon exists on disk, set it synchronously. Returns true if set.</summary>
+    private bool TrySetCachedIcon(LaunchpadItemViewModel vm, int size)
+    {
+        try
+        {
+            var cached = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+            if (cached == null) return false;
+            var bitmap = new BitmapImage();
+            bitmap.UriSource = new Uri(cached);
+            vm.IconSource = bitmap;
+            return true;
+        }
+        catch { return false; }
+    }
+
+    /// <summary>Extract uncached icons in background (throttled), then batch-apply in one UI frame.</summary>
+    private async Task LoadIconsBatchAsync(List<LaunchpadItemViewModel> items, int size)
+    {
+        var extractTasks = items.Select(vm => Task.Run(async () =>
+        {
+            await _iconLoadThrottle.WaitAsync();
+            try
+            {
+                IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+            }
+            finally { _iconLoadThrottle.Release(); }
+        }));
+        await Task.WhenAll(extractTasks);
+
+        // All cached to disk now — apply in a single UI batch.
+        App.DispatcherQueue.TryEnqueue(() =>
+        {
+            foreach (var vm in items)
+            {
+                try
+                {
+                    var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+                    if (tempFile == null) continue;
+                    var bitmap = new BitmapImage();
+                    bitmap.UriSource = new Uri(tempFile);
+                    vm.IconSource = bitmap;
+                }
+                catch { }
+            }
         });
     }
 
@@ -164,8 +232,7 @@ public class LaunchpadPageViewModel : ObservableObject
                 if (!string.IsNullOrEmpty(cachedItem.Aumid) && addedAumids.Contains(cachedItem.Aumid))
                     continue;
                 var vm = new LaunchpadItemViewModel(cachedItem, pinyin) { IsUnadded = true };
-                var iconSize = GetScaledIconSize(64);
-                LoadIconAsync(vm.Model.AppPath, vm.Model.Aumid, iconSize, icon => vm.IconSource = icon);
+                LoadSingleIcon(vm);
                 results.Add((vm, isUnadded: true));
             }
         }
@@ -248,7 +315,7 @@ public class LaunchpadPageViewModel : ObservableObject
         vm.IsUnadded = false;
         _items.Add(vm);
         SaveItems();
-        PreloadIcon(vm);
+        LoadSingleIcon(vm);
     }
 
 
@@ -308,7 +375,7 @@ public class LaunchpadPageViewModel : ObservableObject
             var vm = new LaunchpadItemViewModel(item);
             _items.Add(vm);
             SaveItems();
-            PreloadIcon(vm);
+            LoadSingleIcon(vm);
         };
 
         picker.CloseRequested += () => dialog.Hide();
@@ -316,22 +383,20 @@ public class LaunchpadPageViewModel : ObservableObject
         await dialog.ShowAsync();
     }
 
-    private void PreloadIcon(LaunchpadItemViewModel vm)
-    {
-        var size = GetScaledIconSize(64);
-        LoadIconAsync(vm.Model.AppPath, vm.Model.Aumid, size, icon => vm.IconSource = icon);
-    }
-
     private static readonly SemaphoreSlim _iconLoadThrottle = new(3, 3);
 
-    private static void LoadIconAsync(string appPath, string aumid, int targetSize, Action<ImageSource> onLoaded)
+    /// <summary>Load a single item's icon: try cache first, fall back to async extraction.</summary>
+    private void LoadSingleIcon(LaunchpadItemViewModel vm)
     {
+        var size = GetScaledIconSize(64);
+        if (TrySetCachedIcon(vm, size)) return;
+
         _ = Task.Run(async () =>
         {
             await _iconLoadThrottle.WaitAsync();
             try
             {
-                var tempFile = IconHelper.ExtractAppIconToAppData(appPath, targetSize, aumid: aumid);
+                var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
                 if (tempFile == null) return;
                 App.DispatcherQueue.TryEnqueue(() =>
                 {
@@ -339,15 +404,12 @@ public class LaunchpadPageViewModel : ObservableObject
                     {
                         var bitmap = new BitmapImage();
                         bitmap.UriSource = new Uri(tempFile);
-                        onLoaded(bitmap);
+                        vm.IconSource = bitmap;
                     }
                     catch { }
                 });
             }
-            finally
-            {
-                _iconLoadThrottle.Release();
-            }
+            finally { _iconLoadThrottle.Release(); }
         });
     }
 
