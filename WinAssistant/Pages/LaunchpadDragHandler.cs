@@ -342,14 +342,17 @@ internal sealed class LaunchpadDragHandler
         var row = Math.Max(0, (int)((point.Y - padding.Top + scrollOffset) / itemHeight));
         if (col >= maxColumns) col = maxColumns - 1;
 
-        var cellX = padding.Left + col * itemWidth;
-        // Past cell midpoint → insert after this item.
-        if (point.X > cellX + itemWidth / 2)
-            col++;
-        if (col >= maxColumns) { col = 0; row++; }
-
         var index = row * maxColumns + col;
-        return index >= 0 && index < items.Count ? index : items.Count;
+        // Only apply midpoint check when on the last item — prevents icon overlap
+        // beyond the last cell while keeping normal cell-to-index mapping for all others.
+        if (index >= items.Count) return items.Count;
+        if (index == items.Count - 1)
+        {
+            var cellX = padding.Left + col * itemWidth;
+            if (point.X > cellX + itemWidth / 2)
+                return items.Count;
+        }
+        return index;
     }
 
     private double GetScrollOffset()

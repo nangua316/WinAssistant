@@ -208,7 +208,8 @@ public sealed partial class LaunchpadPage : Page
             AppGrid.SelectedIndex = 0;
         if (AppGrid.SelectedItem is LaunchpadItemViewModel vm)
         {
-            AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
+            var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
+            ShowLaunchToast(action, vm.Name);
             Close();
         }
     }
@@ -223,7 +224,8 @@ public sealed partial class LaunchpadPage : Page
             }
             else
             {
-                AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
+                var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
+                ShowLaunchToast(action, vm.Name);
                 Close();
             }
         }
@@ -270,4 +272,17 @@ public sealed partial class LaunchpadPage : Page
     }
 
     private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+    private static void ShowLaunchToast(string action, string appName)
+    {
+        if (string.IsNullOrEmpty(action)) return;
+        var verb = action switch
+        {
+            "minimize" => "最小化",
+            "launch" => "打开",
+            _ => "激活"
+        };
+        try { HotKeyToast.Show($"{verb} {appName}"); }
+        catch { }
+    }
 }
