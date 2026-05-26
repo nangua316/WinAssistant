@@ -13,8 +13,6 @@ public sealed partial class MainWindow : Window
     private nint _trayIconHandle;
     private bool _trayIconAdded;
     private nint _hwnd;
-    private bool _wasInTray;
-    private Pages.LaunchpadPage? _launchpadPage;
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
@@ -37,6 +35,7 @@ public sealed partial class MainWindow : Window
     private const uint WM_RBUTTONUP = 0x0205;
 
     private const uint MF_STRING = 0;
+    private const uint MF_SEPARATOR = 0x00000800;
     private const uint TPM_RETURNCMD = 0x0100;
 
     private delegate nint WndProcDelegate(nint hWnd, uint msg, nint wParam, nint lParam);
@@ -49,8 +48,6 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
         AppWindow.Resize(new SizeInt32(1500, 1500));
-
-        RootFrame.Navigate(typeof(MainPage));
 
         // Subclass the window for hotkey + tray messages
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -70,7 +67,6 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += (s, e) =>
         {
             e.Cancel = true;
-            _wasInTray = true;
             // Set toolwindow before hiding so next SW_SHOW doesn't create taskbar entry.
             MakeToolWindow();
             ShowWindow(_hwnd, SW_HIDE);
@@ -114,70 +110,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    public void ShowLaunchpad()
+    private void ShowSettings()
     {
-        _wasInTray = !IsWindowVisible(_hwnd);
-
-        if (_wasInTray)
-        {
-            // Window was hidden (tray mode). Set toolwindow so show creates no taskbar entry.
-            MakeToolWindow();
-            // SW_HIDE + SW_SHOW forces taskbar to re-evaluate extended styles.
-            ShowWindow(_hwnd, SW_HIDE);
-            ShowWindow(_hwnd, SW_SHOW);
-        }
-        // If window was visible, its existing taskbar entry stays — no new one appears.
-
-        // Create LaunchpadPage if first time.
-        if (_launchpadPage == null)
-        {
-            _launchpadPage = new Pages.LaunchpadPage();
-            _launchpadPage.CloseRequested += (_, _) => App.DispatcherQueue.TryEnqueue(HideLaunchpad);
-            LaunchpadOverlay.Children.Add(_launchpadPage);
-        }
-
-        // Full-screen to cover the taskbar.
-        AppWindow.SetPresenter(AppWindowPresenterKind.FullScreen);
-
-        // Re-assert toolwindow after presenter changes.
-        MakeToolWindow();
-
-        // Show overlay and activate.
-        LaunchpadOverlay.Visibility = Microsoft.UI.Xaml.Visibility.Visible;
-        _launchpadPage.Activate();
-
-        // Bring to foreground for keyboard input.
-        SetForegroundWindow(_hwnd);
-
-        // Final re-assert after SetForegroundWindow.
-        MakeToolWindow();
-
-        // FullScreenPresenter may create a brief taskbar entry.
-        // Flush it after a short delay so the user never sees it.
-        _ = Task.Delay(120).ContinueWith(_ =>
-            App.DispatcherQueue.TryEnqueue(MakeToolWindow));
-    }
-
-    private void HideLaunchpad()
-    {
+        // Hide launchpad if visible
         LaunchpadOverlay.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
-
-        // Restore from fullscreen.
         AppWindow.SetPresenter(AppWindowPresenterKind.Default);
-
-        // Reattach the custom title bar.
         SetTitleBar(AppTitleBar);
 
-        if (_wasInTray)
-        {
-            // Go back to tray — no taskbar entry because TOOLWINDOW was set.
-            ShowWindow(_hwnd, SW_HIDE);
-        }
-        else
-        {
-            // Restore normal app window style.
-            MakeAppWindow();
-        }
+        // Navigate to settings page if not already loaded
+        if (RootFrame.Content == null || RootFrame.Content.GetType() != typeof(MainPage))
+            RootFrame.Navigate(typeof(MainPage));
+
+        // Show as a normal app window with taskbar entry
+        MakeAppWindow();
+        ShowWindow(_hwnd, SW_SHOW);
+        SetForegroundWindow(_hwnd);
     }
 
     private void MakeToolWindow()
@@ -200,10 +147,13 @@ public sealed partial class MainWindow : Window
         {
             var menu = CreatePopupMenu();
             const uint showItem = 1;
-            const uint exitItem = 2;
+            const uint settingsItem = 2;
+            const uint exitItem = 3;
 
-            InsertMenuW(menu, 0, MF_STRING, showItem, "显示窗口");
-            InsertMenuW(menu, 1, MF_STRING, exitItem, "退出");
+            InsertMenuW(menu, 0, MF_STRING, showItem, "显示 Launchpad");
+            InsertMenuW(menu, 1, MF_STRING, settingsItem, "设置");
+            InsertMenuW(menu, 2, MF_SEPARATOR, 0, null);
+            InsertMenuW(menu, 3, MF_STRING, exitItem, "退出");
 
             SetForegroundWindow(hwnd);
             GetCursorPos(out var pt);
@@ -212,12 +162,11 @@ public sealed partial class MainWindow : Window
 
             if (cmd == showItem)
             {
-                App.DispatcherQueue.TryEnqueue(() =>
-                {
-                    MakeAppWindow();
-                    ShowWindow(hwnd, SW_SHOW);
-                    SetForegroundWindow(hwnd);
-                });
+                App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
+            }
+            else if (cmd == settingsItem)
+            {
+                App.DispatcherQueue.TryEnqueue(ShowSettings);
             }
             else if (cmd == exitItem)
             {
@@ -252,20 +201,7 @@ public sealed partial class MainWindow : Window
                 var lParamLow = (uint)lParam.ToInt32();
                 if (lParamLow == WM_LBUTTONUP)
                 {
-                    App.DispatcherQueue.TryEnqueue(() =>
-                    {
-                        if (IsWindowVisible(hWnd))
-                        {
-                            MakeToolWindow();
-                            ShowWindow(hWnd, SW_HIDE);
-                        }
-                        else
-                        {
-                            MakeAppWindow();
-                            ShowWindow(hWnd, SW_SHOW);
-                            SetForegroundWindow(hWnd);
-                        }
-                    });
+                    App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
                 }
                 else if (lParamLow == WM_RBUTTONUP)
                 {
@@ -336,7 +272,7 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool InsertMenuW(nint hMenu, uint uPosition, uint uFlags, uint uIDNewItem, string lpNewItem);
+    private static extern bool InsertMenuW(nint hMenu, uint uPosition, uint uFlags, uint uIDNewItem, string? lpNewItem);
 
     [DllImport("user32.dll")]
     private static extern nint TrackPopupMenu(nint hMenu, uint uFlags, int x, int y, int nReserved, nint hWnd, nint prcRect);

@@ -19,6 +19,7 @@ public sealed partial class LaunchpadWindow : Window
     private bool _isPinned;
     private readonly nint _hwnd;
     private static ITaskbarList2? _taskbar;
+    private long _lastOpenTicks;
 
     public LaunchpadWindow()
     {
@@ -63,10 +64,15 @@ public sealed partial class LaunchpadWindow : Window
         };
 
         // Auto-close when user clicks outside (deactivate), unless pinned
+        // or within 200ms of opening (prevents immediate close from tray click)
         Activated += (_, e) =>
         {
             if (e.WindowActivationState == WindowActivationState.Deactivated && _isShowing && !_isPinned)
+            {
+                var elapsed = (DateTime.UtcNow.Ticks - _lastOpenTicks) / TimeSpan.TicksPerMillisecond;
+                if (elapsed < 200) return;
                 CloseCore();
+            }
         };
 
         // Lazy-init ITaskbarList2 (once per process)
@@ -101,12 +107,17 @@ public sealed partial class LaunchpadWindow : Window
 
     private void OpenCore()
     {
+        Log("OpenCore called, _isShowing=" + _isShowing);
+
         if (_isShowing)
         {
             if (_page != null)
                 OnCloseRequested(null, null);
             return;
         }
+
+        // Guard against immediate deactivation after open
+        _lastOpenTicks = DateTime.UtcNow.Ticks;
 
         _gen++;
         var currentGen = _gen;

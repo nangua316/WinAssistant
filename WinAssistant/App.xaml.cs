@@ -106,6 +106,10 @@ public partial class App : Application
         DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         HotKeyService.Initialize(WindowHandle);
         Window.Activate();
+        // Hide MainWindow immediately — LaunchpadWindow is the primary UI
+        ShowWindow(App.WindowHandle, SW_HIDE);
+        // Launchpad as the home page — show via LaunchpadWindow (same as hotkey trigger)
+        DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
         // LaunchpadWindow is created lazily on first Open() call
         // — no flash at startup.
         WinAssistant.Services.AppScanner.PreloadCache();
