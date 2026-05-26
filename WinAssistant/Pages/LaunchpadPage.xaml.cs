@@ -245,7 +245,7 @@ public sealed partial class LaunchpadPage : Page
             var dialog = new ContentDialog
             {
                 Title = "移除应用",
-                Content = $"确定要从 Launchpad 移除 \"{vm.Name}\"？",
+                Content = $"确定要从启动台移除 \"{vm.Name}\"？",
                 PrimaryButtonText = "移除",
                 CloseButtonText = "取消",
                 DefaultButton = ContentDialogButton.Close,

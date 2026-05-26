@@ -6,166 +6,250 @@
     <Page.Resources>
         <SolidColorBrush x:Key="ListViewItemDropIndicatorForeground"
                          Color="#30D9904A" />
+        <SolidColorBrush x:Key="AccentBlue" Color="#FF4CC2FF" />
+        <SolidColorBrush x:Key="IconGreen" Color="#FF66BB6A" />
+        <SolidColorBrush x:Key="IconAmber" Color="#FFFFA726" />
     </Page.Resources>
 
-    <Grid Padding="24">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" MinHeight="200" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="220" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,16">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel>
-                <TextBlock Text="全局快捷键管理"
+        <!-- Left sidebar -->
+        <Grid Grid.Column="0"
+              BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
+              BorderThickness="0,0,1,0">
+            <ListView x:Name="MenuListView"
+                      SelectionMode="Single"
+                      SelectedIndex="0"
+                      SelectionChanged="OnMenuSelectionChanged"
+                      Background="Transparent"
+                      Padding="0,16,0,0"
+                      BorderThickness="0">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="Background" Value="Transparent" />
+                        <Setter Property="BorderThickness" Value="0" />
+                        <Setter Property="Padding" Value="16,12" />
+                        <Setter Property="Margin" Value="8,2" />
+                        <Setter Property="CornerRadius" Value="6" />
+                    </Style>
+                </ListView.ItemContainerStyle>
+                <ListViewItem>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE713;" FontSize="16"
+                                  Foreground="{StaticResource AccentBlue}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Text="常规设置" FontSize="15"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE71D;" FontSize="16"
+                                  Foreground="{StaticResource IconGreen}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Text="启动台设置" FontSize="15"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE765;" FontSize="16"
+                                  Foreground="{StaticResource IconAmber}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Text="全局快捷键" FontSize="15"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListViewItem>
+            </ListView>
+        </Grid>
+
+        <!-- Right content -->
+        <Grid Grid.Column="1" Padding="24,24,24,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" MinHeight="200" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Dynamic header -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,16">
+                <TextBlock x:Name="TitleText"
+                           Text="常规设置"
                            Style="{StaticResource TitleLargeTextBlockStyle}" />
-                <TextBlock Text="添加应用并设置全局快捷键"
+                <TextBlock x:Name="SubtitleText"
+                           Text="设置应用程序的基本选项"
                            Style="{StaticResource BodyTextBlockStyle}"
                            Opacity="0.7" />
             </StackPanel>
-            <Button Grid.Column="1" Click="OnSettingsClick"
-                    VerticalAlignment="Center"
-                    MinWidth="40" MinHeight="40" CornerRadius="6"
-                    ToolTipService.ToolTip="设置">
-                <FontIcon Glyph="&#xE713;" FontSize="16" />
-            </Button>
-        </Grid>
 
-        <!-- ListView + empty state overlay -->
-        <Grid Grid.Row="1">
-            <ListView x:Name="BindingListView"
-                  SelectionMode="Single"
-                  ItemsSource="{x:Bind ViewModel.Bindings, Mode=OneWay}">
-            <ListView.ItemContainerStyle>
-                <Style TargetType="ListViewItem">
-                    <Setter Property="Background" Value="Transparent" />
-                    <Setter Property="BorderThickness" Value="0" />
-                    <Setter Property="Padding" Value="0" />
-                    <Setter Property="Margin" Value="0" />
-                    <Setter Property="MinHeight" Value="56" />
-                    <Setter Property="VerticalContentAlignment" Value="Center" />
-                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                </Style>
-            </ListView.ItemContainerStyle>
-            <ListView.ItemContainerTransitions>
-                <TransitionCollection>
-                    <RepositionThemeTransition />
-                </TransitionCollection>
-            </ListView.ItemContainerTransitions>
-            <ListView.ItemsPanel>
-                <ItemsPanelTemplate>
-                    <StackPanel />
-                </ItemsPanelTemplate>
-            </ListView.ItemsPanel>
-            <ListView.ItemTemplate>
-                <DataTemplate x:DataType="vm:HotKeyBindingViewModel">
-                    <Grid Padding="12,8" ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
+            <!-- ===== General panel ===== -->
+            <StackPanel x:Name="GeneralPanel" Grid.Row="1" Spacing="16">
+                <CheckBox Content="开机自启动"
+                          IsChecked="{x:Bind ViewModel.IsAutoStart, Mode=TwoWay}"
+                          FontSize="15" />
+            </StackPanel>
 
-                        <Image Grid.Column="0"
-                               Width="36" Height="36"
-                               VerticalAlignment="Center"
-                               Source="{x:Bind IconSource, Mode=OneWay}"
-                               Tag="{x:Bind}"
-                               Loaded="OnIconImageLoaded" />
+            <!-- ===== Launchpad panel ===== -->
+            <StackPanel x:Name="LaunchpadPanel" Grid.Row="1" Visibility="Collapsed" Spacing="16">
+                <StackPanel Spacing="12">
+                    <ToggleSwitch x:Name="LaunchpadEnableToggle"
+                                  Header="启用启动台"
+                                  IsOn="{x:Bind ViewModel.IsLaunchpadEnabled, Mode=TwoWay}" />
+                    <StackPanel x:Name="TriggerRow" Spacing="12">
+                        <ComboBox Header="触发方式"
+                                  SelectedValue="{x:Bind ViewModel.LaunchpadTrigger, Mode=TwoWay}"
+                                  SelectedValuePath="Tag"
+                                  MinWidth="200">
+                            <ComboBoxItem Tag="DoubleCtrl">双击 Ctrl</ComboBoxItem>
+                            <ComboBoxItem Tag="DoubleAlt">双击 Alt</ComboBoxItem>
+                            <ComboBoxItem Tag="DoubleShift">双击 Shift</ComboBoxItem>
+                            <ComboBoxItem Tag="DoubleWin">双击 Win</ComboBoxItem>
+                            <ComboBoxItem Tag="SingleWin">单击 Win</ComboBoxItem>
+                        </ComboBox>
+                        <Button Content="打开启动台"
+                                Click="OnOpenLaunchpadClick"
+                                Padding="16,8"
+                                CornerRadius="6" />
+                    </StackPanel>
+                </StackPanel>
+            </StackPanel>
 
-                        <Grid Grid.Column="1" VerticalAlignment="Center">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0"
-                                       Text="{x:Bind Name}"
-                                       Style="{StaticResource BodyStrongTextBlockStyle}" />
-                            <TextBlock Grid.Row="1"
-                                       Text="{x:Bind AppPath}"
-                                       Style="{StaticResource CaptionTextBlockStyle}"
-                                       Opacity="0.6"
-                                       TextTrimming="CharacterEllipsis"
-                                       TextWrapping="NoWrap" />
-                        </Grid>
+            <!-- ===== Hotkey panel ===== -->
+            <Grid x:Name="HotkeyPanel" Grid.Row="1" Visibility="Collapsed">
+                <Grid>
+                    <ListView x:Name="BindingListView"
+                          SelectionMode="Single"
+                          ItemsSource="{x:Bind ViewModel.Bindings, Mode=OneWay}">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                            <Setter Property="MinHeight" Value="56" />
+                            <Setter Property="VerticalContentAlignment" Value="Center" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemContainerTransitions>
+                        <TransitionCollection>
+                            <RepositionThemeTransition />
+                        </TransitionCollection>
+                    </ListView.ItemContainerTransitions>
+                    <ListView.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel />
+                        </ItemsPanelTemplate>
+                    </ListView.ItemsPanel>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:HotKeyBindingViewModel">
+                            <Grid Padding="12,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
 
-                        <Button Grid.Column="2"
-                                Command="{Binding ElementName=RootPage, Path=ViewModel.SetHotKeyCommand}"
-                                CommandParameter="{x:Bind}"
-                                MinWidth="110" MinHeight="32"
-                                VerticalAlignment="Center"
-                                Padding="12,4"
-                                CornerRadius="4">
-                            <TextBlock Text="{x:Bind HotKeyDisplayText, Mode=OneWay}"
+                                <Image Grid.Column="0"
+                                       Width="36" Height="36"
                                        VerticalAlignment="Center"
-                                       HorizontalAlignment="Center"
-                                       FontSize="13" />
-                        </Button>
+                                       Source="{x:Bind IconSource, Mode=OneWay}"
+                                       Tag="{x:Bind}"
+                                       Loaded="OnIconImageLoaded" />
 
-                        <ToggleSwitch Grid.Column="3"
-                                      IsOn="{x:Bind IsEnabled, Mode=OneWay}"
-                                      VerticalAlignment="Center"
-                                      Toggled="OnToggleToggled"
-                                      Tag="{x:Bind}"
-                                      MinWidth="50" />
+                                <Grid Grid.Column="1" VerticalAlignment="Center">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0"
+                                               Text="{x:Bind Name}"
+                                               Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                    <TextBlock Grid.Row="1"
+                                               Text="{x:Bind AppPath}"
+                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Opacity="0.6"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextWrapping="NoWrap" />
+                                </Grid>
 
-                        <Button Grid.Column="4"
-                                Command="{Binding ElementName=RootPage, Path=ViewModel.RemoveBindingCommand}"
-                                CommandParameter="{x:Bind}"
-                                MinWidth="36" MinHeight="36"
+                                <Button Grid.Column="2"
+                                        Command="{Binding ElementName=RootPage, Path=ViewModel.SetHotKeyCommand}"
+                                        CommandParameter="{x:Bind}"
+                                        MinWidth="110" MinHeight="32"
+                                        VerticalAlignment="Center"
+                                        Padding="12,4"
+                                        CornerRadius="4">
+                                    <TextBlock Text="{x:Bind HotKeyDisplayText, Mode=OneWay}"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               FontSize="13" />
+                                </Button>
+
+                                <ToggleSwitch Grid.Column="3"
+                                              IsOn="{x:Bind IsEnabled, Mode=OneWay}"
+                                              VerticalAlignment="Center"
+                                              Toggled="OnToggleToggled"
+                                              Tag="{x:Bind}"
+                                              MinWidth="50" />
+
+                                <Button Grid.Column="4"
+                                        Command="{Binding ElementName=RootPage, Path=ViewModel.RemoveBindingCommand}"
+                                        CommandParameter="{x:Bind}"
+                                        MinWidth="36" MinHeight="36"
+                                        VerticalAlignment="Center"
+                                        CornerRadius="4">
+                                    <FontIcon Glyph="&#xE74D;" FontSize="14" />
+                                </Button>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                    <StackPanel Visibility="{x:Bind ViewModel.EmptyStateVisibility, Mode=OneWay}"
                                 VerticalAlignment="Center"
-                                CornerRadius="4">
-                            <FontIcon Glyph="&#xE74D;" FontSize="14" />
-                        </Button>
-                    </Grid>
-                </DataTemplate>
-            </ListView.ItemTemplate>
-        </ListView>
+                                HorizontalAlignment="Center"
+                                Spacing="12"
+                                Padding="48,32">
+                        <FontIcon Glyph="&#xE710;" FontSize="64" Opacity="0.5"
+                                  Foreground="{StaticResource AccentBlue}"
+                                  HorizontalAlignment="Center" />
+                        <TextBlock Text="还没有添加快捷键绑定"
+                                   FontSize="18" Opacity="0.85"
+                                   HorizontalAlignment="Center" />
+                        <TextBlock Text='点击下方 "添加应用程序" 按钮开始'
+                                   FontSize="13" Opacity="0.5"
+                                   HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
 
-            <!-- Empty state -->
-            <StackPanel Visibility="{x:Bind ViewModel.EmptyStateVisibility, Mode=OneWay}"
-                        VerticalAlignment="Center"
-                        HorizontalAlignment="Center"
-                        Spacing="12"
-                        Padding="48,32"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8">
-                <FontIcon Glyph="&#xE710;" FontSize="64" Opacity="0.5"
-                          Foreground="{ThemeResource SystemAccentColor}"
-                          HorizontalAlignment="Center" />
-                <TextBlock Text="还没有添加快捷键绑定"
-                           FontSize="18" Opacity="0.85"
-                           HorizontalAlignment="Center" />
-                <TextBlock Text='点击下方 "添加应用程序" 按钮开始'
-                           FontSize="13" Opacity="0.5"
-                           HorizontalAlignment="Center" />
-            </StackPanel>
+            <!-- Add application button (only visible on hotkey tab) -->
+            <Button x:Name="AddAppButton" Grid.Row="2"
+                    Visibility="Collapsed"
+                    Command="{x:Bind ViewModel.AddApplicationCommand}"
+                    Margin="0,12,0,0"
+                    Padding="16,8"
+                    CornerRadius="6">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon Glyph="&#xE710;" FontSize="14" />
+                    <TextBlock Text="添加应用程序" />
+                </StackPanel>
+            </Button>
+
+            <!-- Status message -->
+            <TextBlock Grid.Row="3"
+                       Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                       Margin="0,8,0,0"
+                       Style="{StaticResource CaptionTextBlockStyle}"
+                       Opacity="0.5" />
         </Grid>
-
-        <Button Grid.Row="2"
-                Command="{x:Bind ViewModel.AddApplicationCommand}"
-                Margin="0,12,0,0"
-                Padding="16,8"
-                CornerRadius="6">
-            <StackPanel Orientation="Horizontal" Spacing="8">
-                <FontIcon Glyph="&#xE710;" FontSize="14" />
-                <TextBlock Text="添加应用程序" />
-            </StackPanel>
-        </Button>
-
-        <TextBlock Grid.Row="3"
-                   Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
-                   Margin="0,8,0,0"
-                   Style="{StaticResource CaptionTextBlockStyle}"
-                   Opacity="0.5" />
-
     </Grid>
 </Page>

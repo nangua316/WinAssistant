@@ -280,7 +280,7 @@
                           FontSize="40"
                           Foreground="{StaticResource TextDimBrush}"
                           HorizontalAlignment="Center" />
-                <TextBlock Text="Launchpad 还没有应用"
+                <TextBlock Text="启动台还没有应用"
                            Foreground="{StaticResource TextSecondaryBrush}"
                            FontSize="15"
                            HorizontalAlignment="Center" />
