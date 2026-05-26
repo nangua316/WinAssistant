@@ -7,57 +7,43 @@ namespace WinAssistant.Services;
 public class HotKeyService : IDisposable
 {
     private nint _hwnd = nint.Zero;
-    private nint _oldWndProc = nint.Zero;
-    private WndProcDelegate? _wndProcDelegate;
     private readonly Dictionary<int, HotKeyBinding> _hotKeyMap = [];
     private int _nextId = 1;
     private bool _initialized;
 
     private const int WM_HOTKEY = 0x0312;
-    private const int GWLP_WNDPROC = -4;
 
     public event EventHandler<HotKeyBinding>? HotKeyPressed;
-
-    private delegate nint WndProcDelegate(nint hWnd, uint msg, nint wParam, nint lParam);
 
     public void Initialize(nint parentHwnd)
     {
         if (_initialized) return;
-
         _hwnd = parentHwnd;
-        _wndProcDelegate = WndProcHook;
-        var newProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate);
-        SetLastError(0);
-        var prev = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, newProc);
-        if (prev == nint.Zero && Marshal.GetLastWin32Error() != 0)
-        {
-            // SetWindowLongPtr genuinely failed — don't mark as initialized
-            _wndProcDelegate = null;
-            return;
-        }
-        _oldWndProc = prev;
         _initialized = true;
     }
 
-    private nint WndProcHook(nint hWnd, uint msg, nint wParam, nint lParam)
+    /// <summary>
+    /// Called from MainWindow's WndProc when it receives a WM_HOTKEY message.
+    /// Returns true if the message was handled.
+    /// </summary>
+    internal bool OnWindowMessage(uint msg, nint wParam, nint lParam)
     {
-        if (msg == WM_HOTKEY)
-        {
-            var hotKeyId = wParam.ToInt32();
-            if (_hotKeyMap.TryGetValue(hotKeyId, out var binding))
-            {
-                try
-                {
-                    HotKeyPressed?.Invoke(this, binding);
-                }
-                catch
-                {
-                    // Swallow — WndProc must never throw
-                }
-            }
-        }
+        if (msg != WM_HOTKEY) return false;
 
-        return CallWindowProc(_oldWndProc, hWnd, msg, wParam, lParam);
+        var hotKeyId = wParam.ToInt32();
+        if (_hotKeyMap.TryGetValue(hotKeyId, out var binding))
+        {
+            try
+            {
+                HotKeyPressed?.Invoke(this, binding);
+            }
+            catch
+            {
+                // Swallow — WndProc must never throw
+            }
+            return true;
+        }
+        return false;
     }
 
     public int Register(HotKeyBinding binding)
@@ -96,10 +82,6 @@ public class HotKeyService : IDisposable
         _hotKeyMap.Clear();
     }
 
-    /// <summary>
-    /// Find a registered binding already using this key combination, excluding a given ID.
-    /// Returns null if no conflict.
-    /// </summary>
     public HotKeyBinding? FindConflict(uint modifiers, uint virtualKey, int excludeHotKeyId = -1)
     {
         foreach (var binding in _hotKeyMap.Values)
@@ -126,23 +108,9 @@ public class HotKeyService : IDisposable
     public void Dispose()
     {
         UnregisterAll();
-        if (_initialized && _hwnd != nint.Zero && _oldWndProc != nint.Zero)
-        {
-            SetWindowLongPtr(_hwnd, GWLP_WNDPROC, _oldWndProc);
-        }
         _initialized = false;
         _hwnd = nint.Zero;
-        _wndProcDelegate = null;
     }
-
-    [DllImport("kernel32.dll")]
-    private static extern void SetLastError(uint dwErrCode);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
-
-    [DllImport("user32.dll")]
-    private static extern nint CallWindowProc(nint lpPrevWndFunc, nint hWnd, uint msg, nint wParam, nint lParam);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);

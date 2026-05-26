@@ -21,6 +21,7 @@ public sealed partial class MainWindow : Window
     private const int WS_EX_APPWINDOW = 0x00040000;
 
     private const int WM_TRAY_CALLBACK = 0x0400 + 1001;
+    private const int WM_HOTKEY = 0x0312;
     private const int WM_DESTROY = 0x0002;
     private const int GWLP_WNDPROC = -4;
     private const int SW_HIDE = 0;
@@ -242,6 +243,11 @@ public sealed partial class MainWindow : Window
 
         switch (msg)
         {
+            case WM_HOTKEY:
+                if (App.HotKeyService.OnWindowMessage(msg, wParam, lParam))
+                    return nint.Zero;
+                break;
+
             case WM_TRAY_CALLBACK:
                 var lParamLow = (uint)lParam.ToInt32();
                 if (lParamLow == WM_LBUTTONUP)
