@@ -157,8 +157,8 @@ public sealed partial class MainWindow : Window
             InsertMenuW(menu, 2, MF_SEPARATOR | MF_BYPOSITION, 0, null);
             InsertMenuW(menu, 3, MF_STRING | MF_BYPOSITION, exitItem, "退出");
 
-            // Add 16×16 solid-color icons to menu items
-            const int iconSize = 16;
+            // Add 20×20 solid-color icons to menu items
+            const int iconSize = 20;
             var hBmpShow = CreateMenuIcon(iconSize, MenuIconType.Show);
             var hBmpSettings = CreateMenuIcon(iconSize, MenuIconType.Settings);
             var hBmpExit = CreateMenuIcon(iconSize, MenuIconType.Exit);
@@ -205,7 +205,7 @@ public sealed partial class MainWindow : Window
     private enum MenuIconType { Show, Settings, Exit }
 
     /// <summary>
-    /// Create a 16×16 32-bit DIBSection with alpha, drawing a simple
+    /// Create a 20×20 32-bit DIBSection with alpha, drawing a simple
     /// solid-color geometric shape.  The returned HBITMAP must be freed
     /// via DeleteObject when no longer needed.
     /// </summary>
@@ -246,7 +246,7 @@ public sealed partial class MainWindow : Window
             case MenuIconType.Show:
             {
                 // 2×2 grid of filled squares — app grid / launchpad
-                int cell = 5;
+                int cell = 7;
                 int gap = 2;
                 int x0 = (size - (cell * 2 + gap)) / 2; // centered
                 int y0 = x0;
@@ -411,6 +411,9 @@ public sealed partial class MainWindow : Window
 
     // --- Menu icon support (GDI drawing on compatible bitmap) ---
     private const int COLOR_MENU = 4;
+    private const int COLOR_HIGHLIGHT = 6;
+    private const int COLOR_MENUTEXT = 7;
+    private const int COLOR_HIGHLIGHTTEXT = 8;
     private const uint PATCOPY = 0x00F00021;
     private const int NULL_PEN = 8;
     private const int PS_SOLID = 0;

@@ -21,11 +21,13 @@ public class MainPageViewModel : ObservableObject
     private string _launchpadTrigger = "DoubleCtrl";
     private List<InstalledAppInfo>? _cachedApps;
     private Task<List<InstalledAppInfo>>? _preloadTask;
+    private bool _loaded;
 
     public MainPageViewModel(SettingsService settingsService, HotKeyService hotKeyService)
     {
         _settingsService = settingsService;
         _hotKeyService = hotKeyService;
+        _hotKeyService.HotKeyPressed += OnHotKeyEvent;
 
         AddApplicationCommand = new AsyncRelayCommand(AddApplicationAsync);
         RemoveBindingCommand = new AsyncRelayCommand<HotKeyBindingViewModel?>(RemoveBindingAsync);
@@ -116,6 +118,8 @@ public class MainPageViewModel : ObservableObject
 
     public void LoadSettings()
     {
+        if (_loaded) return;
+        _loaded = true;
         var settings = _settingsService.Load();
         Bindings = new ObservableCollection<HotKeyBindingViewModel>(
             settings.Bindings.Select(b => new HotKeyBindingViewModel(b))
@@ -157,6 +161,11 @@ public class MainPageViewModel : ObservableObject
     public void RefreshHotKeys()
     {
         _hotKeyService.Refresh(Bindings.Select(b => b.Model).ToList());
+    }
+
+    private void OnHotKeyEvent(object? sender, HotKeyBinding binding)
+    {
+        App.DispatcherQueue.TryEnqueue(() => HandleHotKeyPressed(binding));
     }
 
     public void HandleHotKeyPressed(HotKeyBinding binding)

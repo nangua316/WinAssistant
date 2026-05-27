@@ -21,6 +21,21 @@ public static class AppLauncher
 
                 if (!string.IsNullOrEmpty(appDir))
                 {
+                    // Step 0: if this app's process already owns the foreground window,
+                    // find the best (highest-scored) window from this app and
+                    // activate/minimise it.  Using the foreground window directly
+                    // can pick up a compose or child window (e.g. FoxMail's
+                    // "写邮件" popup) which minimises to the desktop corner
+                    // instead of the taskbar.
+                    var fg = GetForegroundWindow();
+                    if (fg != nint.Zero && IsWindowOwnedByDir(fg, appDir))
+                    {
+                        var best = FindBestWindowByDir(appDir, null);
+                        if (best != nint.Zero)
+                            return ActivateOrMinimizeWindow(best);
+                        return ActivateOrMinimizeWindow(fg);
+                    }
+
                     // Step 1: find a visible window from this app's process
                     hWnd = FindWindowFromDir(appDir);
 
@@ -89,7 +104,10 @@ public static class AppLauncher
         if (isForeground)
         {
             Log($"Minimize hWnd={hWnd}");
-            ShowWindow(hWnd, SW_MINIMIZE);
+            // Use PostMessage WM_SYSCOMMAND SC_MINIMIZE instead of ShowWindow(SW_MINIMIZE)
+            // so the message goes through the app's own WndProc (Electron apps need this
+            // to properly minimise to the taskbar rather than the desktop corner).
+            PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, nint.Zero);
             return "minimize";
         }
 
@@ -258,15 +276,37 @@ public static class AppLauncher
 
     private static nint FindWindowFromDir(string appDir)
     {
-        return FindBestWindowByDir(appDir, requireVisible: true);
+        return FindBestWindowByDir(appDir, true);
     }
 
     private static nint FindHiddenWindowFromDir(string appDir)
     {
-        return FindBestWindowByDir(appDir, requireVisible: false);
+        return FindBestWindowByDir(appDir, false);
     }
 
-    private static nint FindBestWindowByDir(string appDir, bool requireVisible)
+    private static bool IsWindowOwnedByDir(nint hWnd, string appDir)
+    {
+        GetWindowThreadProcessId(hWnd, out uint pid);
+        var hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (hProcess == nint.Zero) return false;
+        try
+        {
+            var sb = new StringBuilder(MAX_PATH_BUFFER);
+            int size = sb.Capacity;
+            if (QueryFullProcessImageNameW(hProcess, 0, sb, ref size))
+            {
+                var path = sb.ToString();
+                var dir = appDir.TrimEnd('\\');
+                return path.StartsWith(dir, StringComparison.OrdinalIgnoreCase) &&
+                       path.Length > dir.Length + 1 &&
+                       (path[dir.Length] == '\\' || path[dir.Length] == '/');
+            }
+        }
+        finally { CloseHandle(hProcess); }
+        return false;
+    }
+
+    private static nint FindBestWindowByDir(string appDir, bool? requireVisible)
     {
         nint best = nint.Zero;
         int bestScore = int.MinValue;
@@ -274,9 +314,12 @@ public static class AppLauncher
 
         EnumWindows((hWnd, _) =>
         {
-            var visible = IsWindowVisible(hWnd);
-            if (requireVisible && !visible) return true;
-            if (!requireVisible && visible) return true;
+            if (requireVisible.HasValue)
+            {
+                var visible = IsWindowVisible(hWnd);
+                if (requireVisible.Value && !visible) return true;
+                if (!requireVisible.Value && visible) return true;
+            }
 
             GetWindowThreadProcessId(hWnd, out uint pid);
             var hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
@@ -293,7 +336,7 @@ public static class AppLauncher
                         path.Length > appDir.Length + 1 &&
                         (path[appDir.Length] == '\\' || path[appDir.Length] == '/'))
                     {
-                        int score = ScoreWindow(hWnd);
+                        int score = ScoreWindow(hWnd, path);
                         if (score > bestScore)
                         {
                             bestScore = score;
@@ -312,7 +355,7 @@ public static class AppLauncher
         return best;
     }
 
-    private static int ScoreWindow(nint hWnd)
+    private static int ScoreWindow(nint hWnd, string appPath = "")
     {
         var title = GetWindowText(hWnd);
         var className = GetWindowClassName(hWnd);
@@ -344,6 +387,13 @@ public static class AppLauncher
         if (className.Contains("Chrome_WidgetWin", StringComparison.OrdinalIgnoreCase)) score -= 20;
         if (className.Contains("Chrome_RenderWidget", StringComparison.OrdinalIgnoreCase)) score -= 20;
         if (className.Contains("Windows.UI.Composition", StringComparison.OrdinalIgnoreCase)) score -= 10;
+
+        // App-specific rule adjustments
+        if (!string.IsNullOrEmpty(appPath))
+        {
+            var adj = AppWindowRules.GetScoreAdjustment(appPath, className, hasTitle);
+            if (adj.HasValue) score += adj.Value;
+        }
 
         return score;
     }
@@ -388,6 +438,7 @@ public static class AppLauncher
     // Window messages
     private const uint WM_SYSCOMMAND = 0x0112;
     private const nint SC_RESTORE = 0xF120;
+    private const nint SC_MINIMIZE = 0xF020;
     private const uint SMTO_NORMAL = 0x0000;
     private const uint SMTO_ABORTIFHUNG = 0x0002;
 
@@ -416,6 +467,8 @@ public static class AppLauncher
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint PostMessage(nint hWnd, uint Msg, nint wParam, nint lParam);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern nint SendMessageTimeout(nint hWnd, uint Msg, nint wParam, nint lParam, uint fuFlags, uint uTimeout, out nint lpdwResult);
 

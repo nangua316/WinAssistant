@@ -255,6 +255,8 @@ public class LaunchpadPageViewModel : ObservableObject
             _filteredItems.Clear();
             foreach (var item in target)
                 _filteredItems.Add(item);
+            // Notify so SelectFirstItem picks up the new results.
+            OnPropertyChanged(nameof(FilteredItems));
         }
     }
 

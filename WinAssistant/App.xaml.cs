@@ -109,6 +109,8 @@ public partial class App : Application
         Window.Activate();
         // Hide MainWindow immediately — LaunchpadWindow is the primary UI
         ShowWindow(App.WindowHandle, SW_HIDE);
+        // Load settings and register hotkeys before showing anything.
+        _mainViewModel!.LoadSettings();
         // Launchpad as the home page — show via LaunchpadWindow (same as hotkey trigger)
         DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
         // LaunchpadWindow is created lazily on first Open() call

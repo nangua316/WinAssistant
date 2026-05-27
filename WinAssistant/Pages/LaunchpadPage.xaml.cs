@@ -56,14 +56,12 @@ public sealed partial class LaunchpadPage : Page
 
     private void SelectFirstItem()
     {
-        if (string.IsNullOrWhiteSpace(ViewModel.SearchText))
+        if (!string.IsNullOrWhiteSpace(ViewModel.SearchText) && ViewModel.FilteredItems.Count > 0)
         {
-            AppGrid.SelectedItem = null;
-            return;
-        }
-        if (ViewModel.FilteredItems.Count > 0 && AppGrid.SelectedItem == null)
+            // Let GridView process collection change first, then select index 0.
             App.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
                 () => AppGrid.SelectedIndex = 0);
+        }
     }
 
     public void Activate()
