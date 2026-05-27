@@ -18,7 +18,15 @@ public class MainPageViewModel : ObservableObject
     private string _statusMessage = "";
     private bool _isAutoStart;
     private bool _isLaunchpadEnabled;
-    private string _launchpadTrigger = "DoubleCtrl";
+    private bool _isMouseTriggerMiddle;
+    private bool _isMouseTriggerX1;
+    private bool _isMouseTriggerX2;
+    private bool _isKeyboardTriggerSingleCtrl;
+    private bool _isKeyboardTriggerGlobalHotKey;
+    private bool _isKeyboardTriggerAltSpace;
+    private uint _launchpadHotKeyModifiers = KeyHelper.MOD_CONTROL;
+    private uint _launchpadHotKeyVirtualKey = (uint)Windows.System.VirtualKey.Q;
+    private string _launchpadHotKeyDisplay = "Ctrl + Q";
     private List<InstalledAppInfo>? _cachedApps;
     private Task<List<InstalledAppInfo>>? _preloadTask;
     private bool _loaded;
@@ -89,7 +97,7 @@ public class MainPageViewModel : ObservableObject
             if (SetProperty(ref _isLaunchpadEnabled, value))
             {
                 OnPropertyChanged(nameof(LaunchpadSettingsVisibility));
-                UpdateDoubleKeyDetector();
+                UpdateTriggerServices();
                 SaveSettings();
             }
         }
@@ -98,17 +106,102 @@ public class MainPageViewModel : ObservableObject
     public Microsoft.UI.Xaml.Visibility LaunchpadSettingsVisibility =>
         _isLaunchpadEnabled ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
-    public string LaunchpadTrigger
+    public bool IsMouseTriggerMiddle
     {
-        get => _launchpadTrigger;
+        get => _isMouseTriggerMiddle;
         set
         {
-            if (SetProperty(ref _launchpadTrigger, value))
+            if (SetProperty(ref _isMouseTriggerMiddle, value))
             {
-                UpdateDoubleKeyDetector();
+                UpdateTriggerServices();
                 SaveSettings();
             }
         }
+    }
+
+    public bool IsMouseTriggerX1
+    {
+        get => _isMouseTriggerX1;
+        set
+        {
+            if (SetProperty(ref _isMouseTriggerX1, value))
+            {
+                UpdateTriggerServices();
+                SaveSettings();
+            }
+        }
+    }
+
+    public bool IsMouseTriggerX2
+    {
+        get => _isMouseTriggerX2;
+        set
+        {
+            if (SetProperty(ref _isMouseTriggerX2, value))
+            {
+                UpdateTriggerServices();
+                SaveSettings();
+            }
+        }
+    }
+
+    public bool IsKeyboardTriggerSingleCtrl
+    {
+        get => _isKeyboardTriggerSingleCtrl;
+        set
+        {
+            if (SetProperty(ref _isKeyboardTriggerSingleCtrl, value))
+            {
+                UpdateTriggerServices();
+                SaveSettings();
+            }
+        }
+    }
+
+    public bool IsKeyboardTriggerGlobalHotKey
+    {
+        get => _isKeyboardTriggerGlobalHotKey;
+        set
+        {
+            if (SetProperty(ref _isKeyboardTriggerGlobalHotKey, value))
+            {
+                OnPropertyChanged(nameof(GlobalHotKeySettingsVisibility));
+                UpdateTriggerServices();
+                SaveSettings();
+            }
+        }
+    }
+
+    public bool IsKeyboardTriggerAltSpace
+    {
+        get => _isKeyboardTriggerAltSpace;
+        set
+        {
+            if (SetProperty(ref _isKeyboardTriggerAltSpace, value))
+            {
+                UpdateTriggerServices();
+                SaveSettings();
+            }
+        }
+    }
+
+    public Microsoft.UI.Xaml.Visibility GlobalHotKeySettingsVisibility =>
+        _isKeyboardTriggerGlobalHotKey ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    public string LaunchpadHotKeyDisplay
+    {
+        get => _launchpadHotKeyDisplay;
+        set => SetProperty(ref _launchpadHotKeyDisplay, value);
+    }
+
+    public void SetLaunchpadHotKey(uint modifiers, uint virtualKey, string display)
+    {
+        _launchpadHotKeyModifiers = modifiers;
+        _launchpadHotKeyVirtualKey = virtualKey;
+        _launchpadHotKeyDisplay = display;
+        OnPropertyChanged(nameof(LaunchpadHotKeyDisplay));
+        UpdateTriggerServices();
+        SaveSettings();
     }
 
     public ICommand AddApplicationCommand { get; }
@@ -128,9 +221,25 @@ public class MainPageViewModel : ObservableObject
         OnPropertyChanged(nameof(IsAutoStart));
         _isLaunchpadEnabled = settings.IsLaunchpadEnabled;
         OnPropertyChanged(nameof(IsLaunchpadEnabled));
-        _launchpadTrigger = string.IsNullOrEmpty(settings.LaunchpadTrigger) ? "DoubleCtrl" : settings.LaunchpadTrigger;
-        OnPropertyChanged(nameof(LaunchpadTrigger));
-        UpdateDoubleKeyDetector();
+
+        _isMouseTriggerMiddle = settings.MouseTriggers.Contains("MiddleButton");
+        _isMouseTriggerX1 = settings.MouseTriggers.Contains("XButton1");
+        _isMouseTriggerX2 = settings.MouseTriggers.Contains("XButton2");
+        _isKeyboardTriggerSingleCtrl = settings.KeyboardTriggers.Contains("SingleCtrl");
+        _isKeyboardTriggerGlobalHotKey = settings.KeyboardTriggers.Contains("GlobalHotKey");
+        _isKeyboardTriggerAltSpace = settings.KeyboardTriggers.Contains("AltSpace");
+        OnPropertyChanged(nameof(IsMouseTriggerMiddle));
+        OnPropertyChanged(nameof(IsMouseTriggerX1));
+        OnPropertyChanged(nameof(IsMouseTriggerX2));
+        OnPropertyChanged(nameof(IsKeyboardTriggerSingleCtrl));
+        OnPropertyChanged(nameof(IsKeyboardTriggerGlobalHotKey));
+        OnPropertyChanged(nameof(IsKeyboardTriggerAltSpace));
+        OnPropertyChanged(nameof(GlobalHotKeySettingsVisibility));
+
+        ParseLaunchpadHotKeyString(settings.LaunchpadHotKey);
+        OnPropertyChanged(nameof(LaunchpadHotKeyDisplay));
+
+        UpdateTriggerServices();
 
         RefreshHotKeys();
         StatusMessage = $"已加载 {Bindings.Count} 个快捷键绑定";
@@ -153,7 +262,9 @@ public class MainPageViewModel : ObservableObject
         var current = _settingsService.Load();
         current.IsAutoStart = _isAutoStart;
         current.IsLaunchpadEnabled = _isLaunchpadEnabled;
-        current.LaunchpadTrigger = _launchpadTrigger;
+        current.MouseTriggers = BuildMouseTriggersList();
+        current.KeyboardTriggers = BuildKeyboardTriggersList();
+        current.LaunchpadHotKey = _launchpadHotKeyDisplay;
         current.Bindings = Bindings.Select(b => b.Model).ToList();
         _settingsService.Save(current);
     }
@@ -615,31 +726,99 @@ public class MainPageViewModel : ObservableObject
         catch { }
     }
 
-    private void UpdateDoubleKeyDetector()
+    private void UpdateTriggerServices()
     {
         if (!_isLaunchpadEnabled)
         {
-            App.DoubleKeyDetector.Stop();
-            App.WinKeyInterceptor.Stop();
+            App.MouseHookService.Stop();
+            App.SingleKeyInterceptor.Stop();
+            App.UnregisterTriggerHotKey(App.GLOBAL_HOTKEY_ID);
+            App.UnregisterTriggerHotKey(App.ALTSPACE_HOTKEY_ID);
             return;
         }
 
-        if (_launchpadTrigger == "SingleWin")
+        // Mouse triggers
+        App.MouseHookService.Stop();
+        if (_isMouseTriggerMiddle || _isMouseTriggerX1 || _isMouseTriggerX2)
+            App.MouseHookService.Start(_isMouseTriggerMiddle, _isMouseTriggerX1, _isMouseTriggerX2);
+
+        // Single Ctrl key trigger
+        App.SingleKeyInterceptor.Stop();
+        if (_isKeyboardTriggerSingleCtrl)
+            App.SingleKeyInterceptor.Start((int)Windows.System.VirtualKey.Control);
+
+        // Global hotkey
+        App.UnregisterTriggerHotKey(App.GLOBAL_HOTKEY_ID);
+        if (_isKeyboardTriggerGlobalHotKey && _launchpadHotKeyModifiers != 0 && _launchpadHotKeyVirtualKey != 0)
+            App.RegisterTriggerHotKey(App.GLOBAL_HOTKEY_ID, _launchpadHotKeyModifiers, _launchpadHotKeyVirtualKey);
+
+        // Alt+Space
+        App.UnregisterTriggerHotKey(App.ALTSPACE_HOTKEY_ID);
+        if (_isKeyboardTriggerAltSpace)
+            App.RegisterTriggerHotKey(App.ALTSPACE_HOTKEY_ID, KeyHelper.MOD_ALT, (uint)Windows.System.VirtualKey.Space);
+    }
+
+    private List<string> BuildMouseTriggersList()
+    {
+        var list = new List<string>(3);
+        if (_isMouseTriggerMiddle) list.Add("MiddleButton");
+        if (_isMouseTriggerX1) list.Add("XButton1");
+        if (_isMouseTriggerX2) list.Add("XButton2");
+        return list;
+    }
+
+    private List<string> BuildKeyboardTriggersList()
+    {
+        var list = new List<string>(3);
+        if (_isKeyboardTriggerSingleCtrl) list.Add("SingleCtrl");
+        if (_isKeyboardTriggerGlobalHotKey) list.Add("GlobalHotKey");
+        if (_isKeyboardTriggerAltSpace) list.Add("AltSpace");
+        return list;
+    }
+
+    private void ParseLaunchpadHotKeyString(string hotKey)
+    {
+        if (string.IsNullOrWhiteSpace(hotKey))
         {
-            App.DoubleKeyDetector.Stop();
-            App.WinKeyInterceptor.Start();
+            _launchpadHotKeyModifiers = KeyHelper.MOD_CONTROL;
+            _launchpadHotKeyVirtualKey = (uint)Windows.System.VirtualKey.Q;
+            _launchpadHotKeyDisplay = "Ctrl + Q";
+            return;
+        }
+
+        _launchpadHotKeyDisplay = hotKey;
+
+        uint mods = 0;
+        uint vk = 0;
+        var parts = hotKey.Split('+', StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+
+            switch (trimmed.ToLower())
+            {
+                case "ctrl": mods |= KeyHelper.MOD_CONTROL; break;
+                case "alt": mods |= KeyHelper.MOD_ALT; break;
+                case "shift": mods |= KeyHelper.MOD_SHIFT; break;
+                case "win": mods |= KeyHelper.MOD_WIN; break;
+                default:
+                    if (Enum.TryParse<Windows.System.VirtualKey>(trimmed, true, out var parsed))
+                        vk = (uint)parsed;
+                    break;
+            }
+        }
+
+        if (mods == 0 || vk == 0)
+        {
+            _launchpadHotKeyModifiers = KeyHelper.MOD_CONTROL;
+            _launchpadHotKeyVirtualKey = (uint)Windows.System.VirtualKey.Q;
+            _launchpadHotKeyDisplay = "Ctrl + Q";
         }
         else
         {
-            App.WinKeyInterceptor.Stop();
-            var vk = _launchpadTrigger switch
-            {
-                "DoubleAlt" => Windows.System.VirtualKey.Menu,
-                "DoubleShift" => Windows.System.VirtualKey.Shift,
-                "DoubleWin" => Windows.System.VirtualKey.LeftWindows,
-                _ => Windows.System.VirtualKey.Control
-            };
-            App.DoubleKeyDetector.Start(vk);
+            _launchpadHotKeyModifiers = mods;
+            _launchpadHotKeyVirtualKey = vk;
         }
     }
 

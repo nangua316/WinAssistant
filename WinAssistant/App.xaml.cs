@@ -23,8 +23,8 @@ public partial class App : Application
     public static Microsoft.UI.Dispatching.DispatcherQueue DispatcherQueue { get; private set; } = null!;
     public static HotKeyService HotKeyService { get; } = new();
     public static SettingsService SettingsService { get; } = new();
-    public static DoubleKeyDetector DoubleKeyDetector { get; } = new();
-    public static WinKeyInterceptor WinKeyInterceptor { get; } = new();
+    public static MouseHookService MouseHookService { get; } = new();
+    public static SingleKeyInterceptor SingleKeyInterceptor { get; } = new();
 
     /// <summary>Fired when the system theme changes (light ↔ dark).</summary>
     public static event EventHandler? SystemThemeChanged;
@@ -118,6 +118,12 @@ public partial class App : Application
         Window.Activate();
         // Hide MainWindow immediately — LaunchpadWindow is the primary UI
         ShowWindow(App.WindowHandle, SW_HIDE);
+        // Register launchpad trigger handlers before LoadSettings starts services
+        MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
+        MouseHookService.XButton1Clicked += OnLaunchpadTriggered;
+        MouseHookService.XButton2Clicked += OnLaunchpadTriggered;
+        SingleKeyInterceptor.Triggered += OnLaunchpadTriggered;
+
         // Load settings and register hotkeys before showing anything.
         _mainViewModel!.LoadSettings();
         // Launchpad as the home page — show via LaunchpadWindow (same as hotkey trigger)
@@ -125,37 +131,24 @@ public partial class App : Application
         // LaunchpadWindow is created lazily on first Open() call
         // — no flash at startup.
 
-        // Register global launchpad trigger handlers (not tied to MainPage lifecycle)
-        DoubleKeyDetector.Triggered += OnLaunchpadTriggered;
-        WinKeyInterceptor.WinKeyPressed += OnLaunchpadTriggered;
-
-        // Start the launchpad trigger detector based on saved settings
-        var settings = SettingsService.Load();
-        if (settings.IsLaunchpadEnabled)
-        {
-            var trigger = string.IsNullOrEmpty(settings.LaunchpadTrigger) ? "DoubleCtrl" : settings.LaunchpadTrigger;
-            if (trigger == "SingleWin")
-            {
-                WinKeyInterceptor.Start();
-            }
-            else
-            {
-                var vk = trigger switch
-                {
-                    "DoubleAlt" => Windows.System.VirtualKey.Menu,
-                    "DoubleShift" => Windows.System.VirtualKey.Shift,
-                    "DoubleWin" => Windows.System.VirtualKey.LeftWindows,
-                    _ => Windows.System.VirtualKey.Control
-                };
-                DoubleKeyDetector.Start(vk);
-            }
-        }
-
         WinAssistant.Services.AppScanner.PreloadCache();
 
         // Apply system theme to the root visual and poll for changes.
         ApplyThemeToRoot();
         StartThemeListener();
+    }
+
+    public const int GLOBAL_HOTKEY_ID = 9001;
+    public const int ALTSPACE_HOTKEY_ID = 9002;
+
+    public static void RegisterTriggerHotKey(int id, uint modifiers, uint virtualKey)
+    {
+        RegisterHotKey(WindowHandle, id, modifiers, virtualKey);
+    }
+
+    public static void UnregisterTriggerHotKey(int id)
+    {
+        UnregisterHotKey(WindowHandle, id);
     }
 
     private static void OnLaunchpadTriggered(object? sender, EventArgs e)
@@ -199,6 +192,12 @@ public partial class App : Application
     private const int SW_HIDE = 0;
     private const int SW_RESTORE = 9;
     private const int SW_SHOW = 5;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);
+
+    [DllImport("user32.dll")]
+    private static extern bool UnregisterHotKey(nint hWnd, int id);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint hwnd, uint attr, ref int attrValue, int attrSize);

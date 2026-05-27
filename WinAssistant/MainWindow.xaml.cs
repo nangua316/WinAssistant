@@ -192,7 +192,8 @@ public sealed partial class MainWindow : Window
                     ToolHostWindow.CloseAll();
                     CleanupTrayIcon();
                     Helpers.IconHelper.CleanupTempIcons();
-                    App.WinKeyInterceptor.Stop();
+                    App.MouseHookService.Stop();
+                    App.SingleKeyInterceptor.Stop();
                     App.HotKeyService.Dispose();
                     Environment.Exit(0);
                 });
@@ -290,6 +291,12 @@ public sealed partial class MainWindow : Window
         switch (msg)
         {
             case WM_HOTKEY:
+                var hotKeyId = wParam.ToInt32();
+                if (hotKeyId == App.GLOBAL_HOTKEY_ID || hotKeyId == App.ALTSPACE_HOTKEY_ID)
+                {
+                    App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
+                    return nint.Zero;
+                }
                 if (App.HotKeyService.OnWindowMessage(msg, wParam, lParam))
                     return nint.Zero;
                 break;

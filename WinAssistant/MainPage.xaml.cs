@@ -1,9 +1,12 @@
 using Microsoft.UI;
+using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.System;
 using Windows.UI;
+using Windows.UI.Core;
 using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
 using WinAssistant.Models;
@@ -282,6 +285,89 @@ public sealed partial class MainPage : Page
     private void OnOpenLaunchpadClick(object sender, RoutedEventArgs e)
     {
         App.LaunchpadWindow.Open();
+    }
+
+    private async void OnModifyGlobalHotKeyClick(object sender, RoutedEventArgs e)
+    {
+        uint capturedMods = 0;
+        uint capturedVk = 0;
+        var capturedDisplay = "";
+
+        var inputBox = new TextBox
+        {
+            Text = "按下快捷键组合...",
+            FontSize = 28,
+            TextAlignment = TextAlignment.Center,
+            IsReadOnly = true,
+            Width = 320,
+            Height = 60,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(0, 30, 0, 30)
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "设置全局快捷键",
+            Content = inputBox,
+            PrimaryButtonText = "确定",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+
+        inputBox.KeyDown += (s, ke) =>
+        {
+            var key = ke.Key;
+
+            uint mods = 0;
+            if (IsKeyDown(VirtualKey.Control)) mods |= KeyHelper.MOD_CONTROL;
+            if (IsKeyDown(VirtualKey.Menu)) mods |= KeyHelper.MOD_ALT;
+            if (IsKeyDown(VirtualKey.Shift)) mods |= KeyHelper.MOD_SHIFT;
+            if (IsKeyDown(VirtualKey.LeftWindows) ||
+                IsKeyDown(VirtualKey.RightWindows))
+                mods |= KeyHelper.MOD_WIN;
+
+            bool isMod = key is VirtualKey.Control
+                or VirtualKey.Menu
+                or VirtualKey.Shift
+                or VirtualKey.LeftWindows
+                or VirtualKey.RightWindows;
+
+            if (isMod)
+            {
+                inputBox.Text = mods > 0
+                    ? $"{KeyHelper.GetModifierDisplay(mods)} + ..."
+                    : "按下快捷键组合...";
+                ke.Handled = true;
+                return;
+            }
+
+            if (mods == 0)
+            {
+                inputBox.Text = "请至少包含一个修饰键 (Ctrl/Alt/Shift/Win)";
+                ke.Handled = true;
+                return;
+            }
+
+            capturedMods = mods;
+            capturedVk = (uint)key;
+            capturedDisplay = KeyHelper.GetFullDisplay(mods, (uint)key);
+            inputBox.Text = capturedDisplay;
+            ke.Handled = true;
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary && capturedMods > 0 && capturedVk > 0)
+        {
+            ViewModel.SetLaunchpadHotKey(capturedMods, capturedVk, capturedDisplay);
+        }
+    }
+
+    private static bool IsKeyDown(VirtualKey key)
+    {
+        return InputKeyboardSource.GetKeyStateForCurrentThread(key)
+            .HasFlag(CoreVirtualKeyStates.Down);
     }
 
     #region Hotkey list event handlers

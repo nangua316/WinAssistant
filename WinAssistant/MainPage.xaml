@@ -110,21 +110,48 @@
                     <ToggleSwitch x:Name="LaunchpadEnableToggle"
                                   Header="启用启动台"
                                   IsOn="{x:Bind ViewModel.IsLaunchpadEnabled, Mode=TwoWay}" />
-                    <StackPanel x:Name="TriggerRow" Spacing="12">
-                        <ComboBox Header="触发方式"
-                                  SelectedValue="{x:Bind ViewModel.LaunchpadTrigger, Mode=TwoWay}"
-                                  SelectedValuePath="Tag"
-                                  MinWidth="200">
-                            <ComboBoxItem Tag="DoubleCtrl">双击 Ctrl</ComboBoxItem>
-                            <ComboBoxItem Tag="DoubleAlt">双击 Alt</ComboBoxItem>
-                            <ComboBoxItem Tag="DoubleShift">双击 Shift</ComboBoxItem>
-                            <ComboBoxItem Tag="DoubleWin">双击 Win</ComboBoxItem>
-                            <ComboBoxItem Tag="SingleWin">单击 Win</ComboBoxItem>
-                        </ComboBox>
+
+                    <!-- Trigger settings, visible when launchpad is enabled -->
+                    <StackPanel Spacing="8"
+                                Visibility="{x:Bind ViewModel.LaunchpadSettingsVisibility, Mode=OneWay}">
+
+                        <!-- Mouse triggers -->
+                        <TextBlock Text="鼠标触发" FontSize="14" FontWeight="SemiBold"
+                                   Margin="0,8,0,0" />
+                        <CheckBox Content="按下中键"
+                                  IsChecked="{x:Bind ViewModel.IsMouseTriggerMiddle, Mode=TwoWay}" />
+                        <CheckBox Content="按下X1键"
+                                  IsChecked="{x:Bind ViewModel.IsMouseTriggerX1, Mode=TwoWay}" />
+                        <CheckBox Content="按下X2键"
+                                  IsChecked="{x:Bind ViewModel.IsMouseTriggerX2, Mode=TwoWay}" />
+
+                        <!-- Keyboard triggers -->
+                        <TextBlock Text="键盘触发" FontSize="14" FontWeight="SemiBold"
+                                   Margin="0,8,0,0" />
+                        <CheckBox Content="单击Ctrl"
+                                  IsChecked="{x:Bind ViewModel.IsKeyboardTriggerSingleCtrl, Mode=TwoWay}" />
+                        <CheckBox Content="全局快捷键"
+                                  IsChecked="{x:Bind ViewModel.IsKeyboardTriggerGlobalHotKey, Mode=TwoWay}" />
+
+                        <!-- Hotkey display + modify button (visible when global hotkey is checked) -->
+                        <StackPanel Orientation="Horizontal" Spacing="8" Margin="28,0,0,0"
+                                    Visibility="{x:Bind ViewModel.GlobalHotKeySettingsVisibility, Mode=OneWay}">
+                            <Border BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
+                                    BorderThickness="1" CornerRadius="4" Padding="12,4">
+                                <TextBlock Text="{x:Bind ViewModel.LaunchpadHotKeyDisplay, Mode=OneWay}"
+                                           FontSize="14" VerticalAlignment="Center" />
+                            </Border>
+                            <Button Content="修改" Click="OnModifyGlobalHotKeyClick"
+                                    Padding="12,4" CornerRadius="4" MinHeight="32" />
+                        </StackPanel>
+
+                        <CheckBox Content="Alt + 空格"
+                                  IsChecked="{x:Bind ViewModel.IsKeyboardTriggerAltSpace, Mode=TwoWay}" />
+
                         <Button Content="打开启动台"
                                 Click="OnOpenLaunchpadClick"
-                                Padding="16,8"
-                                CornerRadius="6" />
+                                Padding="16,8" CornerRadius="6"
+                                Margin="0,8,0,0" />
                     </StackPanel>
                 </StackPanel>
             </StackPanel>
