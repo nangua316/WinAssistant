@@ -23,6 +23,7 @@
         <helpers:BoolToDragOpacityConverter x:Key="BoolToDragOpacityConverter" />
         <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
         <helpers:BoolToScaleConverter x:Key="BoolToScaleConverter" />
+        <helpers:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
 
         <!-- ===== Color Palette ===== -->
         <!-- Surface layers -->
@@ -229,7 +230,7 @@
                                     </MenuFlyout>
                                 </Border.ContextFlyout>
                                 <Grid>
-                                    <!-- Fallback: circle + letter -->
+                                    <!-- Fallback: circle + letter (non-tools only) -->
                                     <Ellipse Width="52" Height="52"
                                              Fill="{StaticResource ItemIconCircleBrush}"
                                              VerticalAlignment="Center"
@@ -241,11 +242,19 @@
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
                                                Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
-                                    <!-- Actual icon -->
+                                    <!-- Tool icon (TextBlock for broad Unicode/emoji support) -->
+                                    <TextBlock Text="{x:Bind ToolIconGlyph, Mode=OneWay}"
+                                               FontSize="28"
+                                               Foreground="{x:Bind ToolIconBrush, Mode=OneWay}"
+                                               VerticalAlignment="Center"
+                                               HorizontalAlignment="Center"
+                                               Visibility="{x:Bind IsTool, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <!-- Actual app icon (non-tools only) -->
                                     <Image Source="{x:Bind IconSource, Mode=OneWay}"
                                            Width="52" Height="52"
                                            VerticalAlignment="Center"
-                                           HorizontalAlignment="Center" />
+                                           HorizontalAlignment="Center"
+                                           Visibility="{x:Bind IsTool, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
                                 </Grid>
                             </Border>
 

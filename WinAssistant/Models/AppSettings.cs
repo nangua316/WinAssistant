@@ -7,4 +7,5 @@ public class AppSettings
     public string LaunchpadTrigger { get; set; } = "DoubleCtrl";
     public List<HotKeyBinding> Bindings { get; set; } = [];
     public List<LaunchpadItem> LaunchpadItems { get; set; } = [];
+    public Dictionary<string, string> ToolSettings { get; set; } = [];
 }

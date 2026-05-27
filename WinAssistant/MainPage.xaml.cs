@@ -1,6 +1,10 @@
+using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.UI;
+using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
 using WinAssistant.Models;
 using WinAssistant.ViewModels;
@@ -37,6 +41,7 @@ public sealed partial class MainPage : Page
         GeneralPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
         LaunchpadPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         HotkeyPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        ToolPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
         AddAppButton.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
 
         TitleText.Text = index switch
@@ -44,6 +49,7 @@ public sealed partial class MainPage : Page
             0 => "常规设置",
             1 => "启动台设置",
             2 => "全局快捷键管理",
+            3 => "小工具",
             _ => ""
         };
         SubtitleText.Text = index switch
@@ -51,8 +57,188 @@ public sealed partial class MainPage : Page
             0 => "设置应用程序的基本选项",
             1 => "配置启动台的触发方式和行为",
             2 => "添加应用并设置全局快捷键",
+            3 => "管理小工具，添加到启动台快速访问",
             _ => ""
         };
+
+        if (index == 3)
+            PopulateToolList();
+    }
+
+    private void PopulateToolList()
+    {
+        ToolListStack.Children.Clear();
+        ToolListPanel.Visibility = Visibility.Visible;
+        ToolSettingsPanel.Visibility = Visibility.Collapsed;
+        _currentToolSettingsTool = null;
+
+        var settings = App.SettingsService.Load();
+        var toolIdsInLaunchpad = settings.LaunchpadItems
+            .Where(i => i.ToolId != null)
+            .Select(i => i.ToolId)
+            .ToHashSet();
+
+        foreach (var tool in ToolRegistry.All)
+        {
+            var isInLaunchpad = toolIdsInLaunchpad.Contains(tool.Id);
+
+            var card = new Border
+            {
+                Background = new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(16, 12, 16, 12),
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+
+            var row = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = GridLength.Auto }
+                },
+                ColumnSpacing = 14
+            };
+
+            // Icon
+            var iconForeground = tool.IconColorHex is string hex
+                ? ParseBrush(hex)
+                : (Brush)Resources["AccentBlue"];
+            var icon = new TextBlock
+            {
+                Text = tool.IconGlyph,
+                FontSize = 28,
+                Foreground = iconForeground,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(icon, 0);
+            row.Children.Add(icon);
+
+            // Name + description
+            var infoPanel = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 2
+            };
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text = tool.Name,
+                FontSize = 15,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold
+            });
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text = tool.Description,
+                FontSize = 12,
+                Opacity = 0.6
+            });
+            Grid.SetColumn(infoPanel, 1);
+            row.Children.Add(infoPanel);
+
+            // Settings button (if tool has settings)
+            if (tool.CreateSettingsContent() != null)
+            {
+                var settingsBtn = new Button
+                {
+                    Content = new FontIcon { Glyph = "", FontSize = 14 },
+                    MinWidth = 36,
+                    MinHeight = 36,
+                    CornerRadius = new Microsoft.UI.Xaml.CornerRadius(4),
+                    Tag = tool,
+                    VerticalAlignment = VerticalAlignment.Center
+                };
+                ToolTipService.SetToolTip(settingsBtn, "工具设置");
+                settingsBtn.Click += OnToolSettingsClick;
+                Grid.SetColumn(settingsBtn, 2);
+                row.Children.Add(settingsBtn);
+            }
+
+            // Toggle: show in launchpad
+            var toggle = new ToggleSwitch
+            {
+                IsOn = isInLaunchpad,
+                MinWidth = 50,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tag = tool
+            };
+            toggle.Toggled += OnToolLaunchpadToggle;
+            Grid.SetColumn(toggle, 3);
+            row.Children.Add(toggle);
+
+            card.Child = row;
+            ToolListStack.Children.Add(card);
+        }
+    }
+
+    private IAssistantTool? _currentToolSettingsTool;
+
+    private void OnToolLaunchpadToggle(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is not ToggleSwitch toggle) return;
+        if (toggle.Tag is not IAssistantTool tool) return;
+
+        var settings = App.SettingsService.Load();
+
+        if (toggle.IsOn)
+        {
+            // Add to launchpad if not already present
+            if (!settings.LaunchpadItems.Any(i => i.ToolId == tool.Id))
+            {
+                settings.LaunchpadItems.Add(new LaunchpadItem
+                {
+                    Name = tool.Name,
+                    ToolId = tool.Id
+                });
+            }
+        }
+        else
+        {
+            // Remove from launchpad
+            settings.LaunchpadItems.RemoveAll(i => i.ToolId == tool.Id);
+        }
+
+        App.SettingsService.Save(settings);
+    }
+
+    private void OnToolSettingsClick(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        if (sender is not Button btn) return;
+        if (btn.Tag is not IAssistantTool tool) return;
+        if (tool.CreateSettingsContent() is not UIElement settingsUI) return;
+
+        _currentToolSettingsTool = tool;
+        ToolListPanel.Visibility = Visibility.Collapsed;
+        ToolSettingsPanel.Visibility = Visibility.Visible;
+        ToolSettingsContent.Children.Clear();
+        ToolSettingsContent.Children.Add(settingsUI);
+
+        TitleText.Text = $"{tool.Name} 设置";
+        SubtitleText.Text = tool.Description;
+    }
+
+    private void OnToolSettingsBack(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
+    {
+        _currentToolSettingsTool = null;
+        ToolSettingsPanel.Visibility = Visibility.Collapsed;
+        ToolListPanel.Visibility = Visibility.Visible;
+        TitleText.Text = "小工具";
+        SubtitleText.Text = "管理小工具，添加到启动台快速访问";
+    }
+
+    private static Brush ParseBrush(string hex)
+    {
+        try
+        {
+            hex = hex.TrimStart('#');
+            var a = byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber);
+            var r = byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber);
+            var g = byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber);
+            var b = byte.Parse(hex[6..8], System.Globalization.NumberStyles.HexNumber);
+            return new SolidColorBrush(Color.FromArgb(a, r, g, b));
+        }
+        catch { return new SolidColorBrush(Color.FromArgb(0xFF, 0x60, 0xA5, 0xFA)); }
     }
 
     private void OnOpenLaunchpadClick(object sender, RoutedEventArgs e)

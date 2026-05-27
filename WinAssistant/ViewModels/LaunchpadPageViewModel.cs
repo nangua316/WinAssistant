@@ -5,6 +5,8 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.UI;
+using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
 using WinAssistant.Models;
 using WinAssistant.Services;
@@ -61,7 +63,9 @@ public class LaunchpadPageViewModel : ObservableObject
     {
         if (_itemsLoaded)
         {
-            // Items already in memory, just ensure filter is in sync.
+            // Sync tool items from settings (user may have toggled tools on/off
+            // in the settings page since the last launchpad open).
+            SyncToolItemsFromSettings();
             ApplyFilter();
             IsLoading = false;
             return;
@@ -112,6 +116,40 @@ public class LaunchpadPageViewModel : ObservableObject
                     ApplyFilter();
             });
         });
+    }
+
+    /// <summary>
+    /// Sync tool items (ToolId != null) from settings into the in-memory _items,
+    /// so toggling a tool on/off in settings is reflected the next time the
+    /// launchpad opens, without a full reload.
+    /// </summary>
+    private void SyncToolItemsFromSettings()
+    {
+        var settings = _settingsService.Load();
+        var settingsToolItems = settings.LaunchpadItems
+            .Where(i => i.ToolId != null)
+            .ToList();
+        var settingsToolIds = settingsToolItems
+            .Select(i => i.ToolId)
+            .ToHashSet();
+
+        // Remove tools that were toggled off in settings.
+        var toRemove = _items
+            .Where(i => i.Model.ToolId != null && !settingsToolIds.Contains(i.Model.ToolId))
+            .ToList();
+        foreach (var item in toRemove)
+            _items.Remove(item);
+
+        // Add tools that were toggled on in settings.
+        var currentToolIds = _items
+            .Where(i => i.Model.ToolId != null)
+            .Select(i => i.Model.ToolId)
+            .ToHashSet();
+        foreach (var toolItem in settingsToolItems)
+        {
+            if (!currentToolIds.Contains(toolItem.ToolId))
+                _items.Add(new LaunchpadItemViewModel(toolItem));
+        }
     }
 
     /// <summary>If a cached icon exists on disk, set it synchronously. Returns true if set.</summary>
@@ -430,6 +468,7 @@ public class LaunchpadPageViewModel : ObservableObject
 public class LaunchpadItemViewModel : ObservableObject
 {
     private ImageSource? _iconSource;
+    private readonly IAssistantTool? _tool;
 
     public LaunchpadItem Model { get; }
     public LaunchpadItemViewModel(LaunchpadItem model) : this(model, null) { }
@@ -437,12 +476,25 @@ public class LaunchpadItemViewModel : ObservableObject
     internal LaunchpadItemViewModel(LaunchpadItem model, string? precomputedPinyin)
     {
         Model = model;
+        _tool = model.ToolId != null ? ToolRegistry.Get(model.ToolId) : null;
         _pinyinSearchData = precomputedPinyin ?? ComputePinyin(model.Name);
+
+        if (_tool != null)
+            App.SystemThemeChanged += OnSystemThemeChanged;
     }
 
-    public string Name => Model.Name;
+    private void OnSystemThemeChanged(object? sender, EventArgs e)
+    {
+        OnPropertyChanged(nameof(ToolIconGlyph));
+        OnPropertyChanged(nameof(ToolIconBrush));
+    }
+
+    public string Name => _tool?.Name ?? Model.Name;
     public string AppPath => Model.AppPath;
-    public string FallbackChar => Name.Length > 0 ? Name[..1] : "?";
+    public bool IsTool => _tool != null;
+    public string ToolIconGlyph => _tool?.IconGlyph ?? "";
+    public IAssistantTool? Tool => _tool;
+    public string FallbackChar => _tool != null ? "" : (Name.Length > 0 ? Name[..1] : "?");
 
     private bool _isUnadded;
     /// <summary>True when this item comes from the all-apps cache and is not yet added.</summary>
@@ -457,6 +509,28 @@ public class LaunchpadItemViewModel : ObservableObject
     }
 
     public string ContextMenuText => IsUnadded ? "添加" : "移除";
+
+    /// <summary>Tool icon foreground brush. Falls back to accent blue.</summary>
+    public Brush ToolIconBrush
+    {
+        get
+        {
+            if (_tool?.IconColorHex is string hex)
+            {
+                try
+                {
+                    hex = hex.TrimStart('#');
+                    var a = byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber);
+                    var r = byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber);
+                    var g = byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber);
+                    var b = byte.Parse(hex[6..8], System.Globalization.NumberStyles.HexNumber);
+                    return new SolidColorBrush(Color.FromArgb(a, r, g, b));
+                }
+                catch { }
+            }
+            return new SolidColorBrush(Color.FromArgb(0xFF, 0x60, 0xA5, 0xFA));
+        }
+    }
 
     // Pinyin search data: initials + full pinyin, for matching against user input
     private readonly string _pinyinSearchData;

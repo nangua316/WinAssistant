@@ -65,6 +65,15 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </ListViewItem>
+                <ListViewItem>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE916;" FontSize="16"
+                                  Foreground="{StaticResource AccentBlue}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Text="小工具" FontSize="15"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListViewItem>
                             </ListView>
         </Grid>
 
@@ -229,6 +238,31 @@
                                    FontSize="13" Opacity="0.5"
                                    HorizontalAlignment="Center" />
                     </StackPanel>
+                </Grid>
+            </Grid>
+
+            <!-- ===== Tools panel ===== -->
+            <Grid x:Name="ToolPanel" Grid.Row="1" Visibility="Collapsed">
+                <!-- Tool list sub-view -->
+                <ScrollViewer x:Name="ToolListPanel" VerticalScrollBarVisibility="Auto">
+                    <StackPanel x:Name="ToolListStack" Spacing="8" Margin="0,0,24,0" />
+                </ScrollViewer>
+                <!-- Tool settings sub-view (loaded dynamically) -->
+                <Grid x:Name="ToolSettingsPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Button x:Name="ToolSettingsBackButton"
+                            Content="← 返回工具列表"
+                            Click="OnToolSettingsBack"
+                            Background="Transparent"
+                            Padding="0,0,0,12"
+                            CornerRadius="4"
+                            HorizontalAlignment="Left" />
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <Grid x:Name="ToolSettingsContent" />
+                    </ScrollViewer>
                 </Grid>
             </Grid>
 

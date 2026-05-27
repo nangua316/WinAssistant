@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
 using WinAssistant.ViewModels;
 
@@ -206,6 +207,7 @@ public sealed partial class LaunchpadPage : Page
             AppGrid.SelectedIndex = 0;
         if (AppGrid.SelectedItem is LaunchpadItemViewModel vm)
         {
+            if (HandleToolClick(vm)) return;
             var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
             ShowLaunchToast(action, vm.Name);
             Close();
@@ -220,6 +222,7 @@ public sealed partial class LaunchpadPage : Page
             {
                 ViewModel.AddUnaddedItem(vm);
             }
+            else if (HandleToolClick(vm)) { }
             else
             {
                 var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
@@ -227,6 +230,26 @@ public sealed partial class LaunchpadPage : Page
                 Close();
             }
         }
+    }
+
+    /// <summary>Handles tool item clicks. Returns true if the item is a tool (handled or window-opened).</summary>
+    private bool HandleToolClick(LaunchpadItemViewModel vm)
+    {
+        if (!vm.IsTool || vm.Tool == null) return false;
+        if (vm.Tool.IsOneClickAction)
+        {
+            var msg = vm.Tool.Activate();
+            if (!string.IsNullOrEmpty(msg))
+            {
+                try { HotKeyToast.Show(msg); }
+                catch { }
+            }
+            Close();
+            return true;
+        }
+        ToolHostWindow.OpenOrActivate(vm.Tool);
+        Close();
+        return true;
     }
 
     private async void OnRemoveItem(object sender, RoutedEventArgs e)

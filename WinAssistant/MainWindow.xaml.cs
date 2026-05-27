@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Windows.Graphics;
+using WinAssistant.Controls.Tools;
 
 namespace WinAssistant;
 
@@ -188,6 +189,7 @@ public sealed partial class MainWindow : Window
             {
                 App.DispatcherQueue.TryEnqueue(() =>
                 {
+                    ToolHostWindow.CloseAll();
                     CleanupTrayIcon();
                     Helpers.IconHelper.CleanupTempIcons();
                     App.WinKeyInterceptor.Stop();

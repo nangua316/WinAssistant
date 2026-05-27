@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.Win32;
 using Windows.System;
 using Windows.UI;
+using WinAssistant.Controls.Tools;
 using WinAssistant.Services;
 using WinAssistant.ViewModels;
 
@@ -24,6 +25,10 @@ public partial class App : Application
     public static SettingsService SettingsService { get; } = new();
     public static DoubleKeyDetector DoubleKeyDetector { get; } = new();
     public static WinKeyInterceptor WinKeyInterceptor { get; } = new();
+
+    /// <summary>Fired when the system theme changes (light ↔ dark).</summary>
+    public static event EventHandler? SystemThemeChanged;
+
     private static MainPageViewModel? _mainViewModel;
 
     public static nint WindowHandle =>
@@ -48,7 +53,11 @@ public partial class App : Application
             Environment.Exit(0);
             return;
         }
-        AppDomain.CurrentDomain.ProcessExit += (s, e) => _mutex?.Dispose();
+        AppDomain.CurrentDomain.ProcessExit += (s, e) =>
+        {
+            ToolHostWindow.CloseAll();
+            _mutex?.Dispose();
+        };
 
         // Global exception handlers for crash diagnostics
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
@@ -280,6 +289,7 @@ public partial class App : Application
             {
                 _lastTheme = current;
                 ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
+                SystemThemeChanged?.Invoke(null, EventArgs.Empty);
             }
         };
         _themeTimer.Start();
