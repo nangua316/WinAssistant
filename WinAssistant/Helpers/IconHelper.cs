@@ -116,7 +116,7 @@ public static class IconHelper
     {
         MemoryStream? shResult = null;
 
-        if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+        if (!string.IsNullOrEmpty(filePath) && (File.Exists(filePath) || Directory.Exists(filePath)))
         {
             // Try IShellItemImageFactory first — best quality
             var shellResult = ExtractIconViaShellFactory(filePath, targetSize);
@@ -363,7 +363,7 @@ public static class IconHelper
     /// </summary>
     private static MemoryStream? ExtractIconToPngStream(string filePath, int targetSize)
     {
-        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath)) return null;
+        if (string.IsNullOrEmpty(filePath) || (!File.Exists(filePath) && !Directory.Exists(filePath))) return null;
         
         var hIcon = SHGetFileInfo(filePath);
         if (hIcon == nint.Zero) return null;

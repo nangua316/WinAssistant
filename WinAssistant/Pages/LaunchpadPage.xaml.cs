@@ -1,3 +1,4 @@
+using Microsoft.Windows.Storage.Pickers;
 using System.Collections.Specialized;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -25,6 +26,8 @@ public sealed partial class LaunchpadPage : Page
         set { _isPinned = value; PinButton.IsChecked = value; }
     }
 
+    public nint? OwnerHwnd { get; set; }
+
     public LaunchpadPage()
     {
         InitializeComponent();
@@ -39,6 +42,7 @@ public sealed partial class LaunchpadPage : Page
         };
         SizeChanged += (_, _) => UpdateItemSize();
         AppGrid.Loaded += (_, _) => UpdateItemSize();
+        AppGrid.ItemContainerTransitions = null;
         _dragHandler = new LaunchpadDragHandler(
             AppGrid, DragCanvas,
             ViewModel.Items,
@@ -67,9 +71,11 @@ public sealed partial class LaunchpadPage : Page
 
     public void Activate()
     {
+        var settings = App.SettingsService.Load();
+        ViewModel.PreloadSearchText(settings.LastSearchText ?? "");
         ViewModel.LoadItems();
         ViewModel.SetXamlRoot(this.XamlRoot);
-        SearchBox.Text = "";
+        SearchBox.Text = settings.LastSearchText ?? "";
         AppGrid.SelectedItem = null;
         UpdateItemSize();
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
@@ -123,11 +129,60 @@ public sealed partial class LaunchpadPage : Page
         if (hitItem != null) return;
 
         var menu = new MenuFlyout();
-        var addItem = new MenuFlyoutItem { Text = "+ 添加应用" };
+        var addItem = new MenuFlyoutItem
+        {
+            Text = "添加应用",
+            Icon = new FontIcon { Glyph = "" }
+        };
         addItem.Click += (s, args) => ViewModel.AddAppCommand.Execute(null);
         menu.Items.Add(addItem);
+        var folderItem = new MenuFlyoutItem
+        {
+            Text = "添加文件夹",
+            Icon = new FontIcon { Glyph = "" }
+        };
+        folderItem.Click += OnAddFolderClick;
+        menu.Items.Add(folderItem);
+        menu.Items.Add(new MenuFlyoutSeparator());
+        var settingsItem = new MenuFlyoutItem
+        {
+            Text = "打开设置",
+            Icon = new FontIcon { Glyph = "" }
+        };
+        settingsItem.Click += (s, args) => App.DispatcherQueue.TryEnqueue(() =>
+        {
+            if (App.Window is MainWindow main) main.ShowSettings();
+        });
+        menu.Items.Add(settingsItem);
         menu.ShowAt((UIElement)sender, e.GetPosition((UIElement)sender));
         e.Handled = true;
+    }
+
+    private async void OnAddFolderClick(object? sender, RoutedEventArgs e)
+    {
+        // Suspend focus-lost close while picker is open
+        PinChanged?.Invoke(this, true);
+
+        try
+        {
+            var hwnd = OwnerHwnd ?? WinRT.Interop.WindowNative.GetWindowHandle(App.Window);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            var folderPicker = new FolderPicker(windowId)
+            {
+                SuggestedStartLocation = PickerLocationId.Desktop,
+                ViewMode = PickerViewMode.List,
+                CommitButtonText = "选择文件夹"
+            };
+
+            var result = await folderPicker.PickSingleFolderAsync();
+            if (result != null)
+                ViewModel.AddFolderItem(result.Path, System.IO.Path.GetFileName(result.Path));
+        }
+        finally
+        {
+            // Restore focus-lost close behavior
+            PinChanged?.Invoke(this, IsPinned);
+        }
     }
 
     private void OnPageKeyDown(object sender, KeyRoutedEventArgs e)
@@ -210,7 +265,7 @@ public sealed partial class LaunchpadPage : Page
             if (HandleToolClick(vm)) return;
             var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
             ShowLaunchToast(action, vm.Name);
-            Close();
+            Close(clearSearch: true);
         }
     }
 
@@ -227,7 +282,7 @@ public sealed partial class LaunchpadPage : Page
             {
                 var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
                 ShowLaunchToast(action, vm.Name);
-                Close();
+                Close(clearSearch: true);
             }
         }
     }
@@ -244,11 +299,11 @@ public sealed partial class LaunchpadPage : Page
                 try { HotKeyToast.Show(msg); }
                 catch { }
             }
-            Close();
+            Close(clearSearch: true);
             return true;
         }
         ToolHostWindow.OpenOrActivate(vm.Tool);
-        Close();
+        Close(clearSearch: true);
         return true;
     }
 
@@ -292,7 +347,14 @@ public sealed partial class LaunchpadPage : Page
         NoResultsPanel.Visibility = hasItems && !hasFilterResults ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private void Close() => CloseRequested?.Invoke(this, EventArgs.Empty);
+    private void Close(bool clearSearch = false)
+    {
+        // persist search text before closing (unless app was launched)
+        var settings = App.SettingsService.Load();
+        settings.LastSearchText = clearSearch ? "" : ViewModel.SearchText;
+        App.SettingsService.Save(settings);
+        CloseRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     private static void ShowLaunchToast(string action, string appName)
     {

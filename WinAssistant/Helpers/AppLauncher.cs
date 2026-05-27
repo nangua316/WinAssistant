@@ -14,6 +14,13 @@ public static class AppLauncher
         {
             Log($"LaunchOrActivate: {appPath} aumid={aumid}");
 
+            // Directory — open in Explorer
+            if (!string.IsNullOrEmpty(appPath) && Directory.Exists(appPath))
+            {
+                Process.Start(new ProcessStartInfo { FileName = appPath, UseShellExecute = true });
+                return "launch";
+            }
+
             if (!string.IsNullOrEmpty(appPath) && File.Exists(appPath))
             {
                 var appDir = Path.GetDirectoryName(appPath);

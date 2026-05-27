@@ -10,4 +10,5 @@ public class AppSettings
     public List<HotKeyBinding> Bindings { get; set; } = [];
     public List<LaunchpadItem> LaunchpadItems { get; set; } = [];
     public Dictionary<string, string> ToolSettings { get; set; } = [];
+    public string LastSearchText { get; set; } = "";
 }

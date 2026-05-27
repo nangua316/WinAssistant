@@ -55,6 +55,10 @@ public class LaunchpadPageViewModel : ObservableObject
         }
     }
 
+    /// <summary>Set search text without triggering PropertyChanged or filter.
+    /// Used before LoadItems to avoid async binding delay causing visual jumps.</summary>
+    public void PreloadSearchText(string text) => _searchText = text;
+
     public ICommand AddAppCommand { get; }
 
     private bool _itemsLoaded;
@@ -421,6 +425,24 @@ public class LaunchpadPageViewModel : ObservableObject
         picker.CloseRequested += () => dialog.Hide();
 
         await dialog.ShowAsync();
+    }
+
+    internal void AddFolderItem(string folderPath, string folderName)
+    {
+        var finalName = folderName;
+        int suffix = 2;
+        while (_items.Any(i => i.Name.Equals(finalName, StringComparison.OrdinalIgnoreCase)))
+            finalName = $"{folderName} ({suffix++})";
+
+        var item = new LaunchpadItem
+        {
+            Name = finalName,
+            AppPath = folderPath
+        };
+        var vm = new LaunchpadItemViewModel(item);
+        _items.Add(vm);
+        SaveItems();
+        LoadSingleIcon(vm);
     }
 
     private static readonly SemaphoreSlim _iconLoadThrottle = new(3, 3);

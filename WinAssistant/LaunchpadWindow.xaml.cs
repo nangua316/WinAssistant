@@ -110,6 +110,7 @@ public sealed partial class LaunchpadWindow : Window
         if (_page == null)
         {
             _page = new LaunchpadPage();
+            _page.OwnerHwnd = _hwnd;
             _page.CloseRequested += OnCloseRequested;
             _page.PinChanged += (_, pinned) => _isPinned = pinned;
             ContentScaleHost.Children.Add(_page);
@@ -166,13 +167,27 @@ public sealed partial class LaunchpadWindow : Window
 
     private void OnCloseRequested(object? sender, EventArgs e)
     {
-        try { CloseCore(); }
+        // Page.Close() already saved search text — no need to save again
+        try { CloseCore(skipSave: true); }
         catch { }
     }
 
-    private void CloseCore()
+    private void CloseCore(bool skipSave = false)
     {
+        if (!skipSave) SaveSearchText();
         ForceHide();
+    }
+
+    private void SaveSearchText()
+    {
+        try
+        {
+            if (_page == null) return;
+            var settings = App.SettingsService.Load();
+            settings.LastSearchText = _page.ViewModel.SearchText;
+            App.SettingsService.Save(settings);
+        }
+        catch { }
     }
 
     private void ForceHide()

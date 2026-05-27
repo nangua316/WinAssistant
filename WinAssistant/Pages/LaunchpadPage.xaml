@@ -242,9 +242,9 @@
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
                                                Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
-                                    <!-- Tool icon glyph (only when no extracted icon) -->
+                                    <!-- Tool icon glyph inside circle (only when no extracted icon) -->
                                     <TextBlock Text="{x:Bind ToolIconGlyph, Mode=OneWay}"
-                                               FontSize="28"
+                                               FontSize="32"
                                                Foreground="{x:Bind ToolIconBrush, Mode=OneWay}"
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
