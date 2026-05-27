@@ -102,17 +102,8 @@ public sealed partial class MainPage : Page
                 ColumnSpacing = 14
             };
 
-            // Icon
-            var iconForeground = tool.IconColorHex is string hex
-                ? ParseBrush(hex)
-                : (Brush)Resources["AccentBlue"];
-            var icon = new TextBlock
-            {
-                Text = tool.IconGlyph,
-                FontSize = 28,
-                Foreground = iconForeground,
-                VerticalAlignment = VerticalAlignment.Center
-            };
+            // Icon — prefer extracted icon, fall back to glyph
+            FrameworkElement icon = CreateToolIcon(tool);
             Grid.SetColumn(icon, 0);
             row.Children.Add(icon);
 
@@ -173,6 +164,53 @@ public sealed partial class MainPage : Page
     }
 
     private IAssistantTool? _currentToolSettingsTool;
+
+    private static FrameworkElement CreateToolIcon(IAssistantTool tool)
+    {
+        var container = new Grid
+        {
+            Width = 40,
+            Height = 40,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+
+        var extractPath = tool.IconExtractPath;
+        if (!string.IsNullOrEmpty(extractPath))
+        {
+            var cachedIcon = IconHelper.ExtractAppIconToAppData(extractPath, 48);
+            if (cachedIcon != null)
+            {
+                try
+                {
+                    var img = new Image
+                    {
+                        Width = 36,
+                        Height = 36,
+                        HorizontalAlignment = HorizontalAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center
+                    };
+                    var bitmap = new BitmapImage { UriSource = new Uri(cachedIcon) };
+                    img.Source = bitmap;
+                    container.Children.Add(img);
+                    return container;
+                }
+                catch { }
+            }
+        }
+
+        var iconForeground = tool.IconColorHex is string hex
+            ? ParseBrush(hex)
+            : new SolidColorBrush(Color.FromArgb(0xFF, 0x60, 0xA5, 0xFA));
+        container.Children.Add(new TextBlock
+        {
+            Text = tool.IconGlyph,
+            FontSize = 24,
+            Foreground = iconForeground,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+        return container;
+    }
 
     private void OnToolLaunchpadToggle(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {

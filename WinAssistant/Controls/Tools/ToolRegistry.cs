@@ -7,6 +7,10 @@ public static class ToolRegistry
     static ToolRegistry()
     {
         Register(new ThemeSwitcherTool());
+        Register(new MobileHotspotTool());
+        Register(new WeChatDualTool());
+        Register(new OneClickLaunchTool());
+        Register(new WifiPasswordTool());
     }
 
     public static IReadOnlyCollection<IAssistantTool> All => _tools.Values;

@@ -480,7 +480,31 @@ public class LaunchpadItemViewModel : ObservableObject
         _pinyinSearchData = precomputedPinyin ?? ComputePinyin(model.Name);
 
         if (_tool != null)
+        {
             App.SystemThemeChanged += OnSystemThemeChanged;
+
+            // Extract tool icon if the tool provides an extract path
+            if (_tool.IconExtractPath is string extractPath && !string.IsNullOrEmpty(extractPath))
+                _ = LoadToolIconAsync(extractPath);
+        }
+    }
+
+    private async Task LoadToolIconAsync(string extractPath)
+    {
+        var tempFile = await Task.Run(() =>
+            IconHelper.ExtractAppIconToAppData(extractPath, 64));
+        if (tempFile == null) return;
+
+        App.DispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                var bitmap = new BitmapImage();
+                bitmap.UriSource = new Uri(tempFile);
+                IconSource = bitmap;
+            }
+            catch { }
+        });
     }
 
     private void OnSystemThemeChanged(object? sender, EventArgs e)
@@ -549,8 +573,18 @@ public class LaunchpadItemViewModel : ObservableObject
     public ImageSource? IconSource
     {
         get => _iconSource;
-        set => SetProperty(ref _iconSource, value);
+        set
+        {
+            if (SetProperty(ref _iconSource, value))
+            {
+                OnPropertyChanged(nameof(HasIcon));
+                OnPropertyChanged(nameof(ShowToolGlyph));
+            }
+        }
     }
+
+    public bool HasIcon => _iconSource != null;
+    public bool ShowToolGlyph => IsTool && _iconSource == null;
 
     private bool _isBeingDragged;
     public bool IsBeingDragged

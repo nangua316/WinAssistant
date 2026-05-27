@@ -50,7 +50,7 @@ public sealed partial class MainWindow : Window
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
-        AppWindow.Resize(new SizeInt32(1500, 1500));
+        AppWindow.Resize(new SizeInt32(1800, 1500));
 
         // Subclass the window for hotkey + tray messages
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);

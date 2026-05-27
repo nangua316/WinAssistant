@@ -1,7 +1,6 @@
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media;
 using Windows.Graphics;
 
 namespace WinAssistant.Controls.Tools;
@@ -17,11 +16,7 @@ public sealed partial class ToolHostWindow : Window
         _tool = tool;
 
         Title = tool.Name;
-        SystemBackdrop = new MicaBackdrop();
         ExtendsContentIntoTitleBar = true;
-
-        var (w, h) = tool.DefaultWindowSize;
-        AppWindow.Resize(new SizeInt32((int)w, (int)h));
 
         var content = tool.CreateContent();
         ContentRoot.Children.Add(content);
@@ -44,7 +39,43 @@ public sealed partial class ToolHostWindow : Window
 
         win = new ToolHostWindow(tool);
         _instances[tool.Id] = win;
+
+        // Show off-screen first so WinUI content renders before the user sees it
+        var (w, h) = tool.DefaultWindowSize;
+        win.AppWindow.MoveAndResize(new RectInt32(-9999, -9999, (int)w, (int)h));
         win.Activate();
+
+        // After composition, move to centered position
+        var timer = new Microsoft.UI.Xaml.DispatcherTimer();
+        timer.Interval = TimeSpan.FromMilliseconds(60);
+        timer.Tick += (s, e) =>
+        {
+            timer.Stop();
+            CenterOnScreen(win, tool);
+        };
+        timer.Start();
+    }
+
+    private static void CenterOnScreen(ToolHostWindow win, IAssistantTool tool)
+    {
+        try
+        {
+            var (w, h) = tool.DefaultWindowSize;
+            var display = DisplayArea.GetFromWindowId(win.AppWindow.Id, DisplayAreaFallback.Nearest);
+            var workArea = display.WorkArea;
+            var x = workArea.X + (workArea.Width - (int)w) / 2;
+            var y = workArea.Y + (workArea.Height - (int)h) / 2;
+            win.AppWindow.Move(new PointInt32(x, y));
+        }
+        catch { }
+    }
+
+    public static void CloseById(string toolId)
+    {
+        if (_instances.TryGetValue(toolId, out var win))
+        {
+            win.Close();
+        }
     }
 
     public static void CloseAll()

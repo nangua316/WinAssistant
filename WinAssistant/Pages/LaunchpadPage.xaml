@@ -242,19 +242,19 @@
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
                                                Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
-                                    <!-- Tool icon (TextBlock for broad Unicode/emoji support) -->
+                                    <!-- Tool icon glyph (only when no extracted icon) -->
                                     <TextBlock Text="{x:Bind ToolIconGlyph, Mode=OneWay}"
                                                FontSize="28"
                                                Foreground="{x:Bind ToolIconBrush, Mode=OneWay}"
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
-                                               Visibility="{x:Bind IsTool, Converter={StaticResource BoolToVisibilityConverter}}" />
-                                    <!-- Actual app icon (non-tools only) -->
+                                               Visibility="{x:Bind ShowToolGlyph, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <!-- Extracted app icon (for both tools and regular apps) -->
                                     <Image Source="{x:Bind IconSource, Mode=OneWay}"
                                            Width="52" Height="52"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
-                                           Visibility="{x:Bind IsTool, Converter={StaticResource InverseBoolToVisibilityConverter}}" />
+                                           Visibility="{x:Bind HasIcon, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                                 </Grid>
                             </Border>
 
