@@ -23,17 +23,10 @@ public sealed partial class MainPage : Page
     {
         ViewModel.LoadSettings();
         _reorder = new ListViewDragReorder(BindingListView, ViewModel.Bindings, ViewModel.SaveSettings);
-        App.HotKeyService.HotKeyPressed += OnHotKeyPressed;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        App.HotKeyService.HotKeyPressed -= OnHotKeyPressed;
-    }
-
-    private void OnHotKeyPressed(object? sender, HotKeyBinding binding)
-    {
-        App.DispatcherQueue.TryEnqueue(() => ViewModel.HandleHotKeyPressed(binding));
     }
 
     private void OnMenuSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -122,4 +115,5 @@ public sealed partial class MainPage : Page
     }
 
     #endregion
+
 }
