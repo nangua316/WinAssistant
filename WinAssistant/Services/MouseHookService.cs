@@ -10,9 +10,9 @@ public class MouseHookService : IDisposable
     private bool _trackX1;
     private bool _trackX2;
 
-    // Prevent accidental XButton triggers when user is left-clicking (double-click,
-    // drag-select, etc.) — ignore XButton events within 500ms of a left-button event.
-    private long _lastLeftButtonTime;
+    // Ignore XButton events within 500ms of any main-button click (left, right, middle)
+    // to prevent accidental triggers during double-click, right-click context menu, etc.
+    private long _lastClickTime;
 
     public event EventHandler? MiddleButtonClicked;
     public event EventHandler? XButton1Clicked;
@@ -53,17 +53,16 @@ public class MouseHookService : IDisposable
             switch ((uint)wParam)
             {
                 case WM_LBUTTONDOWN:
-                    _lastLeftButtonTime = Environment.TickCount64;
-                    break;
-
+                case WM_RBUTTONDOWN:
                 case WM_MBUTTONDOWN:
-                    if (_trackMiddle)
+                    _lastClickTime = Environment.TickCount64;
+                    if ((uint)wParam == WM_MBUTTONDOWN && _trackMiddle)
                         App.DispatcherQueue.TryEnqueue(() => MiddleButtonClicked?.Invoke(this, EventArgs.Empty));
                     break;
 
                 case WM_XBUTTONDOWN:
-                    // Debounce: XButton within 500ms of left-click is likely accidental
-                    if (Environment.TickCount64 - _lastLeftButtonTime < 500)
+                    // Debounce: XButton within 500ms of any click is likely accidental
+                    if (Environment.TickCount64 - _lastClickTime < 500)
                         break;
 
                     var msll = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
@@ -99,6 +98,7 @@ public class MouseHookService : IDisposable
 
     private const int WH_MOUSE_LL = 14;
     private const uint WM_LBUTTONDOWN = 0x0201;
+    private const uint WM_RBUTTONDOWN = 0x0204;
     private const uint WM_MBUTTONDOWN = 0x0207;
     private const uint WM_XBUTTONDOWN = 0x020B;
     private const ushort XBUTTON1 = 0x0001;

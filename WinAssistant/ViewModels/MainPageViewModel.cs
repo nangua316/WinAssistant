@@ -17,7 +17,6 @@ public class MainPageViewModel : ObservableObject
     private ObservableCollection<HotKeyBindingViewModel> _bindings = [];
     private string _statusMessage = "";
     private bool _isAutoStart;
-    private bool _isLaunchpadEnabled;
     private bool _isMouseTriggerMiddle;
     private bool _isMouseTriggerX1;
     private bool _isMouseTriggerX2;
@@ -88,23 +87,6 @@ public class MainPageViewModel : ObservableObject
             }
         }
     }
-
-    public bool IsLaunchpadEnabled
-    {
-        get => _isLaunchpadEnabled;
-        set
-        {
-            if (SetProperty(ref _isLaunchpadEnabled, value))
-            {
-                OnPropertyChanged(nameof(LaunchpadSettingsVisibility));
-                UpdateTriggerServices();
-                SaveSettings();
-            }
-        }
-    }
-
-    public Microsoft.UI.Xaml.Visibility LaunchpadSettingsVisibility =>
-        _isLaunchpadEnabled ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
     public bool IsMouseTriggerMiddle
     {
@@ -219,9 +201,6 @@ public class MainPageViewModel : ObservableObject
         );
         _isAutoStart = settings.IsAutoStart;
         OnPropertyChanged(nameof(IsAutoStart));
-        _isLaunchpadEnabled = settings.IsLaunchpadEnabled;
-        OnPropertyChanged(nameof(IsLaunchpadEnabled));
-
         _isMouseTriggerMiddle = settings.MouseTriggers.Contains("MiddleButton");
         _isMouseTriggerX1 = settings.MouseTriggers.Contains("XButton1");
         _isMouseTriggerX2 = settings.MouseTriggers.Contains("XButton2");
@@ -261,7 +240,6 @@ public class MainPageViewModel : ObservableObject
     {
         var current = _settingsService.Load();
         current.IsAutoStart = _isAutoStart;
-        current.IsLaunchpadEnabled = _isLaunchpadEnabled;
         current.MouseTriggers = BuildMouseTriggersList();
         current.KeyboardTriggers = BuildKeyboardTriggersList();
         current.LaunchpadHotKey = _launchpadHotKeyDisplay;
@@ -728,15 +706,6 @@ public class MainPageViewModel : ObservableObject
 
     private void UpdateTriggerServices()
     {
-        if (!_isLaunchpadEnabled)
-        {
-            App.MouseHookService.Stop();
-            App.SingleKeyInterceptor.Stop();
-            App.UnregisterTriggerHotKey(App.GLOBAL_HOTKEY_ID);
-            App.UnregisterTriggerHotKey(App.ALTSPACE_HOTKEY_ID);
-            return;
-        }
-
         // Mouse triggers
         App.MouseHookService.Stop();
         if (_isMouseTriggerMiddle || _isMouseTriggerX1 || _isMouseTriggerX2)

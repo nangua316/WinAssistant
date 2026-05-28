@@ -57,7 +57,7 @@ public sealed partial class MainPage : Page
         TitleText.Text = index switch
         {
             0 => "常规设置",
-            1 => "启动台设置",
+            1 => "启动台快捷触发",
             2 => "全局快捷键管理",
             3 => "AI 技能",
             4 => "小工具",
@@ -67,7 +67,7 @@ public sealed partial class MainPage : Page
         SubtitleText.Text = index switch
         {
             0 => "设置应用程序的基本选项",
-            1 => "配置启动台的触发方式和行为",
+            1 => "配置触发方式和行为",
             2 => "添加应用并设置全局快捷键",
             3 => "配置 AI 并管理已创建的技能",
             4 => "管理小工具，添加到启动台快速访问",

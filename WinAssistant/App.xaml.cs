@@ -149,8 +149,7 @@ public partial class App : Application
 
     private static void OnLaunchpadTriggered(object? sender, EventArgs e)
     {
-        if (SettingsService.Load().IsLaunchpadEnabled)
-            DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
+        DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
     }
 
     private static void ActivateExistingInstance()
