@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using WinAssistant.Controls.AiChat;
 using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
 using WinAssistant.ViewModels;
@@ -345,6 +346,18 @@ public sealed partial class LaunchpadPage : Page
         var hasFilterResults = ViewModel.FilteredItems.Count > 0;
         EmptyStatePanel.Visibility = !hasItems ? Visibility.Visible : Visibility.Collapsed;
         NoResultsPanel.Visibility = hasItems && !hasFilterResults ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private static ChatWindow? _chatWindow;
+
+    private void OnAiChatClick(object sender, RoutedEventArgs e)
+    {
+        if (_chatWindow == null)
+        {
+            _chatWindow = new ChatWindow();
+            _chatWindow.Closed += (_, _) => _chatWindow = null;
+        }
+        _chatWindow.Activate();
     }
 
     private void Close(bool clearSearch = false)

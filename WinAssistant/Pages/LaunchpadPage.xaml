@@ -323,10 +323,32 @@
             <!-- ===== Bottom Bar ===== -->
             <Border Grid.Row="2" Margin="0,8,0,0" Padding="0,4"
                     Background="Transparent">
-                <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                           Foreground="{StaticResource TextDimBrush}"
-                           FontSize="12"
-                           VerticalAlignment="Center" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                               Foreground="{StaticResource TextDimBrush}"
+                               FontSize="12"
+                               VerticalAlignment="Center" />
+                    <!-- AI 对话按钮 -->
+                    <Button Grid.Column="1"
+                            x:Name="AiChatButton"
+                            Click="OnAiChatClick"
+                            Background="{StaticResource AccentDimBrush}"
+                            Foreground="{StaticResource AccentBrush}"
+                            BorderThickness="0"
+                            CornerRadius="8"
+                            Padding="10,4"
+                            MinHeight="30"
+                            FontSize="12">
+                        <StackPanel Orientation="Horizontal" Spacing="5">
+                            <TextBlock Text="🤖" FontSize="14" />
+                            <TextBlock Text="AI 指令" FontSize="12" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

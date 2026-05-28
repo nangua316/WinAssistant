@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.Win32;
 using Windows.System;
 using Windows.UI;
+using WinAssistant.Controls.AiChat;
 using WinAssistant.Controls.Tools;
 using WinAssistant.Services;
 using WinAssistant.ViewModels;
@@ -25,6 +26,9 @@ public partial class App : Application
     public static SettingsService SettingsService { get; } = new();
     public static MouseHookService MouseHookService { get; } = new();
     public static SingleKeyInterceptor SingleKeyInterceptor { get; } = new();
+    public static QwenService QwenService { get; } = new();
+    public static SkillLibraryService SkillLibraryService { get; } = new();
+    public static SkillExecutionService SkillExecutionService { get; } = new(QwenService);
 
     /// <summary>Fired when the system theme changes (light ↔ dark).</summary>
     public static event EventHandler? SystemThemeChanged;
@@ -43,7 +47,6 @@ public partial class App : Application
 
     public App()
     {
-        // Enforce single instance via named mutex
         _mutex = new Mutex(true, SingleInstanceMutex, out bool createdNew);
         if (!createdNew)
         {
@@ -59,7 +62,6 @@ public partial class App : Application
             _mutex?.Dispose();
         };
 
-        // Global exception handlers for crash diagnostics
         AppDomain.CurrentDomain.UnhandledException += (s, e) =>
         {
             var ex = e.ExceptionObject as Exception;
@@ -85,7 +87,6 @@ public partial class App : Application
             e.SetObserved();
         };
 
-        // Follow system theme at startup.
         _lastTheme = GetSystemTheme();
         RequestedTheme = _lastTheme;
 
@@ -95,10 +96,8 @@ public partial class App : Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // Safety: if the taskbar was hidden by a previous crash, restore it now.
         RestoreTaskbar();
 
-        // Catch WinUI-level exceptions (dispatcher timers, event handlers, etc.)
         Current.UnhandledException += (s, e) =>
         {
             try
@@ -116,24 +115,21 @@ public partial class App : Application
         DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         HotKeyService.Initialize(WindowHandle);
         Window.Activate();
-        // Hide MainWindow immediately — LaunchpadWindow is the primary UI
         ShowWindow(App.WindowHandle, SW_HIDE);
-        // Register launchpad trigger handlers before LoadSettings starts services
+
         MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
         MouseHookService.XButton1Clicked += OnLaunchpadTriggered;
         MouseHookService.XButton2Clicked += OnLaunchpadTriggered;
         SingleKeyInterceptor.Triggered += OnLaunchpadTriggered;
 
-        // Load settings and register hotkeys before showing anything.
         _mainViewModel!.LoadSettings();
-        // Launchpad as the home page — show via LaunchpadWindow (same as hotkey trigger)
+        SkillLibraryService.Load();
+        var appSettings = SettingsService.Load();
+        QwenService.Configure(appSettings.AiApiKey, appSettings.AiEndpoint, appSettings.AiChatModel);
         DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
-        // LaunchpadWindow is created lazily on first Open() call
-        // — no flash at startup.
 
         WinAssistant.Services.AppScanner.PreloadCache();
 
-        // Apply system theme to the root visual and poll for changes.
         ApplyThemeToRoot();
         StartThemeListener();
     }
@@ -164,7 +160,6 @@ public partial class App : Application
             var hwnd = FindWindowW(null, "WinAssistant - 全局快捷键工具");
             if (hwnd == nint.Zero)
             {
-                // Fallback: search by process
                 foreach (var proc in System.Diagnostics.Process.GetProcessesByName("WinAssistant"))
                 {
                     var h = proc.MainWindowHandle;

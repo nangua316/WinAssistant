@@ -4,119 +4,111 @@ namespace WinAssistant.Services;
 
 /// <summary>
 /// Detects when a specific key is pressed and released alone (no other key
-/// pressed while it is held). Used for "single Ctrl press" trigger.
+/// pressed while it is held). Uses GetAsyncKeyState polling instead of a
+/// low-level keyboard hook to avoid Windows silently removing the hook.
 /// </summary>
 public class SingleKeyInterceptor : IDisposable
 {
-    private nint _hookId;
-    private LowLevelKeyboardProc? _proc;
-    private int _targetVk;
-    private bool _keyHeld;
+    private Thread? _pollThread;
+    private volatile bool _running;
+    private volatile bool _keyWasDown;
+    private bool _confirmDown;
     private bool _comboUsed;
+    private int _targetVk;
 
     public event EventHandler? Triggered;
 
-    public bool IsRunning => _hookId != nint.Zero;
+    public bool IsRunning => _running;
 
     public void Start(int virtualKey)
     {
-        if (_hookId != nint.Zero) return;
-
+        if (_running) return;
         _targetVk = virtualKey;
-        _proc = HookCallback;
-        using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
-        using var mainModule = curProcess.MainModule;
-        if (mainModule != null)
-            _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _proc,
-                GetModuleHandle(mainModule.ModuleName), 0);
+        _running = true;
+        _keyWasDown = false;
+        _confirmDown = false;
+        _comboUsed = false;
+        _pollThread = new Thread(PollLoop) { IsBackground = true };
+        _pollThread.Start();
     }
 
     public void Stop()
     {
-        if (_hookId == nint.Zero) return;
-        UnhookWindowsHookEx(_hookId);
-        _hookId = nint.Zero;
-        _proc = null;
-        _keyHeld = false;
+        _running = false;
+        _pollThread = null;
+        _keyWasDown = false;
+        _confirmDown = false;
         _comboUsed = false;
     }
 
-    private nint HookCallback(int nCode, nint wParam, nint lParam)
+    private void PollLoop()
     {
-        if (nCode >= 0)
+        while (_running)
         {
-            int vkCode = Marshal.ReadInt32(lParam);
-            bool isTarget = IsTargetKey(vkCode);
+            bool isDown = IsKeyDown(_targetVk);
 
-            if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
+            if (isDown && !_keyWasDown)
             {
-                if (isTarget)
+                if (_confirmDown)
                 {
-                    if (_keyHeld)
-                        _comboUsed = true;
-                    _keyHeld = true;
+                    _keyWasDown = true;
+                    _confirmDown = false;
                 }
-                else if (_keyHeld)
+                else
                 {
+                    _confirmDown = true;
+                }
+            }
+            else if (isDown && _keyWasDown)
+            {
+                // Ctrl is held — detect if any other key is also pressed (combo)
+                _confirmDown = false;
+                if (!_comboUsed && IsAnyComboKeyDown())
                     _comboUsed = true;
-                }
             }
-            else if (wParam == WM_KEYUP || wParam == WM_SYSKEYUP)
+            else if (!isDown && _keyWasDown)
             {
-                if (isTarget && _keyHeld)
+                _keyWasDown = false;
+                _confirmDown = false;
+                bool wasCombo = _comboUsed;
+                _comboUsed = false;
+                if (!wasCombo && !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT) &&
+                    !IsKeyDown(VK_LWIN) && !IsKeyDown(VK_RWIN))
                 {
-                    _keyHeld = false;
-                    if (!_comboUsed)
-                        App.DispatcherQueue.TryEnqueue(() => Triggered?.Invoke(this, EventArgs.Empty));
+                    App.DispatcherQueue?.TryEnqueue(() => Triggered?.Invoke(this, EventArgs.Empty));
                 }
             }
-        }
+            else
+            {
+                _confirmDown = false;
+                _comboUsed = false;
+            }
 
-        return CallNextHookEx(nint.Zero, nCode, wParam, lParam);
+            Thread.Sleep(30);
+        }
     }
 
-    private bool IsTargetKey(int vkCode)
+    private static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
+
+    /// <summary>Check if any letter/number/function key is pressed (common shortcut combos).</summary>
+    private static bool IsAnyComboKeyDown()
     {
-        if (vkCode == _targetVk) return true;
-        if (_targetVk == (int)Windows.System.VirtualKey.Control)
-            return vkCode == VK_LCONTROL || vkCode == VK_RCONTROL;
-        if (_targetVk == (int)Windows.System.VirtualKey.Menu)
-            return vkCode == VK_LMENU || vkCode == VK_RMENU;
-        if (_targetVk == (int)Windows.System.VirtualKey.Shift)
-            return vkCode == VK_LSHIFT || vkCode == VK_RSHIFT;
+        // Check A-Z, 0-9, and F1-F12
+        for (int vk = 0x30; vk <= 0x5A; vk++) // 0-9, A-Z
+            if (IsKeyDown(vk)) return true;
+        for (int vk = 0x70; vk <= 0x7B; vk++) // F1-F12
+            if (IsKeyDown(vk)) return true;
         return false;
     }
 
     public void Dispose() => Stop();
 
-    #region P/Invoke
-
-    private delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    private static extern nint SetWindowsHookEx(int idHook, LowLevelKeyboardProc lpfn, nint hMod, uint dwThreadId);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool UnhookWindowsHookEx(nint hhk);
-
     [DllImport("user32.dll")]
-    private static extern nint CallNextHookEx(nint hhk, int nCode, nint wParam, nint lParam);
+    private static extern short GetAsyncKeyState(int vKey);
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-    private static extern nint GetModuleHandle(string lpModuleName);
-
-    private const int WH_KEYBOARD_LL = 13;
-    private const int WM_KEYDOWN = 0x0100;
-    private const int WM_KEYUP = 0x0101;
-    private const int WM_SYSKEYDOWN = 0x0104;
-    private const int WM_SYSKEYUP = 0x0105;
-    private const int VK_LCONTROL = 0xA2;
-    private const int VK_RCONTROL = 0xA3;
-    private const int VK_LMENU = 0xA4;
-    private const int VK_RMENU = 0xA5;
-    private const int VK_LSHIFT = 0xA0;
-    private const int VK_RSHIFT = 0xA1;
-
-    #endregion
+    // Virtual-key codes for modifier keys
+    private const int VK_MENU = 0x12;    // Alt
+    private const int VK_SHIFT = 0x10;
+    private const int VK_LWIN = 0x5B;
+    private const int VK_RWIN = 0x5C;
 }
