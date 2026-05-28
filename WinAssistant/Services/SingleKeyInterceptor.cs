@@ -90,14 +90,18 @@ public class SingleKeyInterceptor : IDisposable
 
     private static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
-    /// <summary>Check if any letter/number/function key is pressed (common shortcut combos).</summary>
+    /// <summary>Check if any key other than Ctrl is pressed (prevents false triggers
+    /// when Ctrl is used in regular shortcuts like Ctrl+Backspace, Ctrl+Space, etc.).</summary>
     private static bool IsAnyComboKeyDown()
     {
-        // Check A-Z, 0-9, and F1-F12
-        for (int vk = 0x30; vk <= 0x5A; vk++) // 0-9, A-Z
+        // Skip VK_CONTROL itself (0x11), and modifiers (Alt/Shift/Win) since
+        // those are checked separately in the release logic.
+        for (int vk = 0x08; vk <= 0xFE; vk++)
+        {
+            if (vk == 0x11 || vk == VK_MENU || vk == VK_SHIFT ||
+                vk == VK_LWIN || vk == VK_RWIN) continue;
             if (IsKeyDown(vk)) return true;
-        for (int vk = 0x70; vk <= 0x7B; vk++) // F1-F12
-            if (IsKeyDown(vk)) return true;
+        }
         return false;
     }
 
