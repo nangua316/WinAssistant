@@ -1,0 +1,46 @@
+#!/bin/sh
+# Auto-increment version on every commit.
+# Version format: YYYY.M.D.seq  (seq resets daily)
+
+set -e
+
+file="WinAssistant/Properties/AssemblyInfo.cs"
+[ -f "$file" ] || exit 0
+
+# Read current version components
+ver=$(grep -oP 'AssemblyVersion\("\K\d+\.\d+\.\d+\.\d+' "$file" | head -1)
+[ -n "$ver" ] || exit 0
+
+curYear=$(echo "$ver" | cut -d. -f1)
+curMonth=$(echo "$ver" | cut -d. -f2)
+curDay=$(echo "$ver" | cut -d. -f3)
+curSeq=$(echo "$ver" | cut -d. -f4)
+
+# Today's date
+todayYear=$(date +%Y)
+todayMonth=$(date +%-m)   # no leading zero
+todayDay=$(date +%-d)     # no leading zero
+
+if [ "$curYear" = "$todayYear" ] && [ "$curMonth" = "$todayMonth" ] && [ "$curDay" = "$todayDay" ]; then
+  newSeq=$((curSeq + 1))
+else
+  newSeq=1
+fi
+
+newVer="${todayYear}.${todayMonth}.${todayDay}.${newSeq}"
+
+# Update file (handle both GNU sed and BSD sed)
+if sed --version 2>/dev/null | grep -q GNU; then
+  sed -i "s/AssemblyVersion(\"[0-9.]*\")/AssemblyVersion(\"${newVer}\")/" "$file"
+  sed -i "s/AssemblyFileVersion(\"[0-9.]*\")/AssemblyFileVersion(\"${newVer}\")/" "$file"
+  sed -i "s/AssemblyInformationalVersion(\"[0-9.]*\")/AssemblyInformationalVersion(\"${newVer}\")/" "$file"
+else
+  sed -i '' "s/AssemblyVersion(\"[0-9.]*\")/AssemblyVersion(\"${newVer}\")/" "$file"
+  sed -i '' "s/AssemblyFileVersion(\"[0-9.]*\")/AssemblyFileVersion(\"${newVer}\")/" "$file"
+  sed -i '' "s/AssemblyInformationalVersion(\"[0-9.]*\")/AssemblyInformationalVersion(\"${newVer}\")/" "$file"
+fi
+
+# Stage the updated file so it's included in this commit
+git add "$file"
+
+echo "auto-version: v${newVer}"

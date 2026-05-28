@@ -88,6 +88,15 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </ListViewItem>
+                <ListViewItem>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE946;" FontSize="16"
+                                  Foreground="{StaticResource TextDimBrush}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Text="关于" FontSize="15"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListViewItem>
                             </ListView>
         </Grid>
 
@@ -375,6 +384,46 @@
                         <Grid x:Name="ToolSettingsContent" />
                     </ScrollViewer>
                 </Grid>
+            </Grid>
+
+            <!-- ===== About panel ===== -->
+            <Grid x:Name="AboutPanel" Grid.Row="1" Visibility="Collapsed">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="16" Margin="0,0,24,0">
+                        <Border Background="#14FFFFFF" CornerRadius="8" Padding="20,24">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="WinAssistant"
+                                           FontSize="24" FontWeight="Bold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock x:Name="VersionText"
+                                           FontSize="14"
+                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBlock Text="Windows 效率工具合集，集成启动台、全局快捷键、AI 对话、小工具等功能。"
+                                           FontSize="13"
+                                           Foreground="{StaticResource TextDimBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="#14FFFFFF" CornerRadius="8" Padding="20,16">
+                            <StackPanel Spacing="10">
+                                <TextBlock Text="技术栈"
+                                           FontSize="15" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock FontSize="13"
+                                           Foreground="{StaticResource TextSecondaryBrush}">
+                                    <Run Text=".NET 9" />
+                                    <Run Text="·" />
+                                    <Run Text="WinUI 3" />
+                                    <Run Text="·" />
+                                    <Run Text="Windows App SDK 2.0" />
+                                    <Run Text="·" />
+                                    <Run Text="CommunityToolkit.Mvvm" />
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
             </Grid>
 
             <!-- Add application button (only visible on hotkey tab) -->

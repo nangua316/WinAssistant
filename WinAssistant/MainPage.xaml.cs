@@ -32,6 +32,9 @@ public sealed partial class MainPage : Page
     {
         ViewModel.LoadSettings();
         _reorder = new ListViewDragReorder(BindingListView, ViewModel.Bindings, ViewModel.SaveSettings);
+
+        var ver = typeof(App).Assembly.GetName().Version;
+        VersionText.Text = ver != null ? $"版本 {ver.Major}.{ver.Minor}.{ver.Build}" : "";
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -48,6 +51,7 @@ public sealed partial class MainPage : Page
         HotkeyPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
         AIPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
         ToolPanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        AboutPanel.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
         AddAppButton.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
 
         TitleText.Text = index switch
@@ -57,6 +61,7 @@ public sealed partial class MainPage : Page
             2 => "全局快捷键管理",
             3 => "AI 技能",
             4 => "小工具",
+            5 => "关于",
             _ => ""
         };
         SubtitleText.Text = index switch
@@ -66,6 +71,7 @@ public sealed partial class MainPage : Page
             2 => "添加应用并设置全局快捷键",
             3 => "配置 AI 并管理已创建的技能",
             4 => "管理小工具，添加到启动台快速访问",
+            5 => "版本信息和项目链接",
             _ => ""
         };
 
