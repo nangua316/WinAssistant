@@ -10,6 +10,10 @@ public class MouseHookService : IDisposable
     private bool _trackX1;
     private bool _trackX2;
 
+    // Prevent accidental XButton triggers when user is left-clicking (double-click,
+    // drag-select, etc.) — ignore XButton events within 500ms of a left-button event.
+    private long _lastLeftButtonTime;
+
     public event EventHandler? MiddleButtonClicked;
     public event EventHandler? XButton1Clicked;
     public event EventHandler? XButton2Clicked;
@@ -48,12 +52,20 @@ public class MouseHookService : IDisposable
         {
             switch ((uint)wParam)
             {
+                case WM_LBUTTONDOWN:
+                    _lastLeftButtonTime = Environment.TickCount64;
+                    break;
+
                 case WM_MBUTTONDOWN:
                     if (_trackMiddle)
                         App.DispatcherQueue.TryEnqueue(() => MiddleButtonClicked?.Invoke(this, EventArgs.Empty));
                     break;
 
                 case WM_XBUTTONDOWN:
+                    // Debounce: XButton within 500ms of left-click is likely accidental
+                    if (Environment.TickCount64 - _lastLeftButtonTime < 500)
+                        break;
+
                     var msll = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
                     var button = (ushort)(msll.mouseData >> 16);
                     if (button == XBUTTON1 && _trackX1)
@@ -86,6 +98,7 @@ public class MouseHookService : IDisposable
     private static extern nint GetModuleHandle(string lpModuleName);
 
     private const int WH_MOUSE_LL = 14;
+    private const uint WM_LBUTTONDOWN = 0x0201;
     private const uint WM_MBUTTONDOWN = 0x0207;
     private const uint WM_XBUTTONDOWN = 0x020B;
     private const ushort XBUTTON1 = 0x0001;

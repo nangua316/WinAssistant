@@ -72,7 +72,8 @@ public class SingleKeyInterceptor : IDisposable
                 _confirmDown = false;
                 bool wasCombo = _comboUsed;
                 _comboUsed = false;
-                if (!wasCombo && !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT) &&
+                if (!wasCombo &&
+                    !IsKeyDown(VK_MENU) && !IsKeyDown(VK_SHIFT) &&
                     !IsKeyDown(VK_LWIN) && !IsKeyDown(VK_RWIN))
                 {
                     App.DispatcherQueue?.TryEnqueue(() => Triggered?.Invoke(this, EventArgs.Empty));
@@ -90,18 +91,27 @@ public class SingleKeyInterceptor : IDisposable
 
     private static bool IsKeyDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
+    /// <summary>Check if a key is currently down OR was pressed recently.
+    /// Uses the 0x0001 bit (key has been pressed since last read) to catch
+    /// fast combos where the key is released between 30ms polls.</summary>
+    private static bool IsKeyDownOrWasPressed(int vk) =>
+        (GetAsyncKeyState(vk) & 0x8001) != 0;
+
     /// <summary>Check if any key other than Ctrl is pressed (prevents false triggers
-    /// when Ctrl is used in regular shortcuts like Ctrl+Backspace, Ctrl+Space, etc.).</summary>
+    /// when Ctrl is used in regular shortcuts like Ctrl+C, Ctrl+Space, etc.).</summary>
     private static bool IsAnyComboKeyDown()
     {
-        // Skip VK_CONTROL itself (0x11), and modifiers (Alt/Shift/Win) since
-        // those are checked separately in the release logic.
-        for (int vk = 0x08; vk <= 0xFE; vk++)
-        {
-            if (vk == 0x11 || vk == VK_MENU || vk == VK_SHIFT ||
-                vk == VK_LWIN || vk == VK_RWIN) continue;
-            if (IsKeyDown(vk)) return true;
-        }
+        // Common keys used with Ctrl shortcuts: A-Z, 0-9, F1-F12
+        for (int vk = 0x30; vk <= 0x5A; vk++) // 0-9, A-Z
+            if (IsKeyDownOrWasPressed(vk)) return true;
+        for (int vk = 0x70; vk <= 0x7B; vk++) // F1-F12
+            if (IsKeyDownOrWasPressed(vk)) return true;
+        // Additional keys frequently combined with Ctrl in text editing
+        if (IsKeyDownOrWasPressed(0x20)) return true; // Space
+        if (IsKeyDownOrWasPressed(0x08)) return true; // Backspace
+        if (IsKeyDownOrWasPressed(0x2E)) return true; // Delete
+        if (IsKeyDownOrWasPressed(0x09)) return true; // Tab
+        if (IsKeyDownOrWasPressed(0x0D)) return true; // Enter
         return false;
     }
 

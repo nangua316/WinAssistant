@@ -92,8 +92,6 @@ public sealed partial class LaunchpadWindow : Window
 
     private void OpenCore()
     {
-        Log("OpenCore called, _isShowing=" + _isShowing);
-
         if (_isShowing)
         {
             if (_page != null)
@@ -159,8 +157,7 @@ public sealed partial class LaunchpadWindow : Window
 
             StartFocusTimer();
 
-            if (GetWindowRect(_hwnd, out var wrect))
-                Log($"Window: {wrect.right - wrect.left}x{wrect.bottom - wrect.top} at ({wrect.left},{wrect.top}), page ActualWidth={_page?.ActualWidth}");
+            if (GetWindowRect(_hwnd, out var wrect)) { }
         };
         moveTimer.Start();
     }
