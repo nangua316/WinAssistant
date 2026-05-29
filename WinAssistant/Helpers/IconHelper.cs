@@ -51,7 +51,7 @@ public static class IconHelper
             using var ms = PreferFileExtraction(filePath, aumid, targetSize);
             if (ms == null)
             {
-                Log($"ExtractIconBytes: failed");
+                Logger.Log("IconHelper",$"ExtractIconBytes: failed");
                 return null;
             }
             var result = ms.ToArray();
@@ -59,7 +59,7 @@ public static class IconHelper
         }
         catch (Exception ex)
         {
-            Log($"ExtractIconBytes: error {ex.Message}");
+            Logger.Log("IconHelper",$"ExtractIconBytes: error {ex.Message}");
             return null;
         }
     }
@@ -82,7 +82,7 @@ public static class IconHelper
         await bitmap.SetSourceAsync(ras);
 
         _streamKeepAlive.Add(bitmap, ras);
-        Log($"PopulateBitmap OK: pw={bitmap.PixelWidth} ph={bitmap.PixelHeight}");
+        Logger.Log("IconHelper",$"PopulateBitmap OK: pw={bitmap.PixelWidth} ph={bitmap.PixelHeight}");
         return true;
     }
 
@@ -104,7 +104,7 @@ public static class IconHelper
         }
         catch (Exception ex)
         {
-            Log($"ExtractAppIconAsync error: {ex.Message}");
+            Logger.Log("IconHelper",$"ExtractAppIconAsync error: {ex.Message}");
             return null;
         }
     }
@@ -129,7 +129,7 @@ public static class IconHelper
             if (isStoreAppStub && !string.IsNullOrEmpty(aumid))
             {
                 // Try AUMID extraction first (Store stub exes have no real icons)
-                Log($"Trying AUMID: {aumid}");
+                Logger.Log("IconHelper",$"Trying AUMID: {aumid}");
                 var aumidResult = ExtractIconFromAumidToPngStream(aumid, targetSize);
                 if (aumidResult != null) return aumidResult;
             }
@@ -141,7 +141,7 @@ public static class IconHelper
             // AUMID fallback for non-Store apps
             if (!isStoreAppStub && !string.IsNullOrEmpty(aumid))
             {
-                Log($"Trying AUMID: {aumid}");
+                Logger.Log("IconHelper",$"Trying AUMID: {aumid}");
                 var aumidResult = ExtractIconFromAumidToPngStream(aumid, targetSize);
                 if (aumidResult != null) return aumidResult;
             }
@@ -154,7 +154,7 @@ public static class IconHelper
         // AUMID fallback when file path is unavailable
         if (!string.IsNullOrEmpty(aumid))
         {
-            Log($"AUMID fallback for: {aumid}");
+            Logger.Log("IconHelper",$"AUMID fallback for: {aumid}");
             return ExtractIconFromAumidToPngStream(aumid, targetSize);
         }
 
@@ -206,12 +206,6 @@ public static class IconHelper
         catch { }
     }
 
-    private static void Log(string msg)
-    {
-        try { File.AppendAllText(System.IO.Path.Combine(Path.GetTempPath(), "WinAssistant_dbg.txt"), $"[{DateTime.Now:HH:mm:ss.fff}] IconHelper: {msg}{Environment.NewLine}"); }
-        catch { }
-    }
-
     /// <summary>
     /// Extract icon from AUMID (Windows Store app) and return PNG bytes in a MemoryStream.
     /// </summary>
@@ -219,7 +213,7 @@ public static class IconHelper
     {
         try
         {
-            Log($"尝试获取 UWP 图标: {aumid}");
+            Logger.Log("IconHelper",$"尝试获取 UWP 图标: {aumid}");
             
             // 方案3: 使用 SHParseDisplayName 然后用 SHGetFileInfo 获取图标
             nint pidl = nint.Zero;
@@ -230,7 +224,7 @@ public static class IconHelper
             var hr = SHParseDisplayName(parsingPath, nint.Zero, out pidl, 0, ref pdwAttributes);
             if (hr != 0 || pidl == nint.Zero)
             {
-                Log($"SHParseDisplayName 失败: 0x{hr:X8}");
+                Logger.Log("IconHelper",$"SHParseDisplayName 失败: 0x{hr:X8}");
                 return null;
             }
 
@@ -242,7 +236,7 @@ public static class IconHelper
                 
                 if (ret == nint.Zero || shfi.hIcon == nint.Zero)
                 {
-                    Log("SHGetFileInfo 失败");
+                    Logger.Log("IconHelper", "SHGetFileInfo 失败");
                     return null;
                 }
 
@@ -259,7 +253,7 @@ public static class IconHelper
                     var ms = new MemoryStream();
                     resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
                     ms.Position = 0;
-                    Log($"成功获取 UWP 图标: {aumid}");
+                    Logger.Log("IconHelper",$"成功获取 UWP 图标: {aumid}");
                     return ms;
                 }
                 finally
@@ -274,7 +268,7 @@ public static class IconHelper
         }
         catch (Exception ex)
         {
-            Log($"ExtractIconFromAumidToPngStream error: {ex.Message}\n{ex.StackTrace}");
+            Logger.Log("IconHelper",$"ExtractIconFromAumidToPngStream error: {ex.Message}\n{ex.StackTrace}");
             return null;
         }
     }
@@ -291,7 +285,7 @@ public static class IconHelper
                 typeof(IShellItem).GUID, out nint shellItemPtr);
             if (hr != 0 || shellItemPtr == nint.Zero)
             {
-                Log($"ShellFactory: SHCreateItemFromParsingName failed 0x{hr:X8}");
+                Logger.Log("IconHelper",$"ShellFactory: SHCreateItemFromParsingName failed 0x{hr:X8}");
                 return null;
             }
 
@@ -303,7 +297,7 @@ public static class IconHelper
 
                 if (hr != 0 || hbitmap == nint.Zero)
                 {
-                    Log($"ShellFactory: GetImage failed 0x{hr:X8}");
+                    Logger.Log("IconHelper",$"ShellFactory: GetImage failed 0x{hr:X8}");
                     return null;
                 }
 
@@ -313,7 +307,7 @@ public static class IconHelper
                     var ms = new MemoryStream();
                     bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
                     ms.Position = 0;
-                    Log($"ShellFactory OK: {filePath}");
+                    Logger.Log("IconHelper",$"ShellFactory OK: {filePath}");
                     return ms;
                 }
                 finally
@@ -328,7 +322,7 @@ public static class IconHelper
         }
         catch (Exception ex)
         {
-            Log($"ShellFactory error: {ex.Message}");
+            Logger.Log("IconHelper",$"ShellFactory error: {ex.Message}");
             return null;
         }
     }
@@ -369,7 +363,7 @@ public static class IconHelper
             var count = ExtractIconEx(filePath, 0, out nint hIconLarge, out _, 1);
             if (count <= 0 || hIconLarge == nint.Zero)
             {
-                Log($"ExtractIconEx: no icon found for {filePath}");
+                Logger.Log("IconHelper",$"ExtractIconEx: no icon found for {filePath}");
                 return null;
             }
 
@@ -386,7 +380,7 @@ public static class IconHelper
                 var ms = new MemoryStream();
                 resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
                 ms.Position = 0;
-                Log($"ExtractIconEx OK: {filePath}");
+                Logger.Log("IconHelper",$"ExtractIconEx OK: {filePath}");
                 return ms;
             }
             finally
@@ -396,7 +390,7 @@ public static class IconHelper
         }
         catch (Exception ex)
         {
-            Log($"ExtractIconEx error: {ex.Message}");
+            Logger.Log("IconHelper",$"ExtractIconEx error: {ex.Message}");
             return null;
         }
     }

@@ -13,7 +13,7 @@ public static class AppLauncher
     {
         try
         {
-            Log($"LaunchOrActivate: {appPath} aumid={aumid}");
+            Logger.Log("AppLauncher",$"LaunchOrActivate: {appPath} aumid={aumid}");
 
             // Directory — open in Explorer
             if (!string.IsNullOrEmpty(appPath) && Directory.Exists(appPath))
@@ -25,7 +25,7 @@ public static class AppLauncher
             // Background daemon/service/IME — can't be usefully activated
             if (!string.IsNullOrEmpty(appPath) && AppFilter.IsDaemonProcess(appPath))
             {
-                Log($"Skipped daemon: {appPath}");
+                Logger.Log("AppLauncher",$"Skipped daemon: {appPath}");
                 HotKeyToast.Show("该应用为后台服务，无法直接启动");
                 return "";
             }
@@ -66,7 +66,7 @@ public static class AppLauncher
 
                         // Empty title: likely a helper/splash, not the real window.
                         // Fall through to hidden window search for tray-restore.
-                        Log($"Visible window empty title hWnd={hWnd}, trying hidden...");
+                        Logger.Log("AppLauncher",$"Visible window empty title hWnd={hWnd}, trying hidden...");
                     }
 
                     // Step 2: try hidden windows (tray apps)
@@ -97,7 +97,7 @@ public static class AppLauncher
         catch (Exception ex)
         {
             Debug.WriteLine($"Failed: {ex.Message}");
-            Log($"Exception: {ex}");
+            Logger.Log("AppLauncher",$"Exception: {ex}");
         }
         return "";
     }
@@ -119,7 +119,7 @@ public static class AppLauncher
 
         if (isForeground)
         {
-            Log($"Minimize hWnd={hWnd}");
+            Logger.Log("AppLauncher",$"Minimize hWnd={hWnd}");
             // Use PostMessage WM_SYSCOMMAND SC_MINIMIZE instead of ShowWindow(SW_MINIMIZE)
             // so the message goes through the app's own WndProc (Electron apps need this
             // to properly minimise to the taskbar rather than the desktop corner).
@@ -127,10 +127,10 @@ public static class AppLauncher
             return "minimize";
         }
 
-        Log($"Activate hWnd={hWnd} visible={IsWindowVisible(hWnd)} title=\"{GetWindowText(hWnd)}\"");
+        Logger.Log("AppLauncher",$"Activate hWnd={hWnd} visible={IsWindowVisible(hWnd)} title=\"{GetWindowText(hWnd)}\"");
 
         var curFg = GetForegroundWindow();
-        Log($"Current foreground: hWnd={curFg} title=\"{GetWindowText(curFg)}\"");
+        Logger.Log("AppLauncher",$"Current foreground: hWnd={curFg} title=\"{GetWindowText(curFg)}\"");
 
         ShowWindowAsync(hWnd, SW_SHOW);
         ShowWindowAsync(hWnd, SW_RESTORE);
@@ -155,13 +155,13 @@ public static class AppLauncher
             }
         }
 
-        Log($"Activate done fg={fgAfter}");
+        Logger.Log("AppLauncher",$"Activate done fg={fgAfter}");
         return "activate";
     }
 
     private static string ActivateHiddenWindow(nint hWnd, string appPath, string arguments, string aumid)
     {
-        Log($"Activate packaged hidden hWnd={hWnd} title=\"{GetWindowText(hWnd)}\"");
+        Logger.Log("AppLauncher",$"Activate packaged hidden hWnd={hWnd} title=\"{GetWindowText(hWnd)}\"");
 
         // 1. DWM uncloak — Windows 10/11 may cloak tray windows via DWM
         try
@@ -172,7 +172,7 @@ public static class AppLauncher
             {
                 int falseVal = 0;
                 DwmSetWindowAttribute(hWnd, DWMWA_CLOAK, ref falseVal, sizeof(int));
-                Log($"Uncloaked window (was cloaked={cloaked})");
+                Logger.Log("AppLauncher",$"Uncloaked window (was cloaked={cloaked})");
             }
         }
         catch { }
@@ -181,7 +181,7 @@ public static class AppLauncher
         //    (runs inside the target process, proper initialization path)
         try
         {
-            Log($"Trying UIA SetWindowVisualState (COM interop)...");
+            Logger.Log("AppLauncher",$"Trying UIA SetWindowVisualState (COM interop)...");
             var uia = new CUIAutomation();
             var element = uia.ElementFromHandle(hWnd);
             if (element != null)
@@ -193,7 +193,7 @@ public static class AppLauncher
                     Thread.Sleep(200);
                     if (IsWindowVisible(hWnd))
                     {
-                        Log($"UIA activation succeeded");
+                        Logger.Log("AppLauncher",$"UIA activation succeeded");
                         goto Foreground;
                     }
                 }
@@ -201,7 +201,7 @@ public static class AppLauncher
         }
         catch (Exception ex)
         {
-            Log($"UIA activation failed: {ex.Message}");
+            Logger.Log("AppLauncher",$"UIA activation failed: {ex.Message}");
         }
 
         // 3. SC_RESTORE through app's WndProc (synchronous)
@@ -210,7 +210,7 @@ public static class AppLauncher
         Thread.Sleep(100);
         if (IsWindowVisible(hWnd))
         {
-            Log($"SC_RESTORE succeeded");
+            Logger.Log("AppLauncher",$"SC_RESTORE succeeded");
             goto Foreground;
         }
 
@@ -235,12 +235,12 @@ public static class AppLauncher
         Thread.Sleep(100);
         if (IsWindowVisible(hWnd))
         {
-            Log($"PowerToys approach succeeded");
+            Logger.Log("AppLauncher",$"PowerToys approach succeeded");
             goto Foreground;
         }
 
         // Fallback: launch fresh synchronously
-        Log($"All hidden window strategies failed, launching fresh");
+        Logger.Log("AppLauncher",$"All hidden window strategies failed, launching fresh");
         LaunchFresh(appPath, arguments, aumid);
         return "launch";
 
@@ -270,7 +270,7 @@ public static class AppLauncher
     {
         if (!string.IsNullOrEmpty(aumid))
         {
-            Log($"Launch via AUMID: {aumid}");
+            Logger.Log("AppLauncher",$"Launch via AUMID: {aumid}");
             Process.Start(new ProcessStartInfo
             {
                 FileName = $"shell:AppsFolder\\{aumid}",
@@ -281,12 +281,12 @@ public static class AppLauncher
 
         if (!string.IsNullOrEmpty(appPath) && File.Exists(appPath))
         {
-            Log($"Launch new: {appPath}");
+            Logger.Log("AppLauncher",$"Launch new: {appPath}");
             Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
             return "launch";
         }
 
-        Log($"App not found: {appPath}");
+        Logger.Log("AppLauncher",$"App not found: {appPath}");
         return "";
     }
 
@@ -422,15 +422,6 @@ public static class AppLauncher
         var sb = new StringBuilder(256);
         GetClassNameW(hWnd, sb, sb.Capacity);
         return sb.ToString().TrimEnd('\0');
-    }
-
-    private static readonly string LogPathValue =
-        System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt");
-
-    private static void Log(string msg)
-    {
-        try { System.IO.File.AppendAllText(LogPathValue, $"[{DateTime.Now:HH:mm:ss.fff}] AppLauncher: {msg}{Environment.NewLine}"); }
-        catch { }
     }
 
     private const int SW_MINIMIZE = 6;

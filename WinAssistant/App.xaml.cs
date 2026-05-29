@@ -188,13 +188,6 @@ public partial class App : Application
     private const int SW_RESTORE = 9;
     private const int SW_SHOW = 5;
 
-    private static void Log(string msg)
-    {
-        try { System.IO.File.AppendAllText(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt"),
-            $"[{DateTime.Now:HH:mm:ss.fff}] App: {msg}{Environment.NewLine}"); }
-        catch { }
-    }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);

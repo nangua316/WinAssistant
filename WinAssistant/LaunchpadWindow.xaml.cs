@@ -244,14 +244,6 @@ public sealed partial class LaunchpadWindow : Window
         return (1600, 1200);
     }
 
-    private static void Log(string msg)
-    {
-        try { System.IO.File.AppendAllText(
-            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt"),
-            $"[{DateTime.Now:HH:mm:ss.fff}] Launchpad: {msg}{Environment.NewLine}"); }
-        catch { }
-    }
-
     #region P/Invoke and COM interop
 
     [ComImport, Guid("EEDF1CFE-387B-41A1-AF42-0A0B30D1F1C8")]
