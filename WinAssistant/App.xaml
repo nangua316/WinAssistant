@@ -45,8 +45,6 @@
                     <Button Grid.Column="2" Content="{Binding AddButtonText}"
                             Command="{Binding AddCommand}"
                             IsEnabled="{Binding IsInteractive}"
-                            Background="{Binding AddButtonBackground}"
-                            Foreground="{Binding AddButtonForeground}"
                             Style="{StaticResource FlatButtonStyle}"
                             MinWidth="64" MinHeight="28" Padding="10,2"
                             CornerRadius="4" FontSize="12"

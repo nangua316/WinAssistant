@@ -1,9 +1,7 @@
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.UI;
 using Microsoft.UI.Xaml.Media;
-using Windows.UI;
 using WinAssistant.Helpers;
 
 namespace WinAssistant.Models;
@@ -51,8 +49,6 @@ public class AppPickerItem : ObservableObject
             if (SetProperty(ref _isAdded, value))
             {
                 OnPropertyChanged(nameof(AddButtonText));
-                OnPropertyChanged(nameof(AddButtonBackground));
-                OnPropertyChanged(nameof(AddButtonForeground));
                 OnPropertyChanged(nameof(IsInteractive));
             }
         }
@@ -60,14 +56,6 @@ public class AppPickerItem : ObservableObject
 
     /// <summary>Display text for the add button.</summary>
     public string AddButtonText => IsAdded ? "已添加" : "添加";
-
-    /// <summary>Button background color: green for added, accent blue for add.</summary>
-    public Brush AddButtonBackground => IsAdded
-        ? new SolidColorBrush(Color.FromArgb(255, 80, 80, 80))
-        : new SolidColorBrush(Color.FromArgb(255, 0, 103, 192));
-
-    /// <summary>Button text color: white for both states.</summary>
-    public Brush AddButtonForeground => new SolidColorBrush(Colors.White);
 
     /// <summary>Whether the add button is interactive (enabled). False when already added.</summary>
     public bool IsInteractive => !_isAdded;
