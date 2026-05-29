@@ -33,17 +33,20 @@ public class SettingsService
 
         try
         {
-            var json = File.ReadAllText(_filePath);
-
-            // Old format: JSON array of HotKeyBinding — wrap into AppSettings
-            if (json.TrimStart().StartsWith('['))
+            lock (_lock)
             {
-                var bindings = JsonSerializer.Deserialize<List<HotKeyBinding>>(json) ?? [];
-                return new AppSettings { Bindings = bindings };
-            }
+                var json = File.ReadAllText(_filePath);
 
-            // New format: AppSettings object
-            return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                // Old format: JSON array of HotKeyBinding — wrap into AppSettings
+                if (json.TrimStart().StartsWith('['))
+                {
+                    var bindings = JsonSerializer.Deserialize<List<HotKeyBinding>>(json) ?? [];
+                    return new AppSettings { Bindings = bindings };
+                }
+
+                // New format: AppSettings object
+                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            }
         }
         catch (Exception ex)
         {
