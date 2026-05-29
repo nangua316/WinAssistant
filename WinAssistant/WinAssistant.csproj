@@ -33,14 +33,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="Assets\ActivatorHelper.exe" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Remove="Helpers\ActivatorHelper\**\*.cs" />
-  </ItemGroup>
-
-  <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
