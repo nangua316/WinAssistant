@@ -11,6 +11,17 @@
                 <!-- Other merged dictionaries here -->
             </ResourceDictionary.MergedDictionaries>
 
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="ButtonOverlayHoverBrush" Color="#0A000000" />
+                    <SolidColorBrush x:Key="ButtonOverlayPressedBrush" Color="#19000000" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="ButtonOverlayHoverBrush" Color="#1AFFFFFF" />
+                    <SolidColorBrush x:Key="ButtonOverlayPressedBrush" Color="#33FFFFFF" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
             <DataTemplate x:Key="AppPickerTemplate">
                 <Grid Padding="8,4" ColumnSpacing="12">
                     <Grid.ColumnDefinitions>
@@ -62,12 +73,12 @@
                                         <VisualState x:Name="Normal" />
                                         <VisualState x:Name="PointerOver">
                                             <VisualState.Setters>
-                                                <Setter Target="Overlay.Background" Value="#1AFFFFFF" />
+                                                <Setter Target="Overlay.Background" Value="{ThemeResource ButtonOverlayHoverBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Pressed">
                                             <VisualState.Setters>
-                                                <Setter Target="Overlay.Background" Value="#33FFFFFF" />
+                                                <Setter Target="Overlay.Background" Value="{ThemeResource ButtonOverlayPressedBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
                                         <VisualState x:Name="Disabled" />

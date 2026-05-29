@@ -20,7 +20,6 @@ public class MainPageViewModel : ObservableObject
     private bool _isMouseTriggerMiddle;
     private bool _isMouseTriggerX1;
     private bool _isMouseTriggerX2;
-    private bool _isKeyboardTriggerSingleCtrl;
     private bool _isKeyboardTriggerGlobalHotKey;
     private bool _isKeyboardTriggerAltSpace;
     private uint _launchpadHotKeyModifiers = KeyHelper.MOD_CONTROL;
@@ -127,19 +126,6 @@ public class MainPageViewModel : ObservableObject
         }
     }
 
-    public bool IsKeyboardTriggerSingleCtrl
-    {
-        get => _isKeyboardTriggerSingleCtrl;
-        set
-        {
-            if (SetProperty(ref _isKeyboardTriggerSingleCtrl, value))
-            {
-                UpdateTriggerServices();
-                SaveSettings();
-            }
-        }
-    }
-
     public bool IsKeyboardTriggerGlobalHotKey
     {
         get => _isKeyboardTriggerGlobalHotKey;
@@ -204,13 +190,11 @@ public class MainPageViewModel : ObservableObject
         _isMouseTriggerMiddle = settings.MouseTriggers.Contains("MiddleButton");
         _isMouseTriggerX1 = settings.MouseTriggers.Contains("XButton1");
         _isMouseTriggerX2 = settings.MouseTriggers.Contains("XButton2");
-        _isKeyboardTriggerSingleCtrl = settings.KeyboardTriggers.Contains("SingleCtrl");
         _isKeyboardTriggerGlobalHotKey = settings.KeyboardTriggers.Contains("GlobalHotKey");
         _isKeyboardTriggerAltSpace = settings.KeyboardTriggers.Contains("AltSpace");
         OnPropertyChanged(nameof(IsMouseTriggerMiddle));
         OnPropertyChanged(nameof(IsMouseTriggerX1));
         OnPropertyChanged(nameof(IsMouseTriggerX2));
-        OnPropertyChanged(nameof(IsKeyboardTriggerSingleCtrl));
         OnPropertyChanged(nameof(IsKeyboardTriggerGlobalHotKey));
         OnPropertyChanged(nameof(IsKeyboardTriggerAltSpace));
         OnPropertyChanged(nameof(GlobalHotKeySettingsVisibility));
@@ -711,11 +695,6 @@ public class MainPageViewModel : ObservableObject
         if (_isMouseTriggerMiddle || _isMouseTriggerX1 || _isMouseTriggerX2)
             App.MouseHookService.Start(_isMouseTriggerMiddle, _isMouseTriggerX1, _isMouseTriggerX2);
 
-        // Single Ctrl key trigger
-        App.SingleKeyInterceptor.Stop();
-        if (_isKeyboardTriggerSingleCtrl)
-            App.SingleKeyInterceptor.Start((int)Windows.System.VirtualKey.Control);
-
         // Global hotkey
         App.UnregisterTriggerHotKey(App.GLOBAL_HOTKEY_ID);
         if (_isKeyboardTriggerGlobalHotKey && _launchpadHotKeyModifiers != 0 && _launchpadHotKeyVirtualKey != 0)
@@ -738,8 +717,7 @@ public class MainPageViewModel : ObservableObject
 
     private List<string> BuildKeyboardTriggersList()
     {
-        var list = new List<string>(3);
-        if (_isKeyboardTriggerSingleCtrl) list.Add("SingleCtrl");
+        var list = new List<string>(2);
         if (_isKeyboardTriggerGlobalHotKey) list.Add("GlobalHotKey");
         if (_isKeyboardTriggerAltSpace) list.Add("AltSpace");
         return list;

@@ -157,7 +157,7 @@ public sealed partial class MainWindow : Window
             InsertMenuW(menu, 0, MF_STRING | MF_BYPOSITION, showItem, "启动台");
             InsertMenuW(menu, 1, MF_STRING | MF_BYPOSITION, settingsItem, "设置");
             InsertMenuW(menu, 2, MF_SEPARATOR | MF_BYPOSITION, 0, null);
-            InsertMenuW(menu, 3, MF_STRING | MF_BYPOSITION, restartItem, "重启");
+            InsertMenuW(menu, 3, MF_STRING | MF_BYPOSITION, restartItem, "重启应用");
             InsertMenuW(menu, 4, MF_SEPARATOR | MF_BYPOSITION, 0, null);
             InsertMenuW(menu, 5, MF_STRING | MF_BYPOSITION, exitItem, "退出");
 
@@ -180,6 +180,7 @@ public sealed partial class MainWindow : Window
 
             if (hBmpShow != nint.Zero) DeleteObject(hBmpShow);
             if (hBmpSettings != nint.Zero) DeleteObject(hBmpSettings);
+            if (hBmpRestart != nint.Zero) DeleteObject(hBmpRestart);
             if (hBmpExit != nint.Zero) DeleteObject(hBmpExit);
 
             if (cmd == showItem)
@@ -194,8 +195,6 @@ public sealed partial class MainWindow : Window
             {
                 App.DispatcherQueue.TryEnqueue(() =>
                 {
-                    // Launch a delayed restart via cmd.exe — waits 1s then starts a new instance.
-                    // We must exit first so the singleton mutex is released.
                     var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
                     if (!string.IsNullOrEmpty(exePath))
                     {
@@ -212,7 +211,6 @@ public sealed partial class MainWindow : Window
                         }
                         catch { }
                     }
-
                     ToolHostWindow.CloseAll();
                     CleanupTrayIcon();
                     Helpers.IconHelper.CleanupTempIcons();
@@ -300,12 +298,10 @@ public sealed partial class MainWindow : Window
                 break;
             case MenuIconType.Restart:
             {
-                // A clockwise circular arrow (arc + arrowhead)
                 var hPen = CreatePen(PS_SOLID, 2, fg);
                 SelectObject(hdcMem, hPen);
                 int cx = size / 2, cy = size / 2, r = 6;
                 Arc(hdcMem, cx - r, cy - r, cx + r, cy + r, cx + r, cy, cx, cy - r);
-                // Arrowhead
                 LineTo(hdcMem, cx + r, cy);
                 MoveToEx(hdcMem, cx + r, cy, nint.Zero);
                 LineTo(hdcMem, cx + r - 3, cy - 3);
