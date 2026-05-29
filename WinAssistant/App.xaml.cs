@@ -25,7 +25,6 @@ public partial class App : Application
     public static HotKeyService HotKeyService { get; } = new();
     public static SettingsService SettingsService { get; } = new();
     public static MouseHookService MouseHookService { get; } = new();
-    public static SingleKeyInterceptor SingleKeyInterceptor { get; } = new();
     public static QwenService QwenService { get; } = new();
     public static SkillLibraryService SkillLibraryService { get; } = new();
     public static SkillExecutionService SkillExecutionService { get; } = new(QwenService);
@@ -120,7 +119,6 @@ public partial class App : Application
         MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
         MouseHookService.XButton1Clicked += OnLaunchpadTriggered;
         MouseHookService.XButton2Clicked += OnLaunchpadTriggered;
-        SingleKeyInterceptor.Triggered += OnLaunchpadTriggered;
 
         _mainViewModel!.LoadSettings();
         SkillLibraryService.Load();
@@ -186,6 +184,14 @@ public partial class App : Application
     private const int SW_HIDE = 0;
     private const int SW_RESTORE = 9;
     private const int SW_SHOW = 5;
+
+    private static void Log(string msg)
+    {
+        try { System.IO.File.AppendAllText(
+            System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant_dbg.txt"),
+            $"[{DateTime.Now:HH:mm:ss.fff}] App: {msg}{Environment.NewLine}"); }
+        catch { }
+    }
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool RegisterHotKey(nint hWnd, int id, uint fsModifiers, uint vk);

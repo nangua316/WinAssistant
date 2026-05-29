@@ -199,27 +199,41 @@ public static class AppScanner
 
     private static void ScanShortcuts(string directory, Dictionary<string, InstalledAppInfo> apps, Dictionary<string, string> sources)
     {
-        try
+        // Manual recursion instead of SearchOption.AllDirectories to gracefully
+        // skip subdirectories that throw UnauthorizedAccessException (e.g. "游戏").
+        ScanShortcutsRecursive(directory, apps, sources);
+    }
+
+    private static void ScanShortcutsRecursive(string directory, Dictionary<string, InstalledAppInfo> apps, Dictionary<string, string> sources)
+    {
+        // Scan .lnk files in this directory
+        foreach (var lnkFile in Directory.EnumerateFiles(directory, "*.lnk"))
         {
-            foreach (var lnkFile in Directory.EnumerateFiles(directory, "*.lnk", SearchOption.AllDirectories))
+            try
             {
-                try
-                {
-                    var (target, args, iconPath) = ResolveShortcut(lnkFile);
-                    if (string.IsNullOrEmpty(target)) continue;
+                var (target, args, iconPath) = ResolveShortcut(lnkFile);
+                if (string.IsNullOrEmpty(target)) continue;
 
-                    var ext = Path.GetExtension(target).ToLowerInvariant();
-                    if (ext != ".exe") continue;
-                    if (AppFilter.IsUninstaller(target)) continue;
+                var ext = Path.GetExtension(target).ToLowerInvariant();
+                if (ext != ".exe") continue;
+                if (AppFilter.IsUninstaller(target)) continue;
 
-                    var name = Path.GetFileNameWithoutExtension(lnkFile);
-                    if (AddOrUpdateApp(apps, name, target, iconPath, arguments: args, shortcutPath: lnkFile))
-                        sources[name] = "StartMenu";
-                }
-                catch { }
+                var name = Path.GetFileNameWithoutExtension(lnkFile);
+                if (AddOrUpdateApp(apps, name, target, iconPath, arguments: args, shortcutPath: lnkFile))
+                    sources[name] = "StartMenu";
             }
+            catch { }
         }
-        catch { }
+
+        // Recurse into subdirectories, skipping those we can't access
+        foreach (var subDir in Directory.EnumerateDirectories(directory))
+        {
+            try
+            {
+                ScanShortcutsRecursive(subDir, apps, sources);
+            }
+            catch { }
+        }
     }
 
     private static void ScanPackagedApps(Dictionary<string, InstalledAppInfo> apps, Dictionary<string, string> sources, Dictionary<string, string> packageLocations)

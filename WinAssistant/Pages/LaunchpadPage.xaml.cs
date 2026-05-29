@@ -163,6 +163,7 @@ public sealed partial class LaunchpadPage : Page
     {
         // Suspend focus-lost close while picker is open
         PinChanged?.Invoke(this, true);
+        SearchBox.IsEnabled = false; // prevent focus flash during picker transition
 
         try
         {
@@ -181,7 +182,7 @@ public sealed partial class LaunchpadPage : Page
         }
         finally
         {
-            // Restore focus-lost close behavior
+            SearchBox.IsEnabled = true;
             PinChanged?.Invoke(this, IsPinned);
         }
     }

@@ -14,7 +14,8 @@ internal static class HotKeyToast
     private static WndProcDelegate? _wndProcDelegate;
 
     private const int TOAST_WIDTH = 520;
-    private const int TOAST_HEIGHT = 110;
+    private const int TOAST_MIN_HEIGHT = 60;
+    private const int TOAST_MAX_HEIGHT = 300;
     private const int DURATION_MS = 2000;
     private const string CLASS_NAME = "WinAssistantToast";
 
@@ -31,16 +32,30 @@ internal static class HotKeyToast
             }
 
             SetWindowTextW(_hwnd, message);
+
+            // Calculate required height based on text + font metrics
+            var hdc = GetDC(_hwnd);
+            var height = TOAST_MIN_HEIGHT;
+            if (hdc != nint.Zero)
+            {
+                if (_hfont != nint.Zero) SelectObject(hdc, _hfont);
+                var rc = new RECT { left = 0, top = 0, right = TOAST_WIDTH - 20, bottom = 0 };
+                DrawTextW(hdc, message, message.Length, ref rc,
+                    DT_WORDBREAK | DT_CALCRECT);
+                height = Math.Max(TOAST_MIN_HEIGHT, Math.Min(rc.bottom + 32, TOAST_MAX_HEIGHT));
+                ReleaseDC(_hwnd, hdc);
+            }
+
             InvalidateRect(_hwnd, nint.Zero, true);
 
             // Position above the taskbar using the work area
             var workRect = new RECT();
             SystemParametersInfoW(0x0030, 0, ref workRect, 0); // SPI_GETWORKAREA
-            var y = workRect.bottom - TOAST_HEIGHT - 8;
+            var y = workRect.bottom - height - 8;
             var x = 16;
             SetWindowPos(_hwnd, HWND_TOPMOST,
                 x, y,
-                TOAST_WIDTH, TOAST_HEIGHT,
+                TOAST_WIDTH, height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
             KillTimer(_hwnd, 1);
@@ -72,7 +87,7 @@ internal static class HotKeyToast
             WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_LAYERED,
             CLASS_NAME, "",
             WS_POPUP,
-            0, 0, TOAST_WIDTH, TOAST_HEIGHT,
+            0, 0, TOAST_WIDTH, TOAST_MIN_HEIGHT,
             nint.Zero, nint.Zero, _hinst, nint.Zero);
 
         if (hwnd == nint.Zero) return nint.Zero;
@@ -143,10 +158,17 @@ internal static class HotKeyToast
                         var text = sb.ToString();
                         if (text.Length > 0)
                         {
-                            rc.left = 10;
-                            rc.right -= 10;
+                            // Measure text height with word wrap
+                            var textRc = new RECT { left = 16, top = 0, right = rc.right - 16, bottom = 0 };
+                            DrawTextW(ps.hdc, text, text.Length, ref textRc,
+                                DT_WORDBREAK | DT_CALCRECT);
+                            var textH = textRc.bottom;
+                            // Vertically center: offset start Y by half the leftover space
+                            rc.top = (rc.bottom - textH) / 2;
+                            rc.left = 16;
+                            rc.right -= 16;
                             DrawTextW(ps.hdc, text, text.Length, ref rc,
-                                DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_END_ELLIPSIS);
+                                DT_WORDBREAK | DT_CENTER);
                         }
 
                         EndPaint(hWnd, ref ps);
@@ -191,6 +213,8 @@ internal static class HotKeyToast
     private const uint DT_LEFT = 0x0000;
     private const uint DT_CENTER = 0x0001;
     private const uint DT_END_ELLIPSIS = 0x8000;
+    private const uint DT_WORDBREAK = 0x0010;
+    private const uint DT_CALCRECT = 0x0400;
     private static readonly nint HWND_TOPMOST = -1;
     private static readonly nint IDC_ARROW = 32512;
 
@@ -291,6 +315,12 @@ internal static class HotKeyToast
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int DrawTextW(nint hdc, string lpchText, int cchText, ref RECT lprc, uint uFormat);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetDC(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern int ReleaseDC(nint hWnd, nint hdc);
 
     [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
     private static extern nint CreateFontW(int cHeight, int cWidth, int cEscapement, int cOrientation, int cWeight, uint bItalic, uint bUnderline, uint bStrikeOut, byte iCharSet, uint iOutPrecision, uint iClipPrecision, uint iQuality, uint iPitchAndFamily, string pszFaceName);

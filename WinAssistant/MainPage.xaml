@@ -5,16 +5,50 @@
       xmlns:local="using:WinAssistant"
       Loaded="OnLoaded" Unloaded="OnUnloaded">
     <Page.Resources>
-        <SolidColorBrush x:Key="ListViewItemDropIndicatorForeground"
-                         Color="#30D9904A" />
-        <SolidColorBrush x:Key="AccentBlue" Color="#FF4CC2FF" />
-        <SolidColorBrush x:Key="IconGreen" Color="#FF66BB6A" />
-        <SolidColorBrush x:Key="IconAmber" Color="#FFFFA726" />
-        <SolidColorBrush x:Key="PurpleBrush" Color="#FF8B5CF6" />
-        <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F0F0F5" />
-        <SolidColorBrush x:Key="TextSecondaryBrush" Color="#889098A8" />
-        <SolidColorBrush x:Key="TextDimBrush" Color="#609098A8" />
-        <SolidColorBrush x:Key="BubbleBgBrush" Color="#14FFFFFF" />
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="CardBgBrush" Color="#FBFBFD" />
+                    <SolidColorBrush x:Key="CardBorderBrush" Color="#EDEDF0" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#6E6E73" />
+                    <SolidColorBrush x:Key="TextDimBrush" Color="#9E9EA2" />
+                    <!-- Windows 系统强调色 — 跟随 Windows 设置变化 -->
+                    <SolidColorBrush x:Key="AccentBlue" Color="{ThemeResource SystemAccentColor}" />
+                    <SolidColorBrush x:Key="IconAmber" Color="{ThemeResource SystemAccentColorLight1}" />
+                    <SolidColorBrush x:Key="PurpleBrush" Color="{ThemeResource SystemAccentColorDark1}" />
+                    <SolidColorBrush x:Key="IconGreen" Color="{ThemeResource SystemAccentColorLight2}" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="CardBgBrush" Color="#262B3B" />
+                    <SolidColorBrush x:Key="CardBorderBrush" Color="#2E3447" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F0F0F5" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A0A0A8" />
+                    <SolidColorBrush x:Key="TextDimBrush" Color="#7A7A80" />
+                    <!-- Windows 系统强调色 — 跟随 Windows 设置变化 -->
+                    <SolidColorBrush x:Key="AccentBlue" Color="{ThemeResource SystemAccentColor}" />
+                    <SolidColorBrush x:Key="IconAmber" Color="{ThemeResource SystemAccentColorLight1}" />
+                    <SolidColorBrush x:Key="PurpleBrush" Color="{ThemeResource SystemAccentColorLight3}" />
+                    <SolidColorBrush x:Key="IconGreen" Color="{ThemeResource SystemAccentColorLight2}" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <SolidColorBrush x:Key="ListViewItemDropIndicatorForeground"
+                             Color="#30D47800" />
+
+            <!-- Shared styles for code-behind-generated cards (ThemeResource ensures light/dark switching) -->
+            <Style x:Key="ToolCardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBgBrush}" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="16,12,16,12" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+            <Style x:Key="SkillCardBorderStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBgBrush}" />
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="Padding" Value="14,10,14,10" />
+                <Setter Property="Margin" Value="0,0,0,4" />
+            </Style>
+        </ResourceDictionary>
     </Page.Resources>
 
     <Grid>
@@ -54,15 +88,6 @@
                 </ListViewItem>
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE71D;" FontSize="16"
-                                  Foreground="{StaticResource IconGreen}"
-                                  VerticalAlignment="Center" />
-                        <TextBlock Text="启动台设置" FontSize="15"
-                                   VerticalAlignment="Center" />
-                    </StackPanel>
-                </ListViewItem>
-                <ListViewItem>
-                    <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE765;" FontSize="16"
                                   Foreground="{StaticResource IconAmber}"
                                   VerticalAlignment="Center" />
@@ -73,7 +98,7 @@
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE94A;" FontSize="16"
-                                  Foreground="#FF8B5CF6"
+                                  Foreground="{ThemeResource PurpleBrush}"
                                   VerticalAlignment="Center" />
                         <TextBlock Text="AI 技能" FontSize="15"
                                    VerticalAlignment="Center" />
@@ -120,53 +145,141 @@
             </StackPanel>
 
             <!-- ===== General panel ===== -->
-            <StackPanel x:Name="GeneralPanel" Grid.Row="1" Spacing="16">
-                <CheckBox Content="开机自启动"
-                          IsChecked="{x:Bind ViewModel.IsAutoStart, Mode=TwoWay}"
-                          FontSize="15" />
-            </StackPanel>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <StackPanel x:Name="GeneralPanel" Spacing="16" Margin="0,0,24,0">
 
-            <!-- ===== Launchpad panel ===== -->
-            <StackPanel x:Name="LaunchpadPanel" Grid.Row="1" Visibility="Collapsed" Spacing="8">
-
-                <!-- Mouse triggers -->
-                <TextBlock Text="鼠标触发" FontSize="14" FontWeight="SemiBold"
-                           Margin="0,8,0,0" />
-                <CheckBox Content="按下中键"
-                          IsChecked="{x:Bind ViewModel.IsMouseTriggerMiddle, Mode=TwoWay}" />
-                <CheckBox Content="按下X1键"
-                          IsChecked="{x:Bind ViewModel.IsMouseTriggerX1, Mode=TwoWay}" />
-                <CheckBox Content="按下X2键"
-                          IsChecked="{x:Bind ViewModel.IsMouseTriggerX2, Mode=TwoWay}" />
-
-                <!-- Keyboard triggers -->
-                <TextBlock Text="键盘触发" FontSize="14" FontWeight="SemiBold"
-                           Margin="0,8,0,0" />
-                <CheckBox Content="单击Ctrl"
-                          IsChecked="{x:Bind ViewModel.IsKeyboardTriggerSingleCtrl, Mode=TwoWay}" />
-                <CheckBox Content="全局快捷键"
-                          IsChecked="{x:Bind ViewModel.IsKeyboardTriggerGlobalHotKey, Mode=TwoWay}" />
-
-                <!-- Hotkey display + modify button (visible when global hotkey is checked) -->
-                <StackPanel Orientation="Horizontal" Spacing="8" Margin="28,0,0,0"
-                            Visibility="{x:Bind ViewModel.GlobalHotKeySettingsVisibility, Mode=OneWay}">
-                    <Border BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
-                            BorderThickness="1" CornerRadius="4" Padding="12,4">
-                        <TextBlock Text="{x:Bind ViewModel.LaunchpadHotKeyDisplay, Mode=OneWay}"
-                                   FontSize="14" VerticalAlignment="Center" />
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="0">
+                        <Grid Padding="16,12" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0" Glyph="&#xE7FC;" FontSize="16"
+                                      Foreground="{StaticResource AccentBlue}"
+                                      VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="开机自启动" FontSize="15" />
+                            </StackPanel>
+                            <ToggleSwitch Grid.Column="2" MinWidth="48"
+                                          IsOn="{x:Bind ViewModel.IsAutoStart, Mode=TwoWay}"
+                                          OnContent="开" OffContent="关" />
+                        </Grid>
                     </Border>
-                    <Button Content="修改" Click="OnModifyGlobalHotKeyClick"
-                            Padding="12,4" CornerRadius="4" MinHeight="32" />
+
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="0">
+                        <StackPanel>
+                            <TextBlock Text="启动台" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextPrimaryBrush}"
+                                       Padding="16,12,16,4" />
+
+                            <!-- 鼠标触发 -->
+                            <TextBlock Text="鼠标触发" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextSecondaryBrush}"
+                                       Padding="16,8,16,0" />
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
+                                          Foreground="{StaticResource AccentBlue}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="按下中键" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <ToggleSwitch Grid.Column="2" MinWidth="48"
+                                              IsOn="{x:Bind ViewModel.IsMouseTriggerMiddle, Mode=TwoWay}"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
+                                          Foreground="{StaticResource AccentBlue}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="按下X1键" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <ToggleSwitch Grid.Column="2" MinWidth="48"
+                                              IsOn="{x:Bind ViewModel.IsMouseTriggerX1, Mode=TwoWay}"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
+                                          Foreground="{StaticResource AccentBlue}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="按下X2键" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <ToggleSwitch Grid.Column="2" MinWidth="48"
+                                              IsOn="{x:Bind ViewModel.IsMouseTriggerX2, Mode=TwoWay}"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+
+                            <!-- 键盘触发 -->
+                            <TextBlock Text="键盘触发" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextSecondaryBrush}"
+                                       Padding="16,12,16,0" />
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE765;" FontSize="16"
+                                          Foreground="{StaticResource IconAmber}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="全局快捷键" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="2"
+                                        Content="{x:Bind ViewModel.LaunchpadHotKeyDisplay, Mode=OneWay}"
+                                        Click="OnModifyGlobalHotKeyClick"
+                                        FontSize="14"
+                                        MinHeight="32" MinWidth="60"
+                                        Padding="12,4"
+                                        CornerRadius="4"
+                                        BorderBrush="{ThemeResource SystemControlForegroundBaseLowBrush}"
+                                        BorderThickness="1"
+                                        Background="Transparent"
+                                        Visibility="{x:Bind ViewModel.GlobalHotKeySettingsVisibility, Mode=OneWay}" />
+                                <ToggleSwitch Grid.Column="3" MinWidth="48"
+                                              IsOn="{x:Bind ViewModel.IsKeyboardTriggerGlobalHotKey, Mode=TwoWay}"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE765;" FontSize="16"
+                                          Foreground="{StaticResource IconAmber}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Alt + 空格" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <ToggleSwitch Grid.Column="2" MinWidth="48"
+                                              IsOn="{x:Bind ViewModel.IsKeyboardTriggerAltSpace, Mode=TwoWay}"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+
+                            <Button Content="打开启动台"
+                                    Click="OnOpenLaunchpadClick"
+                                    Padding="16,8" CornerRadius="6"
+                                    Margin="16,8,16,12"
+                                    HorizontalAlignment="Stretch" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
-
-                <CheckBox Content="Alt + 空格"
-                          IsChecked="{x:Bind ViewModel.IsKeyboardTriggerAltSpace, Mode=TwoWay}" />
-
-                <Button Content="打开启动台"
-                        Click="OnOpenLaunchpadClick"
-                        Padding="16,8" CornerRadius="6"
-                        Margin="0,8,0,0" />
-            </StackPanel>
+            </ScrollViewer>
 
             <!-- ===== Hotkey panel ===== -->
             <Grid x:Name="HotkeyPanel" Grid.Row="1" Visibility="Collapsed">
@@ -285,11 +398,11 @@
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="16" Margin="0,0,24,0">
                     <!-- API 配置区域 -->
-                    <Border Background="#14FFFFFF" CornerRadius="8" Padding="16,14">
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16,14">
                         <StackPanel Spacing="12">
                             <TextBlock Text="API 配置"
                                        FontSize="16" FontWeight="SemiBold"
-                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                       Foreground="{ThemeResource TextPrimaryBrush}" />
                             <TextBox x:Name="AiApiKeyBox"
                                      Header="API Key"
                                      PlaceholderText="输入通义千问 API Key"
@@ -323,7 +436,7 @@
                     </Border>
 
                     <!-- 技能列表区域 -->
-                    <Border Background="#14FFFFFF" CornerRadius="8" Padding="16,14">
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16,14">
                         <StackPanel Spacing="10">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -332,7 +445,7 @@
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Text="已创建的技能"
                                            FontSize="16" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           Foreground="{ThemeResource TextPrimaryBrush}"
                                            VerticalAlignment="Center" />
                                 <Button Grid.Column="1"
                                         Content="清空所有技能"
@@ -379,14 +492,14 @@
             <Grid x:Name="AboutPanel" Grid.Row="1" Visibility="Collapsed">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="16" Margin="0,0,24,0">
-                        <Border Background="#14FFFFFF" CornerRadius="8" Padding="20,24">
+                        <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="20,24">
                             <StackPanel Spacing="8">
                                 <TextBlock Text="WinAssistant"
                                            FontSize="24" FontWeight="Bold"
-                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                           Foreground="{ThemeResource TextPrimaryBrush}" />
                                 <TextBlock x:Name="VersionText"
                                            FontSize="14"
-                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                           Foreground="{ThemeResource TextSecondaryBrush}" />
                                 <TextBlock Text="Windows 效率工具合集，集成启动台、全局快捷键、AI 对话、小工具等功能。"
                                            FontSize="13"
                                            Foreground="{StaticResource TextDimBrush}"
@@ -394,13 +507,13 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Background="#14FFFFFF" CornerRadius="8" Padding="20,16">
+                        <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="20,16">
                             <StackPanel Spacing="10">
                                 <TextBlock Text="技术栈"
                                            FontSize="15" FontWeight="SemiBold"
-                                           Foreground="{StaticResource TextPrimaryBrush}" />
+                                           Foreground="{ThemeResource TextPrimaryBrush}" />
                                 <TextBlock FontSize="13"
-                                           Foreground="{StaticResource TextSecondaryBrush}">
+                                           Foreground="{ThemeResource TextSecondaryBrush}">
                                     <Run Text=".NET 9" />
                                     <Run Text="·" />
                                     <Run Text="WinUI 3" />

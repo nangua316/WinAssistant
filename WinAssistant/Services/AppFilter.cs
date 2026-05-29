@@ -215,6 +215,11 @@ public static class AppFilter
         if (fileName.EndsWith("Service", StringComparison.OrdinalIgnoreCase) &&
             !fileName.Equals("explorer", StringComparison.OrdinalIgnoreCase))
             return true;
+        // Background server processes (*_server.exe, *Server.exe) — e.g. IME engines
+        if (fileName.EndsWith("_server", StringComparison.OrdinalIgnoreCase) ||
+            (fileName.EndsWith("Server", StringComparison.OrdinalIgnoreCase) &&
+             !fileName.Equals("Server", StringComparison.OrdinalIgnoreCase)))
+            return true;
         return false;
     }
 }

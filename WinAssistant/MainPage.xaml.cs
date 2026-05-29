@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
+using Microsoft.UI; // Added for theme-aware colors
 using WinAssistant.Controls.AiChat;
 using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
@@ -47,37 +48,34 @@ public sealed partial class MainPage : Page
         if (GeneralPanel == null) return;
         var index = MenuListView.SelectedIndex;
         GeneralPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
-        LaunchpadPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
-        HotkeyPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
-        AIPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
-        ToolPanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
-        AboutPanel.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
-        AddAppButton.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        HotkeyPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
+        AIPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
+        ToolPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
+        AboutPanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        AddAppButton.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
 
         TitleText.Text = index switch
         {
             0 => "常规设置",
-            1 => "启动台快捷触发",
-            2 => "全局快捷键管理",
-            3 => "AI 技能",
-            4 => "小工具",
-            5 => "关于",
+            1 => "全局快捷键管理",
+            2 => "AI 技能",
+            3 => "小工具",
+            4 => "关于",
             _ => ""
         };
         SubtitleText.Text = index switch
         {
             0 => "设置应用程序的基本选项",
-            1 => "配置触发方式和行为",
-            2 => "添加应用并设置全局快捷键",
-            3 => "配置 AI 并管理已创建的技能",
-            4 => "管理小工具，添加到启动台快速访问",
-            5 => "版本信息和项目链接",
+            1 => "添加应用并设置全局快捷键",
+            2 => "配置 AI 并管理已创建的技能",
+            3 => "管理小工具，添加到启动台快速访问",
+            4 => "版本信息和项目链接",
             _ => ""
         };
 
-        if (index == 3)
+        if (index == 2)
             PopulateAISettings();
-        else if (index == 4)
+        else if (index == 3)
             PopulateToolList();
     }
 
@@ -100,10 +98,7 @@ public sealed partial class MainPage : Page
 
             var card = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(16, 12, 16, 12),
-                Margin = new Thickness(0, 0, 0, 4)
+                Style = (Style)Resources["ToolCardBorderStyle"]
             };
 
             var row = new Grid
@@ -306,10 +301,7 @@ public sealed partial class MainPage : Page
         {
             var card = new Border
             {
-                Background = new SolidColorBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)),
-                CornerRadius = new CornerRadius(8),
-                Padding = new Thickness(14, 10, 14, 10),
-                Margin = new Thickness(0, 0, 0, 4)
+                Style = (Style)Resources["SkillCardBorderStyle"]
             };
 
             var row = new Grid
@@ -343,7 +335,7 @@ public sealed partial class MainPage : Page
                 Text = skill.Name,
                 FontSize = 14,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xF0, 0xF0, 0xF5))
+                Foreground = (Brush)Resources["TextPrimaryBrush"]
             });
             info.Children.Add(new TextBlock
             {

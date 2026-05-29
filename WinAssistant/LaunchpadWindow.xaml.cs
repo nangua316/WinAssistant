@@ -15,6 +15,7 @@ public sealed partial class LaunchpadWindow : Window
     private LaunchpadPage? _page;
     private int _gen;
     private bool _isShowing;
+    public bool IsShowing => _isShowing;
     private bool _isPinned;
     private readonly nint _hwnd;
     private static ITaskbarList2? _taskbar;

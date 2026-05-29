@@ -9,16 +9,15 @@ public class MouseHookService : IDisposable
     private bool _trackMiddle;
     private bool _trackX1;
     private bool _trackX2;
-
-    // Ignore XButton events within 500ms of any main-button click (left, right, middle)
-    // to prevent accidental triggers during double-click, right-click context menu, etc.
-    private long _lastClickTime;
+    private long _lastXButtonTick;
 
     public event EventHandler? MiddleButtonClicked;
     public event EventHandler? XButton1Clicked;
     public event EventHandler? XButton2Clicked;
 
     public bool IsRunning => _hookId != nint.Zero;
+
+    public long LastXButtonTick => _lastXButtonTick;
 
     public void Start(bool middle, bool x1, bool x2)
     {
@@ -55,18 +54,14 @@ public class MouseHookService : IDisposable
                 case WM_LBUTTONDOWN:
                 case WM_RBUTTONDOWN:
                 case WM_MBUTTONDOWN:
-                    _lastClickTime = Environment.TickCount64;
                     if ((uint)wParam == WM_MBUTTONDOWN && _trackMiddle)
                         App.DispatcherQueue.TryEnqueue(() => MiddleButtonClicked?.Invoke(this, EventArgs.Empty));
                     break;
 
                 case WM_XBUTTONDOWN:
-                    // Debounce: XButton within 500ms of any click is likely accidental
-                    if (Environment.TickCount64 - _lastClickTime < 500)
-                        break;
-
                     var msll = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
                     var button = (ushort)(msll.mouseData >> 16);
+                    _lastXButtonTick = Environment.TickCount64;
                     if (button == XBUTTON1 && _trackX1)
                         App.DispatcherQueue.TryEnqueue(() => XButton1Clicked?.Invoke(this, EventArgs.Empty));
                     else if (button == XBUTTON2 && _trackX2)

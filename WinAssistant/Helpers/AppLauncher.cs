@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using Interop.UIAutomationClient;
+using WinAssistant.Services;
 
 namespace WinAssistant.Helpers;
 
@@ -19,6 +20,14 @@ public static class AppLauncher
             {
                 Process.Start(new ProcessStartInfo { FileName = appPath, UseShellExecute = true });
                 return "launch";
+            }
+
+            // Background daemon/service/IME — can't be usefully activated
+            if (!string.IsNullOrEmpty(appPath) && AppFilter.IsDaemonProcess(appPath))
+            {
+                Log($"Skipped daemon: {appPath}");
+                HotKeyToast.Show("该应用为后台服务，无法直接启动");
+                return "";
             }
 
             if (!string.IsNullOrEmpty(appPath) && File.Exists(appPath))
