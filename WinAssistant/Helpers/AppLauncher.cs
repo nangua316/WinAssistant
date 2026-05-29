@@ -281,8 +281,27 @@ public static class AppLauncher
 
         if (!string.IsNullOrEmpty(appPath) && File.Exists(appPath))
         {
-            Logger.Log("AppLauncher",$"Launch new: {appPath}");
-            Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
+            var exeName = Path.GetFileNameWithoutExtension(appPath.AsSpan());
+            bool isChrome = exeName.Equals("chrome", StringComparison.OrdinalIgnoreCase)
+                || exeName.Equals("msedge", StringComparison.OrdinalIgnoreCase)
+                || exeName.Equals("brave", StringComparison.OrdinalIgnoreCase);
+
+            if (isChrome)
+            {
+                // Use default profile to avoid the multi-user picker dialog.
+                Logger.Log("AppLauncher",$"Launch Chrome with default profile: {appPath}");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = appPath,
+                    Arguments = "--profile-directory=\"Default\"",
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                Logger.Log("AppLauncher",$"Launch new: {appPath}");
+                Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
+            }
             return "launch";
         }
 
