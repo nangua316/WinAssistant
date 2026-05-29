@@ -525,7 +525,7 @@ public class MainPageViewModel : ObservableObject
         if (result != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
             return;
 
-        if (vm.Model.HotKeyId > 0)
+        if (vm.Model.HotKeyId != -1)
             _hotKeyService.Unregister(vm.Model.HotKeyId);
         Bindings.Remove(vm);
         SaveSettings();
@@ -609,7 +609,7 @@ public class MainPageViewModel : ObservableObject
 
         if (confirmed && capturedMods > 0 && capturedVk > 0)
         {
-            if (vm.Model.HotKeyId > 0)
+            if (vm.Model.HotKeyId != -1)
                 _hotKeyService.Unregister(vm.Model.HotKeyId);
 
             // Check conflicts with other bindings
@@ -663,7 +663,7 @@ public class MainPageViewModel : ObservableObject
                 return;
             }
         }
-        else if (!vm.IsEnabled && vm.Model.HotKeyId > 0)
+        else if (!vm.IsEnabled && vm.Model.HotKeyId != -1)
             _hotKeyService.Unregister(vm.Model.HotKeyId);
 
         SaveSettings();
