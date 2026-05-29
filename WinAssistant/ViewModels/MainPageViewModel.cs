@@ -251,7 +251,7 @@ public class MainPageViewModel : ObservableObject
                 "minimize" => "最小化",
                 _ => "激活"
             };
-            try { HotKeyToast.Show($"{verb} {binding.Name}"); }
+            try { HotKeyToast.Show(verb, binding.Name, binding.AppPath); }
             catch { }
         }
     }

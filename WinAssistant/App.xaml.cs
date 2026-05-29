@@ -55,6 +55,9 @@ public partial class App : Application
             Environment.Exit(0);
             return;
         }
+        // Enable native Win32 menu dark/light mode (affects tray context menu)
+        SetPreferredAppMode(1); // 1 = AllowDark, respects system theme
+
         AppDomain.CurrentDomain.ProcessExit += (s, e) =>
         {
             ToolHostWindow.CloseAll();
@@ -198,6 +201,9 @@ public partial class App : Application
 
     [DllImport("user32.dll")]
     private static extern bool UnregisterHotKey(nint hWnd, int id);
+
+    [DllImport("uxtheme.dll", EntryPoint = "#135")]
+    private static extern int SetPreferredAppMode(int mode);
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint hwnd, uint attr, ref int attrValue, int attrSize);

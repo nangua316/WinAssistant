@@ -161,27 +161,10 @@ public sealed partial class MainWindow : Window
             InsertMenuW(menu, 4, MF_SEPARATOR | MF_BYPOSITION, 0, null);
             InsertMenuW(menu, 5, MF_STRING | MF_BYPOSITION, exitItem, "退出");
 
-            // Add 20×20 solid-color icons to menu items
-            const int iconSize = 20;
-            var hBmpShow = CreateMenuIcon(iconSize, MenuIconType.Show);
-            var hBmpSettings = CreateMenuIcon(iconSize, MenuIconType.Settings);
-            var hBmpRestart = CreateMenuIcon(iconSize, MenuIconType.Restart);
-            var hBmpExit = CreateMenuIcon(iconSize, MenuIconType.Exit);
-
-            SetMenuItemBitmaps(menu, showItem, MF_BYCOMMAND, hBmpShow, hBmpShow);
-            SetMenuItemBitmaps(menu, settingsItem, MF_BYCOMMAND, hBmpSettings, hBmpSettings);
-            SetMenuItemBitmaps(menu, restartItem, MF_BYCOMMAND, hBmpRestart, hBmpRestart);
-            SetMenuItemBitmaps(menu, exitItem, MF_BYCOMMAND, hBmpExit, hBmpExit);
-
             SetForegroundWindow(hwnd);
             GetCursorPos(out var pt);
             var cmd = TrackPopupMenu(menu, TPM_RETURNCMD, pt.x, pt.y, 0, hwnd, nint.Zero);
             DestroyMenu(menu);
-
-            if (hBmpShow != nint.Zero) DeleteObject(hBmpShow);
-            if (hBmpSettings != nint.Zero) DeleteObject(hBmpSettings);
-            if (hBmpRestart != nint.Zero) DeleteObject(hBmpRestart);
-            if (hBmpExit != nint.Zero) DeleteObject(hBmpExit);
 
             if (cmd == showItem)
             {
@@ -238,99 +221,6 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private enum MenuIconType { Show, Settings, Restart, Exit }
-
-    /// <summary>
-    /// Create a 20×20 32-bit DIBSection with alpha, drawing a simple
-    /// solid-color geometric shape.  The returned HBITMAP must be freed
-    /// via DeleteObject when no longer needed.
-    /// </summary>
-    private static nint CreateMenuIcon(int size, MenuIconType type)
-    {
-        var hdcScreen = GetDC(nint.Zero);
-        var hdcMem = CreateCompatibleDC(hdcScreen);
-        var hBmp = CreateCompatibleBitmap(hdcScreen, size, size);
-        if (hBmp == nint.Zero) { DeleteDC(hdcMem); ReleaseDC(nint.Zero, hdcScreen); return nint.Zero; }
-        var hOld = SelectObject(hdcMem, hBmp);
-
-        // Fill entire bitmap with menu background colour so the icon
-        // blends into the menu — no alpha-channel trickery needed.
-        int menuColor = GetSysColor(COLOR_MENU);
-        var bgBrush = CreateSolidBrush(menuColor);
-        var hOldBrush = SelectObject(hdcMem, bgBrush);
-        PatBlt(hdcMem, 0, 0, size, size, PATCOPY);
-        SelectObject(hdcMem, hOldBrush);
-        DeleteObject(bgBrush);
-
-        // Foreground colour (COLORREF = 0x00BBGGRR)
-        uint fg = type switch
-        {
-            MenuIconType.Show    => 0x000078D7, // blue   B=0xD7 G=0x78 R=0x00
-            MenuIconType.Settings => 0x00787878, // gray   B=0x78 G=0x78 R=0x78
-            MenuIconType.Restart => 0x0000B060, // green  B=0x60 G=0xB0 R=0x00
-            MenuIconType.Exit    => 0x005050C8, // red    B=0x50 G=0x50 R=0xC8
-            _ => 0x00808080,
-        };
-
-        var fgBrush = CreateSolidBrush(unchecked((int)fg));
-        SelectObject(hdcMem, fgBrush);
-        var hNullPen = GetStockObject(NULL_PEN);
-        var hOldPen = SelectObject(hdcMem, hNullPen);
-
-        int m = 2;
-        switch (type)
-        {
-            case MenuIconType.Show:
-            {
-                // 2×2 grid of filled squares — app grid / launchpad
-                int cell = 7;
-                int gap = 2;
-                int x0 = (size - (cell * 2 + gap)) / 2; // centered
-                int y0 = x0;
-                PatBlt(hdcMem, x0,      y0,      cell, cell, PATCOPY);
-                PatBlt(hdcMem, x0 + cell + gap, y0,      cell, cell, PATCOPY);
-                PatBlt(hdcMem, x0,      y0 + cell + gap, cell, cell, PATCOPY);
-                PatBlt(hdcMem, x0 + cell + gap, y0 + cell + gap, cell, cell, PATCOPY);
-                break;
-            }
-            case MenuIconType.Settings:
-                Ellipse(hdcMem, m, m, size - m, size - m);
-                break;
-            case MenuIconType.Restart:
-            {
-                var hPen = CreatePen(PS_SOLID, 2, fg);
-                SelectObject(hdcMem, hPen);
-                int cx = size / 2, cy = size / 2, r = 6;
-                Arc(hdcMem, cx - r, cy - r, cx + r, cy + r, cx + r, cy, cx, cy - r);
-                LineTo(hdcMem, cx + r, cy);
-                MoveToEx(hdcMem, cx + r, cy, nint.Zero);
-                LineTo(hdcMem, cx + r - 3, cy - 3);
-                MoveToEx(hdcMem, cx + r, cy, nint.Zero);
-                LineTo(hdcMem, cx + r - 3, cy + 3);
-                DeleteObject(hPen);
-                break;
-            }
-            case MenuIconType.Exit:
-            {
-                var hPen = CreatePen(PS_SOLID, 3, fg);
-                SelectObject(hdcMem, hPen);
-                MoveToEx(hdcMem, m, m, nint.Zero);
-                LineTo(hdcMem, size - m, size - m);
-                MoveToEx(hdcMem, size - m, m, nint.Zero);
-                LineTo(hdcMem, m, size - m);
-                DeleteObject(hPen);
-                break;
-            }
-        }
-
-        SelectObject(hdcMem, hOldPen);
-        SelectObject(hdcMem, hOldBrush);
-        DeleteObject(fgBrush);
-        SelectObject(hdcMem, hOld);
-        DeleteDC(hdcMem);
-        ReleaseDC(nint.Zero, hdcScreen);
-        return hBmp;
-    }
 
     private nint WndProc(nint hWnd, uint msg, nint wParam, nint lParam)
     {
@@ -465,70 +355,6 @@ public sealed partial class MainWindow : Window
         public int x;
         public int y;
     }
-
-    // --- Menu icon support (GDI drawing on compatible bitmap) ---
-    private const int COLOR_MENU = 4;
-    private const int COLOR_HIGHLIGHT = 6;
-    private const int COLOR_MENUTEXT = 7;
-    private const int COLOR_HIGHLIGHTTEXT = 8;
-    private const uint PATCOPY = 0x00F00021;
-    private const int NULL_PEN = 8;
-    private const int PS_SOLID = 0;
-
-    [DllImport("user32.dll")]
-    private static extern bool SetMenuItemBitmaps(nint hMenu, uint uPosition, uint uFlags, nint hBitmapUnchecked, nint hBitmapChecked);
-
-    [DllImport("user32.dll")]
-    private static extern nint GetDC(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern int ReleaseDC(nint hWnd, nint hdc);
-
-    [DllImport("user32.dll")]
-    private static extern int GetSysColor(int nIndex);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateCompatibleDC(nint hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteDC(nint hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateCompatibleBitmap(nint hdc, int cx, int cy);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint SelectObject(nint hdc, nint hgdiobj);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(nint hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateSolidBrush(int color);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool PatBlt(nint hdc, int nXLeft, int nYLeft, int nWidth, int nHeight, uint dwRop);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint GetStockObject(int fnObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool Rectangle(nint hdc, int left, int top, int right, int bottom);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool Ellipse(nint hdc, int left, int top, int right, int bottom);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool Arc(nint hdc, int left, int top, int right, int bottom,
-        int xStart, int yStart, int xEnd, int yEnd);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreatePen(int fnPenStyle, int nWidth, uint crColor);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool MoveToEx(nint hdc, int x, int y, nint lpPoint);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool LineTo(nint hdc, int x, int y);
 
     #endregion
 }

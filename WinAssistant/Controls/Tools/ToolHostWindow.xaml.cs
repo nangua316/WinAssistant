@@ -18,6 +18,11 @@ public sealed partial class ToolHostWindow : Window
         Title = tool.Name;
         ExtendsContentIntoTitleBar = true;
 
+        // Follow app's theme (light/dark)
+        ContentRoot.RequestedTheme = App.Window.Content is FrameworkElement fe
+            ? fe.RequestedTheme
+            : ElementTheme.Default;
+
         var content = tool.CreateContent();
         ContentRoot.Children.Add(content);
 

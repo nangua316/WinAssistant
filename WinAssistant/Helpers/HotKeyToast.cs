@@ -11,15 +11,27 @@ internal static class HotKeyToast
     private static nint _hwnd;
     private static nint _hfont;
     private static nint _hinst;
+    private static nint _hicon;
+    private static string _toastVerb = "";
+    private static string _toastName = "";
     private static WndProcDelegate? _wndProcDelegate;
 
     private const int TOAST_WIDTH = 520;
-    private const int TOAST_MIN_HEIGHT = 60;
-    private const int TOAST_MAX_HEIGHT = 300;
-    private const int DURATION_MS = 2000;
+    private const int TOAST_MIN_HEIGHT = 100;
+    private const int TOAST_MAX_HEIGHT = 360;
+    private const int ACCENT_WIDTH = 4;
+    private const int ICON_SIZE = 44;
+    private const int TEXT_GAP = 12;         // gap between icon and text
+    private const int TEXT_PAD_LR = 22;     // left & right padding past accent
+    private const int TEXT_PAD_TB = 20;     // top & bottom padding
+    private const int DURATION_MS = 3000;
     private const string CLASS_NAME = "WinAssistantToast";
 
-    public static void Show(string message)
+    /// <summary>
+    /// Show a three-part toast: verb + icon + app name.
+    /// When appName is empty, shows verb as plain text (no icon).
+    /// </summary>
+    public static void Show(string verb, string appName = "", string? iconPath = null)
     {
         try
         {
@@ -31,30 +43,54 @@ internal static class HotKeyToast
                 if (_hwnd == nint.Zero) return;
             }
 
-            SetWindowTextW(_hwnd, message);
+            _toastVerb = verb;
+            _toastName = appName;
 
-            // Calculate required height based on text + font metrics
+            // Load app icon from exe path — try high-res first, fall back to default size
+            if (_hicon != nint.Zero) { DestroyIcon(_hicon); _hicon = nint.Zero; }
+            if (!string.IsNullOrEmpty(iconPath) && (File.Exists(iconPath) || Directory.Exists(iconPath)))
+            {
+                if (SHDefExtractIconW(iconPath, 0, 0, out nint hIcon, out _, ICON_SIZE) == 0)
+                    _hicon = hIcon;
+                else
+                {
+                    var shfi = new SHFILEINFOW();
+                    SHGetFileInfoW(iconPath, 0, ref shfi, (uint)Marshal.SizeOf<SHFILEINFOW>(), SHGFI_ICON);
+                    _hicon = shfi.hIcon;
+                }
+            }
+
+            bool hasParts = !string.IsNullOrEmpty(_toastName);
+            bool hasIcon = _hicon != nint.Zero;
+
+            // Calculate height
             var hdc = GetDC(_hwnd);
             var height = TOAST_MIN_HEIGHT;
             if (hdc != nint.Zero)
             {
                 if (_hfont != nint.Zero) SelectObject(hdc, _hfont);
-                var rc = new RECT { left = 0, top = 0, right = TOAST_WIDTH - 20, bottom = 0 };
-                DrawTextW(hdc, message, message.Length, ref rc,
-                    DT_WORDBREAK | DT_CALCRECT);
-                height = Math.Max(TOAST_MIN_HEIGHT, Math.Min(rc.bottom + 32, TOAST_MAX_HEIGHT));
+                if (hasParts || hasIcon)
+                {
+                    height = Math.Max(TOAST_MIN_HEIGHT, ICON_SIZE + TEXT_PAD_TB * 2);
+                }
+                else
+                {
+                    int textWidth = TOAST_WIDTH - ACCENT_WIDTH - TEXT_PAD_LR * 2;
+                    var rc = new RECT { left = 0, top = 0, right = textWidth, bottom = 0 };
+                    DrawTextW(hdc, verb, verb.Length, ref rc, DT_WORDBREAK | DT_CALCRECT);
+                    height = Math.Max(TOAST_MIN_HEIGHT,
+                        Math.Min(rc.bottom + TEXT_PAD_TB * 2, TOAST_MAX_HEIGHT));
+                }
                 ReleaseDC(_hwnd, hdc);
             }
 
             InvalidateRect(_hwnd, nint.Zero, true);
 
-            // Position above the taskbar using the work area
+            // Position above the taskbar
             var workRect = new RECT();
-            SystemParametersInfoW(0x0030, 0, ref workRect, 0); // SPI_GETWORKAREA
+            SystemParametersInfoW(0x0030, 0, ref workRect, 0);
             var y = workRect.bottom - height - 8;
-            var x = 16;
-            SetWindowPos(_hwnd, HWND_TOPMOST,
-                x, y,
+            SetWindowPos(_hwnd, HWND_TOPMOST, 16, y,
                 TOAST_WIDTH, height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
@@ -103,7 +139,7 @@ internal static class HotKeyToast
         }
 
         // Font for text
-        _hfont = CreateFontW(40, 0, 0, 0, FW_SEMIBOLD, 0, 0, 0,
+        _hfont = CreateFontW(48, 0, 0, 0, FW_NORMAL, 0, 0, 0,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Microsoft YaHei UI");
 
@@ -141,34 +177,50 @@ internal static class HotKeyToast
                         FillRect(ps.hdc, ref rc, brush);
                         DeleteObject(brush);
 
-                        // Left accent strip (6px blue)
-                        var accentRect = new RECT { left = 0, top = 0, right = 6, bottom = rc.bottom };
+                        // Left accent strip (4px blue)
+                        var accentRect = new RECT { left = 0, top = 0, right = ACCENT_WIDTH, bottom = rc.bottom };
                         var accentBrush = CreateSolidBrush(ACCENT_COLOR);
                         FillRect(ps.hdc, ref accentRect, accentBrush);
                         DeleteObject(accentBrush);
 
-                        // White text with custom font
+                        // Custom font
                         if (_hfont != nint.Zero)
                             SelectObject(ps.hdc, _hfont);
                         SetBkMode(ps.hdc, 1); // TRANSPARENT
                         SetTextColor(ps.hdc, 0x00FFFFFF);
 
-                        var sb = new System.Text.StringBuilder(256);
-                        GetWindowTextW(hWnd, sb, sb.Capacity);
-                        var text = sb.ToString();
-                        if (text.Length > 0)
+                        bool hasParts = !string.IsNullOrEmpty(_toastName);
+                        bool hasIcon = _hicon != nint.Zero;
+                        int x = ACCENT_WIDTH + TEXT_PAD_LR;
+
+                        // Draw icon first if available (for both parts and plain text modes)
+                        int iconY = (rc.bottom - ICON_SIZE) / 2;
+                        if (hasIcon)
                         {
-                            // Measure text height with word wrap
-                            var textRc = new RECT { left = 16, top = 0, right = rc.right - 16, bottom = 0 };
-                            DrawTextW(ps.hdc, text, text.Length, ref textRc,
+                            DrawIconEx(ps.hdc, x, iconY, _hicon, ICON_SIZE, ICON_SIZE, 0, nint.Zero, DI_NORMAL);
+                            x += ICON_SIZE + TEXT_GAP;
+                        }
+
+                        if (hasParts)
+                        {
+                            // Layout: [icon] 打开 微信
+                            string fullText = _toastVerb + " " + _toastName;
+                            var dRc = new RECT { left = x, top = 0, right = rc.right - TEXT_PAD_LR, bottom = rc.bottom };
+                            DrawTextW(ps.hdc, fullText, fullText.Length, ref dRc,
+                                DT_SINGLELINE | DT_VCENTER | DT_LEFT);
+                        }
+                        else if (_toastVerb.Length > 0)
+                        {
+                            // Plain text mode (with optional icon)
+                            var textRc = new RECT { left = x, top = 0, right = rc.right - TEXT_PAD_LR, bottom = 0 };
+                            DrawTextW(ps.hdc, _toastVerb, _toastVerb.Length, ref textRc,
                                 DT_WORDBREAK | DT_CALCRECT);
                             var textH = textRc.bottom;
-                            // Vertically center: offset start Y by half the leftover space
                             rc.top = (rc.bottom - textH) / 2;
-                            rc.left = 16;
-                            rc.right -= 16;
-                            DrawTextW(ps.hdc, text, text.Length, ref rc,
-                                DT_WORDBREAK | DT_CENTER);
+                            rc.left = x;
+                            rc.right = rc.right - TEXT_PAD_LR;
+                            DrawTextW(ps.hdc, _toastVerb, _toastVerb.Length, ref rc,
+                                DT_WORDBREAK | DT_LEFT);
                         }
 
                         EndPaint(hWnd, ref ps);
@@ -200,21 +252,20 @@ internal static class HotKeyToast
     private const int SWP_SHOWWINDOW = 0x0040;
     private const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUNDSMALL = 4;
-    private const uint SS_CENTERIMAGE = 0x00000200;
-    private const int FW_SEMIBOLD = 600;
+    private const int FW_NORMAL = 400;
     private const byte DEFAULT_CHARSET = 1;
     private const uint OUT_DEFAULT_PRECIS = 0;
     private const uint CLIP_DEFAULT_PRECIS = 0;
     private const uint CLEARTYPE_QUALITY = 5;
     private const uint DEFAULT_PITCH = 0;
     private const uint FF_DONTCARE = 0;
-    private const uint DT_SINGLELINE = 0x0020;
-    private const uint DT_VCENTER = 0x0004;
     private const uint DT_LEFT = 0x0000;
-    private const uint DT_CENTER = 0x0001;
-    private const uint DT_END_ELLIPSIS = 0x8000;
+    private const uint DT_VCENTER = 0x0004;
+    private const uint DT_SINGLELINE = 0x0020;
     private const uint DT_WORDBREAK = 0x0010;
     private const uint DT_CALCRECT = 0x0400;
+    private const uint SHGFI_ICON = 0x00000100;
+    private const uint DI_NORMAL = 0x0003;
     private static readonly nint HWND_TOPMOST = -1;
     private static readonly nint IDC_ARROW = 32512;
 
@@ -240,6 +291,30 @@ internal static class HotKeyToast
 
     [StructLayout(LayoutKind.Sequential)]
     private struct PAINTSTRUCT { public nint hdc; public bool fErase; public RECT rcPaint; public bool fRestore; public bool fIncUpdate; [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)] public byte[] rgbReserved; }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct SHFILEINFOW
+    {
+        public nint hIcon;
+        public int iIcon;
+        public uint dwAttributes;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)]
+        public string szDisplayName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)]
+        public string szTypeName;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint SHGetFileInfoW(string pszPath, uint dwFileAttributes, ref SHFILEINFOW psfi, uint cbFileInfo, uint uFlags);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHDefExtractIconW(string pszIconFile, int nIcons, uint uFlags, out nint phiconLarge, out nint phiconSmall, uint nIconSize);
+
+    [DllImport("user32.dll")]
+    private static extern bool DrawIconEx(nint hdc, int xLeft, int yTop, nint hIcon, int cxWidth, int cyWidth, uint istepIfAniCur, nint hbrFlickerFreeDraw, uint diFlags);
+
+    [DllImport("user32.dll")]
+    private static extern bool DestroyIcon(nint hIcon);
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     private static extern nint GetModuleHandleW(string? lpModuleName);

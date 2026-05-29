@@ -107,9 +107,7 @@ public class WifiPasswordTool : IAssistantTool
             Content = "复制 WiFi 名称和密码",
             MinHeight = 42,
             CornerRadius = new CornerRadius(8),
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            Background = new SolidColorBrush(Color.FromArgb(0x30, 0x60, 0xA5, 0xFA)),
-            Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xF0, 0xF0, 0xF5))
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
         copyBtn.Click += (_, _) =>
         {

@@ -260,13 +260,16 @@ public sealed partial class LaunchpadPage : Page
 
     private void LaunchSelected()
     {
-        if (AppGrid.SelectedItem == null && ViewModel.FilteredItems.Count > 0)
-            AppGrid.SelectedIndex = 0;
-        if (AppGrid.SelectedItem is LaunchpadItemViewModel vm)
+        var vm = AppGrid.SelectedItem as LaunchpadItemViewModel;
+        // Fall back to first filtered item when GridView selection is stale
+        // (e.g. just after search text changes).
+        if (vm == null && ViewModel.FilteredItems.Count > 0)
+            vm = ViewModel.FilteredItems[0];
+        if (vm != null)
         {
             if (HandleToolClick(vm)) return;
             var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
-            ShowLaunchToast(action, vm.Name);
+            ShowLaunchToast(action, vm.Name, vm.AppPath);
             Close(clearSearch: true);
         }
     }
@@ -275,17 +278,10 @@ public sealed partial class LaunchpadPage : Page
     {
         if (e.ClickedItem is LaunchpadItemViewModel vm)
         {
-            if (vm.IsUnadded)
-            {
-                ViewModel.AddUnaddedItem(vm);
-            }
-            else if (HandleToolClick(vm)) { }
-            else
-            {
-                var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
-                ShowLaunchToast(action, vm.Name);
-                Close(clearSearch: true);
-            }
+            if (HandleToolClick(vm)) return;
+            var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
+            ShowLaunchToast(action, vm.Name, vm.AppPath);
+            Close(clearSearch: true);
         }
     }
 
@@ -298,7 +294,14 @@ public sealed partial class LaunchpadPage : Page
             var msg = vm.Tool.Activate();
             if (!string.IsNullOrEmpty(msg))
             {
-                try { HotKeyToast.Show(msg); }
+                try
+                {
+                    var iconPath = vm.Tool.IconExtractPath;
+                    // Fall back to app's own icon for tools without an extract path
+                    if (string.IsNullOrEmpty(iconPath))
+                        iconPath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                    HotKeyToast.Show(msg, iconPath: iconPath);
+                }
                 catch { }
             }
             Close(clearSearch: true);
@@ -337,8 +340,8 @@ public sealed partial class LaunchpadPage : Page
 
     private void UpdateReorderState()
     {
-        AppGrid.IsItemClickEnabled = string.IsNullOrWhiteSpace(ViewModel.SearchText)
-            || ViewModel.FilteredItems.Count > 0;
+        // Always enabled — drag/reorder is disabled, no reason to block clicks.
+        AppGrid.IsItemClickEnabled = true;
     }
 
     private void UpdateEmptyState()
@@ -370,7 +373,7 @@ public sealed partial class LaunchpadPage : Page
         CloseRequested?.Invoke(this, EventArgs.Empty);
     }
 
-    private static void ShowLaunchToast(string action, string appName)
+    private static void ShowLaunchToast(string action, string appName, string? iconPath = null)
     {
         if (string.IsNullOrEmpty(action)) return;
         var verb = action switch
@@ -379,7 +382,7 @@ public sealed partial class LaunchpadPage : Page
             "launch" => "打开",
             _ => "激活"
         };
-        try { HotKeyToast.Show($"{verb} {appName}"); }
+        try { HotKeyToast.Show(verb, appName, iconPath); }
         catch { }
     }
 }
