@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
     private const int GWLP_WNDPROC = -4;
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
+    private const int SW_RESTORE = 9;
 
     private const uint NIM_ADD = 0;
     private const uint NIM_DELETE = 2;
@@ -126,7 +127,7 @@ public sealed partial class MainWindow : Window
 
         // Show as a normal app window with taskbar entry
         MakeAppWindow();
-        ShowWindow(_hwnd, SW_SHOW);
+        ShowWindow(_hwnd, SW_RESTORE);
         SetForegroundWindow(_hwnd);
     }
 
