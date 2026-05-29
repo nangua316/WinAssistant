@@ -151,21 +151,26 @@ public sealed partial class MainWindow : Window
             var menu = CreatePopupMenu();
             const uint showItem = 1;
             const uint settingsItem = 2;
-            const uint exitItem = 3;
+            const uint restartItem = 3;
+            const uint exitItem = 4;
 
             InsertMenuW(menu, 0, MF_STRING | MF_BYPOSITION, showItem, "启动台");
             InsertMenuW(menu, 1, MF_STRING | MF_BYPOSITION, settingsItem, "设置");
             InsertMenuW(menu, 2, MF_SEPARATOR | MF_BYPOSITION, 0, null);
-            InsertMenuW(menu, 3, MF_STRING | MF_BYPOSITION, exitItem, "退出");
+            InsertMenuW(menu, 3, MF_STRING | MF_BYPOSITION, restartItem, "重启");
+            InsertMenuW(menu, 4, MF_SEPARATOR | MF_BYPOSITION, 0, null);
+            InsertMenuW(menu, 5, MF_STRING | MF_BYPOSITION, exitItem, "退出");
 
             // Add 20×20 solid-color icons to menu items
             const int iconSize = 20;
             var hBmpShow = CreateMenuIcon(iconSize, MenuIconType.Show);
             var hBmpSettings = CreateMenuIcon(iconSize, MenuIconType.Settings);
+            var hBmpRestart = CreateMenuIcon(iconSize, MenuIconType.Restart);
             var hBmpExit = CreateMenuIcon(iconSize, MenuIconType.Exit);
 
             SetMenuItemBitmaps(menu, showItem, MF_BYCOMMAND, hBmpShow, hBmpShow);
             SetMenuItemBitmaps(menu, settingsItem, MF_BYCOMMAND, hBmpSettings, hBmpSettings);
+            SetMenuItemBitmaps(menu, restartItem, MF_BYCOMMAND, hBmpRestart, hBmpRestart);
             SetMenuItemBitmaps(menu, exitItem, MF_BYCOMMAND, hBmpExit, hBmpExit);
 
             SetForegroundWindow(hwnd);
@@ -185,6 +190,37 @@ public sealed partial class MainWindow : Window
             {
                 App.DispatcherQueue.TryEnqueue(ShowSettings);
             }
+            else if (cmd == restartItem)
+            {
+                App.DispatcherQueue.TryEnqueue(() =>
+                {
+                    // Launch a delayed restart via cmd.exe — waits 1s then starts a new instance.
+                    // We must exit first so the singleton mutex is released.
+                    var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                    if (!string.IsNullOrEmpty(exePath))
+                    {
+                        try
+                        {
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = "cmd.exe",
+                                Arguments = $"/c timeout /t 1 /nobreak >nul & start \"\" \"{exePath}\"",
+                                UseShellExecute = true,
+                                WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden,
+                                CreateNoWindow = true
+                            });
+                        }
+                        catch { }
+                    }
+
+                    ToolHostWindow.CloseAll();
+                    CleanupTrayIcon();
+                    Helpers.IconHelper.CleanupTempIcons();
+                    App.MouseHookService.Stop();
+                    App.HotKeyService.Dispose();
+                    Environment.Exit(0);
+                });
+            }
             else if (cmd == exitItem)
             {
                 App.DispatcherQueue.TryEnqueue(() =>
@@ -193,7 +229,6 @@ public sealed partial class MainWindow : Window
                     CleanupTrayIcon();
                     Helpers.IconHelper.CleanupTempIcons();
                     App.MouseHookService.Stop();
-                    App.SingleKeyInterceptor.Stop();
                     App.HotKeyService.Dispose();
                     Environment.Exit(0);
                 });
@@ -205,7 +240,7 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private enum MenuIconType { Show, Settings, Exit }
+    private enum MenuIconType { Show, Settings, Restart, Exit }
 
     /// <summary>
     /// Create a 20×20 32-bit DIBSection with alpha, drawing a simple
@@ -234,6 +269,7 @@ public sealed partial class MainWindow : Window
         {
             MenuIconType.Show    => 0x000078D7, // blue   B=0xD7 G=0x78 R=0x00
             MenuIconType.Settings => 0x00787878, // gray   B=0x78 G=0x78 R=0x78
+            MenuIconType.Restart => 0x0000B060, // green  B=0x60 G=0xB0 R=0x00
             MenuIconType.Exit    => 0x005050C8, // red    B=0x50 G=0x50 R=0xC8
             _ => 0x00808080,
         };
@@ -262,6 +298,22 @@ public sealed partial class MainWindow : Window
             case MenuIconType.Settings:
                 Ellipse(hdcMem, m, m, size - m, size - m);
                 break;
+            case MenuIconType.Restart:
+            {
+                // A clockwise circular arrow (arc + arrowhead)
+                var hPen = CreatePen(PS_SOLID, 2, fg);
+                SelectObject(hdcMem, hPen);
+                int cx = size / 2, cy = size / 2, r = 6;
+                Arc(hdcMem, cx - r, cy - r, cx + r, cy + r, cx + r, cy, cx, cy - r);
+                // Arrowhead
+                LineTo(hdcMem, cx + r, cy);
+                MoveToEx(hdcMem, cx + r, cy, nint.Zero);
+                LineTo(hdcMem, cx + r - 3, cy - 3);
+                MoveToEx(hdcMem, cx + r, cy, nint.Zero);
+                LineTo(hdcMem, cx + r - 3, cy + 3);
+                DeleteObject(hPen);
+                break;
+            }
             case MenuIconType.Exit:
             {
                 var hPen = CreatePen(PS_SOLID, 3, fg);
@@ -468,6 +520,10 @@ public sealed partial class MainWindow : Window
 
     [DllImport("gdi32.dll")]
     private static extern bool Ellipse(nint hdc, int left, int top, int right, int bottom);
+
+    [DllImport("gdi32.dll")]
+    private static extern bool Arc(nint hdc, int left, int top, int right, int bottom,
+        int xStart, int yStart, int xEnd, int yEnd);
 
     [DllImport("gdi32.dll")]
     private static extern nint CreatePen(int fnPenStyle, int nWidth, uint crColor);
