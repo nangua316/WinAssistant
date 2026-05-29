@@ -222,7 +222,7 @@ public partial class App : Application
     private ApplicationTheme _lastTheme;
     private Microsoft.UI.Xaml.DispatcherTimer? _themeTimer;
 
-    private static ApplicationTheme GetSystemTheme()
+    public static ApplicationTheme GetSystemTheme()
     {
         try
         {

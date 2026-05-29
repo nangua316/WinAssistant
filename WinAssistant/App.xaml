@@ -58,10 +58,13 @@
                         <ControlTemplate TargetType="Button">
                             <Grid CornerRadius="{TemplateBinding CornerRadius}">
                                 <Border x:Name="Bg" Background="{TemplateBinding Background}"
+                                        BorderBrush="{ThemeResource ButtonBorderBrush}"
+                                        BorderThickness="1"
                                         CornerRadius="{TemplateBinding CornerRadius}" />
                                 <Border x:Name="Overlay" Background="Transparent"
                                         CornerRadius="{TemplateBinding CornerRadius}" />
-                                <ContentPresenter Content="{TemplateBinding Content}"
+                                <ContentPresenter x:Name="ContentPresenter"
+                                                  Content="{TemplateBinding Content}"
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
                                                   Foreground="{TemplateBinding Foreground}"
                                                   Margin="{TemplateBinding Padding}"
@@ -82,7 +85,8 @@
                                         </VisualState>
                                         <VisualState x:Name="Disabled">
                                             <VisualState.Setters>
-                                                <Setter Target="ContentPresenter.Opacity" Value="0.45" />
+                                                <Setter Target="ContentPresenter.Foreground" Value="{ThemeResource SystemControlDisabledBaseMediumLowBrush}" />
+                                                <Setter Target="ContentPresenter.Opacity" Value="0.85" />
                                             </VisualState.Setters>
                                         </VisualState>
                                     </VisualStateGroup>

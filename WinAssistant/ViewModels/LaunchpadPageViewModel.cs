@@ -3,6 +3,7 @@ using System.Collections.Specialized;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.UI;
@@ -404,8 +405,15 @@ public class LaunchpadPageViewModel : ObservableObject
         {
             Title = "选择应用程序",
             Content = picker,
-            XamlRoot = _xamlRootGetter?.Invoke() ?? _xamlRoot ?? App.Window.Content.XamlRoot
+            XamlRoot = _xamlRootGetter?.Invoke() ?? _xamlRoot ?? App.Window.Content.XamlRoot,
+            RequestedTheme = Microsoft.UI.Xaml.ElementTheme.Default
         };
+        // Match the app's current theme explicitly (ContentDialog doesn't always
+        // inherit Application.RequestedTheme changes at runtime on some WinUI builds).
+        var appTheme = App.GetSystemTheme();
+        dialog.RequestedTheme = appTheme == ApplicationTheme.Light
+            ? ElementTheme.Light
+            : ElementTheme.Dark;
 
         picker.ItemAdded += item =>
         {
