@@ -195,31 +195,6 @@ public static class IconHelper
     [DllImport("user32.dll")]
     private static extern int GetDpiForWindow(nint hwnd);
 
-    /// <summary>
-    /// Save icon to temp PNG and load via file URI (avoids InMemoryRandomAccessStream entirely).
-    /// </summary>
-    [Obsolete("Use ExtractAppIconToAppData + BitmapImage in code-behind instead")]
-    public static async Task<BitmapImage?> LoadIconViaTempFileAsync(string filePath, int targetSize = 64, string aumid = "")
-    {
-        try
-        {
-            var tempFile = ExtractAppIconToAppData(filePath, targetSize, aumid);
-            if (tempFile == null) return null;
-
-            var bitmap = new BitmapImage();
-            bitmap.ImageOpened += (s, e) => Log($"LoadIconViaTempFile OK: {tempFile}");
-            bitmap.ImageFailed += (s, e) => Log($"LoadIconViaTempFile FAILED: {tempFile}");
-            bitmap.UriSource = new Uri(tempFile);
-            Log($"LoadIconViaTempFile initiated: {tempFile}");
-            return bitmap;
-        }
-        catch (Exception ex)
-        {
-            Log($"LoadIconViaTempFile error: {ex.Message}");
-            return null;
-        }
-    }
-
     public static void CleanupTempIcons()
     {
         try
