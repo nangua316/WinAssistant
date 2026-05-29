@@ -63,6 +63,7 @@
                                         CornerRadius="{TemplateBinding CornerRadius}" />
                                 <ContentPresenter Content="{TemplateBinding Content}"
                                                   ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                  Foreground="{TemplateBinding Foreground}"
                                                   Margin="{TemplateBinding Padding}"
                                                   HorizontalAlignment="Center"
                                                   VerticalAlignment="Center" />
@@ -79,7 +80,11 @@
                                                 <Setter Target="Overlay.Background" Value="{ThemeResource ButtonOverlayPressedBrush}" />
                                             </VisualState.Setters>
                                         </VisualState>
-                                        <VisualState x:Name="Disabled" />
+                                        <VisualState x:Name="Disabled">
+                                            <VisualState.Setters>
+                                                <Setter Target="ContentPresenter.Opacity" Value="0.45" />
+                                            </VisualState.Setters>
+                                        </VisualState>
                                     </VisualStateGroup>
                                 </VisualStateManager.VisualStateGroups>
                             </Grid>

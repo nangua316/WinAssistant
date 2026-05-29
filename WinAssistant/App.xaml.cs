@@ -286,6 +286,7 @@ public partial class App : Application
             if (current != _lastTheme)
             {
                 _lastTheme = current;
+                RequestedTheme = current;
                 ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
                 SystemThemeChanged?.Invoke(null, EventArgs.Empty);
             }
