@@ -1,5 +1,7 @@
 namespace WinAssistant.Models;
 
+using WinAssistant.Agents;
+
 public enum SkillActionType
 {
     invoke_tool,
@@ -21,6 +23,7 @@ public class SkillDefinition
     public Dictionary<string, string> ActionParams { get; set; } = [];
     public List<string> Keywords { get; set; } = [];
     public int UsageCount { get; set; }
+    public AgentType? AgentType { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.Now;
 
     public static string GetDefaultIcon(SkillActionType type) => type switch
