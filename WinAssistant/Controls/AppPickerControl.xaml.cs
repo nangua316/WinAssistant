@@ -55,7 +55,7 @@ public sealed partial class AppPickerControl : UserControl
             {
                 var added = !string.IsNullOrEmpty(a.AppPath) && existingPaths.Contains(a.AppPath)
                     || !string.IsNullOrEmpty(a.Aumid) && existingPaths.Contains("aumid::" + a.Aumid);
-                var pi = new AppPickerItem(a.Name, a.AppPath, a.Arguments, a.Aumid, a.UsageCount, null, a.ShortcutPath)
+                var pi = new AppPickerItem(a.Name, a.AppPath, a.Arguments, a.Aumid, a.UsageCount, null, a.ShortcutPath, a.IconPath)
                 {
                     IsAdded = added
                 };
@@ -79,7 +79,8 @@ public sealed partial class AppPickerControl : UserControl
             Name = selected.Name,
             AppPath = selected.AppPath,
             Arguments = selected.Arguments,
-            Aumid = selected.Aumid
+            Aumid = selected.Aumid,
+            IconPath = selected.IconPath != selected.AppPath ? selected.IconPath : null
         });
     }
 
@@ -117,7 +118,7 @@ public sealed partial class AppPickerControl : UserControl
         if (string.IsNullOrEmpty(item.AppPath) && string.IsNullOrEmpty(item.Aumid)) return;
         _ = Task.Run(() =>
         {
-            var tempFile = IconHelper.ExtractAppIconToAppData(item.AppPath, targetSize, aumid: item.Aumid);
+            var tempFile = IconHelper.ExtractAppIconToAppData(item.IconPath ?? item.AppPath, targetSize, aumid: item.Aumid);
             if (tempFile == null) return;
             App.DispatcherQueue.TryEnqueue(() =>
             {
@@ -158,7 +159,6 @@ internal class AppPickerViewModel
         var source = string.IsNullOrWhiteSpace(searchText)
             ? _allApps
             : _allApps.Where(a => SearchHelper.FuzzyMatch(a.Name, searchText)
-                               || SearchHelper.FuzzyMatch(a.AppPath, searchText)
                                || SearchHelper.FuzzyMatchPinyin(a.PinyinSearchData, searchText));
         foreach (var item in source)
             _filteredApps.Add(item);

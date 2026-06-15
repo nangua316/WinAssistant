@@ -23,13 +23,30 @@ public static class SearchHelper
 
     /// <summary>
     /// Match query against pinyin search data (space-separated segments like "wx weixin").
-    /// Each segment is matched independently to avoid cross-segment false positives.
+    /// Each segment is matched independently; also tries matching against the
+    /// concatenated form so that "weixin" matches "wei xin".
     /// </summary>
     public static bool FuzzyMatchPinyin(string pinyinData, string query)
     {
         if (string.IsNullOrEmpty(query)) return true;
         if (string.IsNullOrEmpty(pinyinData)) return false;
 
+        // Try matching the full concatenated pinyin (e.g. "weixin" in "wx wei xin")
+        var full = pinyinData.Replace(" ", "");
+        if (full.Contains(query, StringComparison.OrdinalIgnoreCase))
+            return true;
+        int ti = 0;
+        foreach (var qc in query)
+        {
+            while (ti < full.Length &&
+                   char.ToLowerInvariant(full[ti]) != char.ToLowerInvariant(qc))
+                ti++;
+            if (ti >= full.Length) goto checkSegments;
+            ti++;
+        }
+        return true;
+
+        checkSegments:
         foreach (var segment in pinyinData.Split(' '))
         {
             if (string.IsNullOrEmpty(segment)) continue;
