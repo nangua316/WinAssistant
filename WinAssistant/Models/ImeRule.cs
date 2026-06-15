@@ -14,4 +14,8 @@ public class ImeRule
     public bool UseFullWidth { get; set; }                  // Full-width punctuation
     public bool CapsLockState { get; set; }                 // CapsLock on/off
     public bool IsEnabled { get; set; } = true;
+
+    /// <summary>Display-only subtitle for rule list UI.</summary>
+    public string SubtitleText =>
+        $"{ImeDisplayName} · {(UseEnglishMode ? "英文" : "中文")} · {(UseFullWidth ? "全角" : "半角")} · CapsLock {(CapsLockState ? "开" : "关")}";
 }

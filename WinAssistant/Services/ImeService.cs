@@ -229,6 +229,16 @@ public class ImeService : IDisposable
     }
 
     /// <summary>
+    /// 对指定窗口应用指定的规则（手动触发，用于"立即应用"按钮）。
+    /// </summary>
+    public void ApplySpecificRule(ImeRule rule, nint hwnd)
+    {
+        if (!_running) return;
+        if (hwnd == nint.Zero || rule == null) return;
+        ApplyRule(rule, hwnd);
+    }
+
+    /// <summary>
     /// 清除最近一次 EVENT_IME_CHANGE 事件的时间戳（Win+Space 切换输入法后调用，防止误触 CN/EN toast）。
     /// </summary>
     public void ClearImeChangeEvent() => _imeChangeTime = DateTime.MinValue;
@@ -526,6 +536,21 @@ public class ImeService : IDisposable
 
         return result;
     }
+
+    /// <summary>
+    /// 返回匹配前台窗口进程的第一条启用规则（供 UI 查询当前匹配状态）。
+    /// </summary>
+    public static ImeRule? GetMatchingRule(string processName)
+    {
+        if (string.IsNullOrEmpty(processName)) return null;
+        var settings = App.SettingsService.Load();
+        return settings.ImeRules.FirstOrDefault(r =>
+            r.IsEnabled &&
+            string.Equals(r.ProcessName, processName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>获取前台窗口句柄（供 UI 使用）。</summary>
+    public static nint GetForegroundHwnd() => GetForegroundWindow();
 
     /// <summary>
     /// 枚举有可见窗口的运行中进程。

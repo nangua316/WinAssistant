@@ -210,6 +210,12 @@ public sealed partial class MainPage : Page
             ImeStatusLang.Text = $"中/英: {(info.IsChineseMode ? "🇨🇳 中文" : "🇺🇸 英文")}";
             ImeStatusWidth.Text = $"全/半角: {(info.IsFullWidth ? "全角" : "半角")}";
             ImeStatusCaps.Text = $"大小写: {(info.IsCapsLock ? "🔒 开启" : "关闭")}";
+
+            // Show matched rule
+            var matchedRule = ImeService.GetMatchingRule(info.ProcessName);
+            ImeStatusMatched.Text = matchedRule != null
+                ? $"匹配规则: {matchedRule.DisplayName} ({matchedRule.ProcessName})"
+                : "匹配规则: 无";
         }
         catch (Exception ex)
         {
@@ -220,114 +226,24 @@ public sealed partial class MainPage : Page
     private void PopulateImeRules()
     {
         var settings = App.SettingsService.Load();
-        ImeRuleListStack.Children.Clear();
+        var rules = settings.ImeRules;
 
-        if (settings.ImeRules.Count == 0)
+        if (rules.Count == 0)
         {
             ImeEmptyState.Visibility = Visibility.Visible;
+            ImeRuleListControl.Visibility = Visibility.Collapsed;
             return;
         }
 
         ImeEmptyState.Visibility = Visibility.Collapsed;
+        ImeRuleListControl.Visibility = Visibility.Visible;
+        ImeRuleListControl.ItemsSource = rules.ToList(); // ToList() to snapshot
+    }
 
-        foreach (var rule in settings.ImeRules)
-        {
-            var card = new Border
-            {
-                Style = (Style)Resources["ToolCardBorderStyle"]
-            };
-
-            var row = new Grid
-            {
-                ColumnDefinitions =
-                {
-                    new ColumnDefinition { Width = GridLength.Auto },
-                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
-                    new ColumnDefinition { Width = GridLength.Auto },
-                    new ColumnDefinition { Width = GridLength.Auto },
-                    new ColumnDefinition { Width = GridLength.Auto }
-                },
-                ColumnSpacing = 8
-            };
-
-            // Icon
-            row.Children.Add(new TextBlock
-            {
-                Text = "⌨",
-                FontSize = 22,
-                VerticalAlignment = VerticalAlignment.Center
-            });
-
-            // Info
-            var infoPanel = new StackPanel
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                Spacing = 1
-            };
-            var lang = rule.UseEnglishMode ? "英文" : "中文";
-            var width = rule.UseFullWidth ? "全角" : "半角";
-            var caps = rule.CapsLockState ? "🔒" : "";
-            infoPanel.Children.Add(new TextBlock
-            {
-                Text = $"{rule.DisplayName} ({rule.ProcessName})",
-                FontSize = 14,
-                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = (Brush)Resources["TextPrimaryBrush"]
-            });
-            infoPanel.Children.Add(new TextBlock
-            {
-                Text = $"{rule.ImeDisplayName} · {lang} · {width} {caps}",
-                FontSize = 11,
-                Opacity = 0.6
-            });
-            Grid.SetColumn(infoPanel, 1);
-            row.Children.Add(infoPanel);
-
-            // Toggle
-            var toggle = new ToggleSwitch
-            {
-                IsOn = rule.IsEnabled,
-                MinWidth = 48,
-                VerticalAlignment = VerticalAlignment.Center,
-                Tag = rule
-            };
-            toggle.Toggled += OnImeRuleToggleToggled;
-            Grid.SetColumn(toggle, 2);
-            row.Children.Add(toggle);
-
-            // Edit button
-            var editBtn = new Button
-            {
-                Content = "编辑",
-                MinWidth = 44, MinHeight = 30,
-                CornerRadius = new CornerRadius(4),
-                FontSize = 12, Padding = new Thickness(8, 2, 8, 2),
-                Tag = rule,
-                VerticalAlignment = VerticalAlignment.Center
-            };
-            editBtn.Click += OnImeEditRuleClick;
-            Grid.SetColumn(editBtn, 3);
-            row.Children.Add(editBtn);
-
-            // Delete button
-            var delBtn = new Button
-            {
-                Content = "删除",
-                MinWidth = 44, MinHeight = 30,
-                CornerRadius = new CornerRadius(4),
-                FontSize = 12, Padding = new Thickness(8, 2, 8, 2),
-                Tag = rule,
-                VerticalAlignment = VerticalAlignment.Center,
-                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0x44, 0x44)),
-                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
-            };
-            delBtn.Click += OnImeDeleteRuleClick;
-            Grid.SetColumn(delBtn, 4);
-            row.Children.Add(delBtn);
-
-            card.Child = row;
-            ImeRuleListStack.Children.Add(card);
-        }
+    private static void SaveAndReloadImeRules()
+    {
+        App.SettingsService.Save(App.SettingsService.Load());
+        App.ImeService.ReloadRules();
     }
 
     private void OnImeToastToggled(object sender, RoutedEventArgs e)
@@ -348,6 +264,43 @@ public sealed partial class MainPage : Page
     {
         ShowImeCurrentStatus();
     }
+
+    #region Rule reorder & apply
+
+    private void OnImeRuleMoveUp(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
+        var settings = App.SettingsService.Load();
+        var idx = settings.ImeRules.FindIndex(r => r.Id == rule.Id);
+        if (idx <= 0) return;
+        (settings.ImeRules[idx], settings.ImeRules[idx - 1]) = (settings.ImeRules[idx - 1], settings.ImeRules[idx]);
+        SaveAndReloadImeRules();
+        PopulateImeRules();
+    }
+
+    private void OnImeRuleMoveDown(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
+        var settings = App.SettingsService.Load();
+        var idx = settings.ImeRules.FindIndex(r => r.Id == rule.Id);
+        if (idx < 0 || idx >= settings.ImeRules.Count - 1) return;
+        (settings.ImeRules[idx], settings.ImeRules[idx + 1]) = (settings.ImeRules[idx + 1], settings.ImeRules[idx]);
+        SaveAndReloadImeRules();
+        PopulateImeRules();
+    }
+
+    private void OnImeApplyRuleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
+        var hwnd = ImeService.GetForegroundHwnd();
+        if (hwnd == nint.Zero) return;
+        var settings = App.SettingsService.Load();
+        var targetRule = settings.ImeRules.FirstOrDefault(r => r.Id == rule.Id);
+        if (targetRule != null)
+            App.ImeService.ApplySpecificRule(targetRule, hwnd);
+    }
+
+    #endregion
 
     private async void OnImeAddRuleClick(object sender, RoutedEventArgs e)
     {
