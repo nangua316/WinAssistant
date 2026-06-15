@@ -133,16 +133,24 @@ public sealed partial class MainWindow : Window
 
     private void MakeToolWindow()
     {
-        var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
-        exStyle = (exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
-        SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+        try
+        {
+            var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
+            exStyle = (exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
+            SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+        }
+        catch { }
     }
 
     private void MakeAppWindow()
     {
-        var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
-        exStyle = (exStyle & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW;
-        SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+        try
+        {
+            var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
+            exStyle = (exStyle & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW;
+            SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+        }
+        catch { }
     }
 
     private void ShowContextMenu(nint hwnd)

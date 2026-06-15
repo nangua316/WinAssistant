@@ -126,7 +126,7 @@ public sealed partial class LaunchpadPage : Page
         PinChanged?.Invoke(this, _isPinned);
     }
 
-    private async void OnPageRightTapped(object sender, RightTappedRoutedEventArgs e)
+    private void OnPageRightTapped(object sender, RightTappedRoutedEventArgs e)
     {
         var point = e.GetPosition(AppGrid);
         var hitItem = _dragHandler?.FindItemAt(point);
@@ -261,7 +261,7 @@ public sealed partial class LaunchpadPage : Page
         }
     }
 
-    private async void LaunchSelected()
+    private void LaunchSelected()
     {
         var vm = AppGrid.SelectedItem as LaunchpadItemViewModel
             ?? (ViewModel.FilteredItems.Count > 0 ? ViewModel.FilteredItems[0] : null);
@@ -269,7 +269,7 @@ public sealed partial class LaunchpadPage : Page
             LaunchOrClose(vm);
     }
 
-    private async void OnItemClick(object sender, ItemClickEventArgs e)
+    private void OnItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is LaunchpadItemViewModel vm)
             LaunchOrClose(vm);
