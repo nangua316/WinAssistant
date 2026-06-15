@@ -181,6 +181,17 @@ public static class IconHelper
                 if (aumidResult != null) return aumidResult;
             }
 
+            // IconExtractor for .exe/.dll — direct PE resource parsing.
+            // Extracts all available icon frames and selects the one closest to targetSize.
+            // Catches cases where PrivateExtractIcons returns a small default icon
+            // even when larger frames exist (e.g. some Electron apps like 豆包).
+            if (filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                || filePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                var peResult = ExtractViaIconExtractor(filePath, targetSize);
+                if (peResult != null) return peResult;
+            }
+
             // For .ico files, load directly (SHGetFileInfo returns the file-type icon, not the content)
             if (filePath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
             {
@@ -188,11 +199,6 @@ public static class IconHelper
                 var icoResult = ExtractIcoFile(filePath, targetSize);
                 if (icoResult != null) return icoResult;
             }
-
-            // System image list — 256x256 icons from the shell cache (EverythingToolbar approach)
-            Logger.Log("IconHelper",$"ImageList for {filePath}");
-            var imgResult = ExtractIconViaImageList(filePath, targetSize);
-            if (imgResult != null) return imgResult;
 
             // PrivateExtractIcons — requests the exact size (covers most .exe/.dll)
             Logger.Log("IconHelper",$"PrivateExtractIcons for {filePath} size={targetSize}");
@@ -260,37 +266,6 @@ public static class IconHelper
                 }
             }
             catch { }
-
-            // Final resort: TsudaKageyu/IconExtractor — direct PE resource parsing
-            // Catches exes where Win32 shell APIs fail (e.g. some packed/compressed exes)
-            if (filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
-            {
-                Logger.Log("IconHelper",$"IconExtractor for {filePath}");
-                try
-                {
-                    using var icoStream = new MemoryStream();
-                    IconExtractor.Extract1stIconTo(filePath, icoStream);
-                    if (icoStream.Length > 0)
-                    {
-                        icoStream.Position = 0;
-                        using var extracted = new System.Drawing.Icon(icoStream);
-                        using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
-                        using var g = System.Drawing.Graphics.FromImage(resized);
-                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-                        g.Clear(System.Drawing.Color.Transparent);
-                        g.DrawIcon(extracted, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
-                        var ms = new MemoryStream();
-                        resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                        ms.Position = 0;
-                        Logger.Log("IconHelper",$"IconExtractor OK: {filePath}");
-                        return ms;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.Log("IconHelper", $"IconExtractor error: {ex.Message}");
-                }
-            }
         }
 
         // AUMID fallback when file path is unavailable
@@ -495,41 +470,37 @@ public static class IconHelper
     }
 
     /// <summary>
-    /// Extract icon via the system image list (SHGetImageList SHIL_JUMBO = 256x256).
-    /// Approach used by EverythingToolbar — gives the highest-quality shell icon.
+    /// Extract icon via TsudaKageyu/IconExtractor — direct PE resource parsing.
+    /// Extracts all available icon frames as a .ico, then selects the frame
+    /// closest to targetSize via the System.Drawing.Icon(Stream, int, int) constructor.
+    /// More reliable than PrivateExtractIcons for apps with multiple icon sizes
+    /// (e.g. Electron apps like 豆包 where PrivateExtractIcons may return a small default).
     /// </summary>
-    private static MemoryStream? ExtractIconViaImageList(string filePath, int targetSize)
+    private static MemoryStream? ExtractViaIconExtractor(string filePath, int targetSize)
     {
         try
         {
-            var shfi = new SHFILEINFO();
-            var ret = SHGetFileInfoW(filePath, 0, ref shfi, Marshal.SizeOf<SHFILEINFO>(), SHGFI_SYSICONINDEX);
-            if (ret == nint.Zero || shfi.iIcon < 0) return null;
+            using var icoStream = new MemoryStream();
+            IconExtractor.Extract1stIconTo(filePath, icoStream);
+            if (icoStream.Length == 0) return null;
 
-            var iid = new Guid("46EB5926-582E-4017-9FDF-E8998DAA0950"); // IID_IImageList
-            int hr = SHGetImageList(4 /*SHIL_JUMBO*/, ref iid, out var imgList);
-            if (hr < 0 || imgList == null) return null;
-
-            hr = imgList.GetIcon(shfi.iIcon, 0x1 /*ILD_TRANSPARENT*/, out nint hIcon);
-            if (hr < 0 || hIcon == nint.Zero) return null;
-
-            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            icoStream.Position = 0;
+            // Icon(Stream, int, int) picks the frame whose size is closest to requested.
+            using var icon = new System.Drawing.Icon(icoStream, targetSize, targetSize);
             using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
             using var g = System.Drawing.Graphics.FromImage(resized);
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
             g.Clear(System.Drawing.Color.Transparent);
             g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
-            DestroyIcon(hIcon);
-
             var ms = new MemoryStream();
             resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
             ms.Position = 0;
-            Logger.Log("IconHelper", $"ImageList OK: {filePath} size={targetSize}");
+            Logger.Log("IconHelper", $"IconExtractor (early) OK: {filePath} size={targetSize}");
             return ms;
         }
         catch (Exception ex)
         {
-            Logger.Log("IconHelper", $"ImageList error: {ex.Message}");
+            Logger.Log("IconHelper", $"IconExtractor (early) error: {ex.Message}");
             return null;
         }
     }
@@ -726,36 +697,4 @@ public static class IconHelper
 
     // ── IImageList (SHGetImageList / EverythingToolbar approach) ──
 
-    [ComImport, Guid("46EB5926-582E-4017-9FDF-E8998DAA0950")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IImageList
-    {
-        int Add(nint hbmImage, nint hbmMask, out int pi);
-        int ReplaceIcon(int index, nint hicon, out int pi);
-        int SetOverlayImage(int index, int overlay);
-        int Replace(int index, nint hbmImage, nint hbmMask);
-        int AddMasked(nint hbmImage, int crMask, out int pi);
-        [PreserveSig] int Draw(nint pimldp);
-        int Remove(int index);
-        [PreserveSig] int GetIcon(int index, uint flags, out nint phicon);
-        int GetImageInfo(int index, nint pImageInfo);
-        int Copy(int iDst, nint punkSrc, int iSrc, uint uFlags);
-        int Merge(int i1, nint punkMerge, int i2, int dx, int dy, ref Guid riid, out nint ppv);
-        int Clone(ref Guid riid, out nint ppv);
-        int GetImageRect(int index, nint prc);
-        int GetIconSize(out int cx, out int cy);
-        int SetIconSize(int cx, int cy);
-        int GetImageCount(out int piCount);
-        int SetImageCount(int uNewCount);
-        int SetBegin();
-        int End();
-        int GetDragImage(nint ppt, nint pptHot, ref Guid riid, out nint ppv);
-        int GetItemFlags(int index, out uint dwFlags);
-        int GetOverlayImage(int overlay, out int piIndex);
-    }
-
-    private const uint SHGFI_SYSICONINDEX = 0x4000;
-
-    [DllImport("shell32.dll")]
-    private static extern int SHGetImageList(int iImageList, ref Guid riid, out IImageList ppv);
 }

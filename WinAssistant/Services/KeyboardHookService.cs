@@ -89,8 +89,8 @@ public class KeyboardHookService : IDisposable
                 // GetKeyState 从线程消息队列读取，钩子线程不可靠；
                 // 改为内部翻转（每次按 = 切换一次状态）。
                 _lastCapsState = !_lastCapsState;
-                var msg = _lastCapsState ? "大写锁定已开启" : "大写锁定已关闭";
-                App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("CapsLock", msg));
+                var msg = _lastCapsState ? "开启 大写锁定" : "关闭 大写锁定";
+                App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("", msg));
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
@@ -102,11 +102,11 @@ public class KeyboardHookService : IDisposable
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 
-            // ── Ctrl+Space: IME switch (toggle last 2 IMEs) ──
+            // ── Ctrl+Space: CN/EN toggle (same as Shift, within the current IME) ──
             if (!winDown && _ctrlDown && !_altDown && vkCode == 0x20 && isKeyUp)
             {
                 Log("Ctrl+Space detected");
-                App.DispatcherQueue.TryEnqueue(() => WinSpaceDetected?.Invoke());
+                App.DispatcherQueue.TryEnqueue(() => ShiftToggled?.Invoke());
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 

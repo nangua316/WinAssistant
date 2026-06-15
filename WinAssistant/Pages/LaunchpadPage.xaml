@@ -23,6 +23,7 @@
         <helpers:BoolToDragOpacityConverter x:Key="BoolToDragOpacityConverter" />
         <helpers:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
         <helpers:BoolToScaleConverter x:Key="BoolToScaleConverter" />
+        <helpers:BoolToDimOpacityConverter x:Key="BoolToDimOpacityConverter" />
         <helpers:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibilityConverter" />
 
         <!-- ===== Color Palette ===== -->
@@ -255,12 +256,33 @@
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Center"
                                            Visibility="{x:Bind HasIcon, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <!-- Uninstalled dim overlay -->
+                                    <Border Background="#88000000"
+                                            Width="52" Height="52"
+                                            CornerRadius="26"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Visibility="{x:Bind IsUninstalled, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <!-- Uninstalled badge -->
+                                    <Border Width="18" Height="18"
+                                            CornerRadius="9"
+                                            Background="#CCE04848"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Bottom"
+                                            Margin="0,0,2,2"
+                                            Visibility="{x:Bind IsUninstalled, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <FontIcon Glyph="&#xE711;" FontSize="10"
+                                                  Foreground="White"
+                                                  HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                                    </Border>
                                 </Grid>
                             </Border>
 
                             <!-- App name -->
                             <TextBlock Grid.Row="1"
                                        Text="{x:Bind Name}"
+                                       Opacity="{x:Bind IsUninstalled, Mode=OneWay, Converter={StaticResource BoolToDimOpacityConverter}}"
                                        Foreground="{StaticResource ItemNameBrush}"
                                        FontSize="12"
                                        TextAlignment="Center"

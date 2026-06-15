@@ -115,6 +115,15 @@
                 </ListViewItem>
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon Glyph="&#xE96C;" FontSize="16"
+                                  Foreground="{StaticResource IconGreen}"
+                                  VerticalAlignment="Center" />
+                        <TextBlock Text="输入法状态管理" FontSize="15"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+                </ListViewItem>
+                <ListViewItem>
+                    <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE946;" FontSize="16"
                                   Foreground="{StaticResource TextDimBrush}"
                                   VerticalAlignment="Center" />
@@ -487,6 +496,123 @@
                     </ScrollViewer>
                 </Grid>
             </Grid>
+
+            <!-- ===== IME panel ===== -->
+            <ScrollViewer x:Name="ImePanel" Grid.Row="1" Visibility="Collapsed"
+                          VerticalScrollBarVisibility="Auto">
+                <StackPanel Spacing="16" Margin="0,0,24,0">
+
+                    <!-- 开关设置 -->
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16,14">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="开关设置"
+                                       FontSize="16" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource TextPrimaryBrush}" />
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
+                                          Foreground="{StaticResource IconAmber}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="Toast 提示" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="ImeToastToggle" Grid.Column="2" MinWidth="48"
+                                              Toggled="OnImeToastToggled"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE768;" FontSize="16"
+                                          Foreground="{StaticResource AccentBlue}"
+                                          VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="按窗口自动切换输入法" FontSize="15"
+                                           VerticalAlignment="Center" />
+                                <ToggleSwitch x:Name="ImeAutoSwitchToggle" Grid.Column="2" MinWidth="48"
+                                              Toggled="OnImeAutoSwitchToggled"
+                                              OnContent="开" OffContent="关" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 当前输入法状态 -->
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16,14">
+                        <StackPanel Spacing="10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="当前输入法状态"
+                                           FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{ThemeResource TextPrimaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="刷新"
+                                        Click="OnImeRefreshStatus"
+                                        FontSize="12" Padding="10,4"
+                                        CornerRadius="4" MinHeight="28" />
+                            </Grid>
+
+                            <Border Background="#15FFFFFF" CornerRadius="6" Padding="14,10">
+                                <StackPanel x:Name="ImeStatusStack" Spacing="6">
+                                    <TextBlock x:Name="ImeStatusWindow"
+                                               Text="当前窗口: —"
+                                               FontSize="13" Foreground="{ThemeResource TextSecondaryBrush}" />
+                                    <TextBlock x:Name="ImeStatusLayout"
+                                               Text="当前输入法: —"
+                                               FontSize="13" Foreground="{ThemeResource TextSecondaryBrush}" />
+                                    <TextBlock x:Name="ImeStatusLang"
+                                               Text="中/英: —"
+                                               FontSize="13" Foreground="{ThemeResource TextSecondaryBrush}" />
+                                    <TextBlock x:Name="ImeStatusWidth"
+                                               Text="全/半角: —"
+                                               FontSize="13" Foreground="{ThemeResource TextSecondaryBrush}" />
+                                    <TextBlock x:Name="ImeStatusCaps"
+                                               Text="大小写: —"
+                                               FontSize="13" Foreground="{ThemeResource TextSecondaryBrush}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 规则管理 -->
+                    <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="8" Padding="16,14">
+                        <StackPanel Spacing="10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="规则管理"
+                                           FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{ThemeResource TextPrimaryBrush}"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Content="+ 添加规则"
+                                        Click="OnImeAddRuleClick"
+                                        FontSize="12" Padding="10,4"
+                                        CornerRadius="4" MinHeight="28" />
+                            </Grid>
+
+                            <TextBlock x:Name="ImeEmptyState"
+                                       Text="暂无规则，点击上方「添加规则」创建"
+                                       FontSize="13" Opacity="0.5"
+                                       Margin="0,8,0,0"
+                                       Visibility="Visible" />
+
+                            <StackPanel x:Name="ImeRuleListStack" Spacing="6" />
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
 
             <!-- ===== About panel ===== -->
             <Grid x:Name="AboutPanel" Grid.Row="1" Visibility="Collapsed">

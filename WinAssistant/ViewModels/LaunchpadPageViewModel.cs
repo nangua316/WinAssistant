@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.IO;
 using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -70,6 +71,7 @@ public class LaunchpadPageViewModel : ObservableObject
         {
             // Sync tool items from settings (user may have toggled tools on/off
             // in the settings page since the last launchpad open).
+            IsLoading = true;
             SyncToolItemsFromSettings();
             ApplyFilter();
             IsLoading = false;
@@ -95,6 +97,9 @@ public class LaunchpadPageViewModel : ObservableObject
             _items.Add(vm);
         IsLoading = false;
 
+        // Initial filter (was suppressed during bulk load by IsLoading flag).
+        ApplyFilter();
+
         // Load remaining (uncached) icons in background.
         if (pendingIcons.Count > 0)
             _ = LoadIconsBatchAsync(pendingIcons, size);
@@ -110,12 +115,31 @@ public class LaunchpadPageViewModel : ObservableObject
                     Name = a.Name,
                     AppPath = a.AppPath,
                     Arguments = a.Arguments,
-                    Aumid = a.Aumid
+                    Aumid = a.Aumid,
+                    IconPath = a.IconPath != a.AppPath ? a.IconPath : null
                 }, Pinyin: ComputePinyin(a.Name)))
                 .ToList();
             App.DispatcherQueue.TryEnqueue(() =>
             {
                 _allAppsCache = cache;
+
+                // Update existing items' IconPath from cache (auto-fix icons for
+                // Electron apps etc. where the AppPath exe doesn't carry the real icon).
+                var cacheByPath = cache
+                    .Where(c => !string.IsNullOrEmpty(c.Item.IconPath))
+                    .ToDictionary(c => c.Item.AppPath, c => c.Item.IconPath, StringComparer.OrdinalIgnoreCase);
+                foreach (var itemVm in _items)
+                {
+                    if (itemVm.Model.IconPath != null) continue; // already has a custom icon
+                    if (!string.IsNullOrEmpty(itemVm.Model.AppPath)
+                        && cacheByPath.TryGetValue(itemVm.Model.AppPath, out var cacheIconPath))
+                    {
+                        itemVm.Model.IconPath = cacheIconPath;
+                        // Reload icon from the corrected path.
+                        LoadSingleIcon(itemVm);
+                    }
+                }
+
                 // Re-run filter now that cache is ready so unadded items appear.
                 if (!string.IsNullOrWhiteSpace(_searchText))
                     ApplyFilter();
@@ -158,11 +182,14 @@ public class LaunchpadPageViewModel : ObservableObject
     }
 
     /// <summary>If a cached icon exists on disk, set it synchronously. Returns true if set.</summary>
+    private static string IconExtractPath(LaunchpadItem m) =>
+        m.IconPath ?? m.AppPath;
+
     private bool TrySetCachedIcon(LaunchpadItemViewModel vm, int size)
     {
         try
         {
-            var cached = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+            var cached = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
             if (cached == null) return false;
             var bitmap = new BitmapImage();
             bitmap.UriSource = new Uri(cached);
@@ -180,7 +207,7 @@ public class LaunchpadPageViewModel : ObservableObject
             await _iconLoadThrottle.WaitAsync();
             try
             {
-                IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+                IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
             }
             finally { _iconLoadThrottle.Release(); }
         }));
@@ -193,7 +220,7 @@ public class LaunchpadPageViewModel : ObservableObject
             {
                 try
                 {
-                    var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+                    var tempFile = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
                     if (tempFile == null) continue;
                     var bitmap = new BitmapImage();
                     bitmap.UriSource = new Uri(tempFile);
@@ -229,6 +256,7 @@ public class LaunchpadPageViewModel : ObservableObject
 
     private void OnItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (IsLoading) return;
         ApplyFilter();
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(StatusText));
@@ -265,6 +293,8 @@ public class LaunchpadPageViewModel : ObservableObject
 
         if (_allAppsCache != null)
         {
+            int unaddedCount = 0;
+            const int maxUnaddedResults = 15;
             foreach (var (cachedItem, pinyin) in _allAppsCache)
             {
                 if (!SearchHelper.FuzzyMatch(cachedItem.Name, query) && !SearchHelper.FuzzyMatchPinyin(pinyin, query))
@@ -274,7 +304,9 @@ public class LaunchpadPageViewModel : ObservableObject
                     continue;
                 if (!string.IsNullOrEmpty(cachedItem.Aumid) && addedAumids.Contains(cachedItem.Aumid))
                     continue;
+                if (++unaddedCount > maxUnaddedResults) break;
                 var vm = new LaunchpadItemViewModel(cachedItem, pinyin) { IsUnadded = true };
+                // Load icon in background (throttled to 3 concurrent).
                 LoadSingleIcon(vm);
                 results.Add((vm, isUnadded: true));
             }
@@ -466,7 +498,7 @@ public class LaunchpadPageViewModel : ObservableObject
             await _iconLoadThrottle.WaitAsync();
             try
             {
-                var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, size, aumid: vm.Model.Aumid);
+                var tempFile = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
                 if (tempFile == null) return;
                 App.DispatcherQueue.TryEnqueue(() =>
                 {
@@ -508,6 +540,7 @@ public class LaunchpadItemViewModel : ObservableObject
         Model = model;
         _tool = model.ToolId != null ? ToolRegistry.Get(model.ToolId) : null;
         _pinyinSearchData = precomputedPinyin ?? ComputePinyin(model.Name);
+        IsUninstalled = CheckUninstalled(model);
 
         if (_tool != null)
         {
@@ -615,6 +648,18 @@ public class LaunchpadItemViewModel : ObservableObject
 
     public bool HasIcon => _iconSource != null;
     public bool ShowToolGlyph => IsTool && _iconSource == null;
+
+    /// <summary>True when this app's executable no longer exists on disk (uninstalled).
+    /// Cached at construction — File.Exists is expensive to call per template instantiation.</summary>
+    public bool IsUninstalled { get; }
+
+    private static bool CheckUninstalled(LaunchpadItem model)
+    {
+        if (model.ToolId != null) return false;
+        var path = model.AppPath;
+        if (string.IsNullOrEmpty(path)) return false;
+        return !File.Exists(path) && !Directory.Exists(path);
+    }
 
     private bool _isBeingDragged;
     public bool IsBeingDragged

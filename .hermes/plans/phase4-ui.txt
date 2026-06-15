@@ -1,0 +1,274 @@
+Modify MainPage.xaml.cs to implement Phase 4: grouped skill display with Agent status preview.
+
+Read the current file first: D:\MyDoc\Code\WinAsistant2.0\WinAssistant\MainPage.xaml.cs
+
+## Changes needed (all in MainPage.xaml.cs)
+
+### 1. Rewrite PopulateSkillList() to group by Agent type
+
+Currently it flat-lists all skills. Replace with grouped display:
+
+```csharp
+private void PopulateSkillList()
+{
+    SkillListStack.Children.Clear();
+
+    var grouped = App.SkillLibraryService.GroupedSkills;
+    var hasAnySkill = grouped.Values.Any(list => list.Count > 0);
+    
+    if (!hasAnySkill)
+    {
+        SkillListStack.Children.Add(new TextBlock
+        {
+            Text = "暂无技能，在 AI 对话中发送指令后将自动创建",
+            FontSize = 13,
+            Opacity = 0.5,
+            Margin = new Thickness(0, 8, 0, 0)
+        });
+        return;
+    }
+
+    var agentMeta = new (string key, string name, string icon, string[] triggers)[]
+    {
+        ("app", "App-Agent", "▶️", new[] { "打开", "启动", "运行", "关闭", "退出" }),
+        ("computer", "Comp-Agent", "🔧", new[] { "设置", "调整", "切换", "开关", "查" }),
+        ("browser", "Browser-Agent", "🌐", new[] { "搜索", "百度", "上网", "打开网页" }),
+        ("file", "File-Agent", "📁", new[] { "清理", "查找", "删除" })
+    };
+
+    foreach (var (key, name, icon, triggers) in agentMeta)
+    {
+        var skills = grouped.GetValueOrDefault(key, []);
+        if (skills.Count == 0) continue;
+
+        // --- Group header ---
+        var header = new Border
+        {
+            Background = new SolidColorBrush(Color.FromArgb(0x18, 0x60, 0xA5, 0xFA)),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(12, 8, 12, 8),
+            Margin = new Thickness(0, 8, 0, 4)
+        };
+
+        var headerGrid = new Grid
+        {
+            ColumnDefinitions =
+            {
+                new ColumnDefinition { Width = GridLength.Auto },
+                new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                new ColumnDefinition { Width = GridLength.Auto }
+            },
+            ColumnSpacing = 8
+        };
+
+        headerGrid.Children.Add(new TextBlock
+        {
+            Text = icon,
+            FontSize = 18,
+            VerticalAlignment = VerticalAlignment.Center
+        });
+
+        var headerInfo = new StackPanel
+        {
+            VerticalAlignment = VerticalAlignment.Center,
+            Spacing = 2
+        };
+        headerInfo.Children.Add(new TextBlock
+        {
+            Text = $"{name} — {skills.Count} 个技能",
+            FontSize = 13,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Foreground = (Brush)Resources["TextPrimaryBrush"]
+        });
+        headerInfo.Children.Add(new TextBlock
+        {
+            Text = $"触发词: {string.Join(", ", triggers)}",
+            FontSize = 11,
+            Opacity = 0.5
+        });
+        Grid.SetColumn(headerInfo, 1);
+        headerGrid.Children.Add(headerInfo);
+
+        // Clear button for this agent group
+        var clearBtn = new Button
+        {
+            Content = "清除",
+            FontSize = 11,
+            MinWidth = 50,
+            MinHeight = 26,
+            Padding = new Thickness(8, 2, 8, 2),
+            CornerRadius = new CornerRadius(4),
+            Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0x44, 0x44)),
+            Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B)),
+            BorderThickness = new Thickness(0),
+            Tag = key,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        clearBtn.Click += OnClearAgentSkillsClick;
+        Grid.SetColumn(clearBtn, 2);
+        headerGrid.Children.Add(clearBtn);
+
+        header.Child = headerGrid;
+        SkillListStack.Children.Add(header);
+
+        // --- Skill cards ---
+        foreach (var skill in skills)
+        {
+            var card = BuildSkillCard(skill);
+            SkillListStack.Children.Add(card);
+        }
+    }
+}
+```
+
+### 2. Extract BuildSkillCard helper method
+
+Extract the per-skill card rendering into a method (existing code from lines 300-385):
+
+```csharp
+private Border BuildSkillCard(SkillDefinition skill)
+{
+    var card = new Border
+    {
+        Style = (Style)Resources["SkillCardBorderStyle"]
+    };
+
+    var row = new Grid
+    {
+        ColumnDefinitions =
+        {
+            new ColumnDefinition { Width = GridLength.Auto },
+            new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+            new ColumnDefinition { Width = GridLength.Auto },
+            new ColumnDefinition { Width = GridLength.Auto }
+        },
+        ColumnSpacing = 10
+    };
+
+    // Icon
+    row.Children.Add(new TextBlock
+    {
+        Text = skill.IconGlyph,
+        FontSize = 24,
+        VerticalAlignment = VerticalAlignment.Center
+    });
+
+    // Info
+    var info = new StackPanel
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        Spacing = 2
+    };
+    info.Children.Add(new TextBlock
+    {
+        Text = skill.Name,
+        FontSize = 14,
+        FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        Foreground = (Brush)Resources["TextPrimaryBrush"]
+    });
+    info.Children.Add(new TextBlock
+    {
+        Text = $"{skill.ActionType} · 使用 {skill.UsageCount} 次 · {skill.CreatedAt:MM-dd} 创建 · 关键词: [{string.Join(", ", skill.Keywords)}]",
+        FontSize = 11,
+        Opacity = 0.5
+    });
+    Grid.SetColumn(info, 1);
+    row.Children.Add(info);
+
+    // Edit button
+    var editBtn = new Button
+    {
+        Content = "编辑",
+        MinWidth = 50,
+        MinHeight = 30,
+        CornerRadius = new CornerRadius(4),
+        FontSize = 12,
+        Padding = new Thickness(8, 2, 8, 2),
+        Tag = skill,
+        VerticalAlignment = VerticalAlignment.Center
+    };
+    editBtn.Click += OnEditSkillClick;
+    Grid.SetColumn(editBtn, 2);
+    row.Children.Add(editBtn);
+
+    // Delete button
+    var delBtn = new Button
+    {
+        Content = "删除",
+        MinWidth = 50,
+        MinHeight = 30,
+        CornerRadius = new CornerRadius(4),
+        FontSize = 12,
+        Padding = new Thickness(8, 2, 8, 2),
+        Tag = skill,
+        VerticalAlignment = VerticalAlignment.Center,
+        Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0x44, 0x44)),
+        Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
+    };
+    delBtn.Click += OnDeleteSkillClick;
+    Grid.SetColumn(delBtn, 3);
+    row.Children.Add(delBtn);
+
+    card.Child = row;
+    return card;
+}
+```
+
+**IMPORTANT**: Note that the old inline skill card code (lines 300-385) should be removed since it's now in BuildSkillCard. The old PopulateSkillList must be fully replaced.
+
+### 3. Add OnClearAgentSkillsClick handler
+
+```csharp
+private async void OnClearAgentSkillsClick(object sender, RoutedEventArgs e)
+{
+    if (sender is not Button btn || btn.Tag is not string agentKey) return;
+
+    var agentNames = new Dictionary<string, string>
+    {
+        ["app"] = "App-Agent（应用匹配）",
+        ["computer"] = "Comp-Agent（系统工具）",
+        ["browser"] = "Browser-Agent（搜索/浏览器）",
+        ["file"] = "File-Agent（文件操作）"
+    };
+
+    var name = agentNames.GetValueOrDefault(agentKey, agentKey);
+
+    var dialog = new ContentDialog
+    {
+        Title = $"清除 {name} 的学习记录",
+        Content = $"确定要删除「{name}」下的所有技能吗？此操作不可撤销。",
+        PrimaryButtonText = "清除",
+        CloseButtonText = "取消",
+        DefaultButton = ContentDialogButton.Close,
+        XamlRoot = XamlRoot
+    };
+
+    if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+    {
+        var skills = App.SkillLibraryService.GetByAgentType(ParseAgentType(agentKey));
+        foreach (var s in skills.ToList())
+            App.SkillLibraryService.Delete(s.Id);
+        PopulateSkillList();
+    }
+}
+
+private static AgentType ParseAgentType(string key) => key.ToLowerInvariant() switch
+{
+    "app" => AgentType.App,
+    "computer" => AgentType.Computer,
+    "browser" => AgentType.Browser,
+    "file" => AgentType.File,
+    _ => AgentType.Computer
+};
+```
+
+### 4. Add using for WinAssistant.Agents (if not already present)
+
+Add to the top of the file if missing:
+```csharp
+using WinAssistant.Agents;
+```
+
+## Build verification
+After changes, run: `cd /d/MyDoc/Code/WinAsistant2.0/WinAssistant && dotnet build 2>&1 | tail -10`
+Report build result. Fix any errors.

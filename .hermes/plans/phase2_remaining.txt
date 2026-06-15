@@ -1,0 +1,167 @@
+## 续作：继续完成阶段二的剩余改动
+
+### 已完成（无需再改）
+- **Router.cs** ✅ 已改为始终级联
+
+### 剩余需完成的改动（4项）
+
+**工作目录：** `/d/MyDoc/Code/WinAsistant2.0/WinAssistant/`
+
+---
+
+#### 1. CompAgent.cs —— 添加热点/移动热点和系统设置别名
+
+文件路径：`Agents/CompAgent.cs`
+
+在 `SystemActions` 列表中添加两处改动：
+
+① 将"网络"行改为包含"热点"：
+```csharp
+// 把这一行：
+new() { Triggers = ["网络", "wifi"], Command = "ms-settings:network-wifi", ActionType = "open_url" },
+
+// 改为两行：
+new() { Triggers = ["网络", "wifi"], Command = "ms-settings:network-wifi", ActionType = "open_url" },
+new() { Triggers = ["热点", "移动热点", "手机热点", "hotspot"], Command = "ms-settings:network-mobilehotspot", ActionType = "open_url" },
+```
+
+② 将"设置"行的 Triggers 扩展：
+```csharp
+// 把这一行：
+new() { Triggers = ["设置"], Command = "ms-settings:", ActionType = "open_url" },
+
+// 改为：
+new() { Triggers = ["设置", "系统设置", "Windows 设置"], Command = "ms-settings:", ActionType = "open_url" },
+```
+
+---
+
+#### 2. BrowserAgent.cs —— 实现默认浏览器检测
+
+文件路径：`Agents/BrowserAgent.cs`
+
+当前：actionObject 为空时返回 null。
+改为：actionObject 为空时打开默认浏览器。
+
+```csharp
+using System.Runtime.InteropServices;
+using Microsoft.Win32;
+
+// 在 BrowserAgent 类的最后添加一个私有方法
+private static string? FindDefaultBrowser()
+{
+    // Try Edge first (always available on Windows)
+    string[] paths =
+    [
+        @"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        @"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ];
+
+    foreach (var path in paths)
+    {
+        if (File.Exists(path))
+            return path;
+    }
+    return null;
+}
+```
+
+并且修改 TryMatchAsync 方法：当 actionObject 为空时，不走 `return null`，而是：
+```csharp
+// 替换最后的 return null:
+if (!string.IsNullOrEmpty(actionObject))
+{
+    // ... 搜索逻辑（保持现有代码） ...
+}
+
+// 打开浏览器（无搜索词时）
+var browserPath = FindDefaultBrowser();
+if (browserPath != null)
+{
+    return Task.FromResult<AgentMatchResult?>(new AgentMatchResult
+    {
+        Success = true,
+        AgentType = AgentType.Browser,
+        ActionType = SkillActionType.run_program,
+        ActionParams = new() { ["path"] = browserPath },
+        Reply = "正在打开浏览器..."
+    });
+}
+
+return Task.FromResult<AgentMatchResult?>(null);
+```
+
+**注意：** 添加 `using Microsoft.Win32;` 和 `using System.Runtime.InteropServices;` 在文件顶部。
+
+---
+
+#### 3. FileAgent.cs —— 更灵活的清理匹配
+
+文件路径：`Agents/FileAgent.cs`
+
+扩展匹配关键词，添加系统清理和临时文件处理：
+
+```csharp
+// 替换现有的清理匹配逻辑
+var cleanupKeywords = new[] { "垃圾", "缓存", "临时文件", "系统清理", "磁盘清理", "盘清理", "temp" };
+if (!string.IsNullOrEmpty(actionObject) && 
+    cleanupKeywords.Any(kw => actionObject.Contains(kw, StringComparison.OrdinalIgnoreCase)))
+{
+    return Task.FromResult<AgentMatchResult?>(new AgentMatchResult
+    {
+        Success = true,
+        AgentType = AgentType.File,
+        ActionType = SkillActionType.run_powershell,
+        ActionParams = new()
+        {
+            ["script"] = "Start-Process cleanmgr -ArgumentList '/sagerun:1' -NoNewWindow -Wait; Write-Output '清理完成'"
+        },
+        Reply = "正在清理系统垃圾..."
+    });
+}
+```
+
+---
+
+#### 4. ChatWindow.xaml.cs —— Agent 执行结果保存到技能库
+
+文件路径：`Controls/AiChat/ChatWindow.xaml.cs`
+
+在 `SendMessage()` 方法中，`if (routeResult != null)` 分支内，`_executor.ExecuteAsync` 执行成功后，添加保存到技能库的逻辑：
+
+找到这一块代码（大约 251-268 行）：
+```csharp
+if (routeResult != null)
+{
+    RemoveLastMessage();
+
+    var skill = new SkillDefinition
+    {
+        Id = Guid.NewGuid().ToString("N")[..12],
+        Name = routeResult.AgentType.ToString(),
+        ActionType = routeResult.ActionType,
+        ActionParams = routeResult.ActionParams
+    };
+
+    var execResult = await _executor.ExecuteAsync(skill, text);
+    AddMessage("assistant",
+        $"{routeResult.Reply}\n\n{execResult.Message}",
+        routeResult.AgentType.ToString());
+    return;
+}
+```
+
+在 `var execResult = await _executor.ExecuteAsync(skill, text);` 之后、`AddMessage` 之前，添加：
+```csharp
+// 保存 Agent 匹配的技能到库（避免重复）
+if (execResult.Success && !_library.AllSkills.Any(s =>
+    s.ActionType == skill.ActionType && 
+    s.ActionParams.Count == skill.ActionParams.Count &&
+    s.ActionParams.All(kv => skill.ActionParams.TryGetValue(kv.Key, out var v) && v == kv.Value)))
+{
+    _library.Add(skill);
+}
+```
+
+### 验证
+执行 `dotnet build`，确保 0 错误。

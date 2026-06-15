@@ -51,7 +51,8 @@ public sealed partial class MainPage : Page
         HotkeyPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         AIPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
         ToolPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
-        AboutPanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        ImePanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        AboutPanel.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
         AddAppButton.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
 
         TitleText.Text = index switch
@@ -60,7 +61,8 @@ public sealed partial class MainPage : Page
             1 => "全局快捷键管理",
             2 => "AI 技能",
             3 => "小工具",
-            4 => "关于",
+            4 => "输入法状态管理",
+            5 => "关于",
             _ => ""
         };
         SubtitleText.Text = index switch
@@ -69,7 +71,8 @@ public sealed partial class MainPage : Page
             1 => "添加应用并设置全局快捷键",
             2 => "配置 AI 并管理已创建的技能",
             3 => "管理小工具，添加到启动台快速访问",
-            4 => "版本信息和项目链接",
+            4 => "管理输入法自动切换规则和查看当前状态",
+            5 => "版本信息和项目链接",
             _ => ""
         };
 
@@ -77,6 +80,8 @@ public sealed partial class MainPage : Page
             PopulateAISettings();
         else if (index == 3)
             PopulateToolList();
+        else if (index == 4)
+            PopulateImePanel();
     }
 
     private void PopulateToolList()
@@ -173,6 +178,519 @@ public sealed partial class MainPage : Page
             ToolListStack.Children.Add(card);
         }
     }
+
+    #region 输入法状态管理
+
+    private void PopulateImePanel()
+    {
+        var settings = App.SettingsService.Load();
+        ImeToastToggle.IsOn = settings.IsImeToastEnabled;
+        ImeAutoSwitchToggle.IsOn = settings.IsImeAutoSwitchEnabled;
+        ShowImeCurrentStatus();
+        PopulateImeRules();
+    }
+
+    private void ShowImeCurrentStatus()
+    {
+        try
+        {
+            var info = App.ImeService.GetCurrentStatus();
+            if (info.Error != null)
+            {
+                ImeStatusWindow.Text = "当前窗口: 获取失败";
+                ImeStatusLayout.Text = $"当前输入法: {info.Error}";
+                ImeStatusLang.Text = "中/英: —";
+                ImeStatusWidth.Text = "全/半角: —";
+                ImeStatusCaps.Text = "大小写: —";
+                return;
+            }
+
+            ImeStatusWindow.Text = $"当前窗口: {info.ProcessName} — {info.WindowTitle.Truncate(40)}";
+            ImeStatusLayout.Text = $"当前输入法: {info.ImeDisplayName} ({info.Klid})";
+            ImeStatusLang.Text = $"中/英: {(info.IsChineseMode ? "🇨🇳 中文" : "🇺🇸 英文")}";
+            ImeStatusWidth.Text = $"全/半角: {(info.IsFullWidth ? "全角" : "半角")}";
+            ImeStatusCaps.Text = $"大小写: {(info.IsCapsLock ? "🔒 开启" : "关闭")}";
+        }
+        catch (Exception ex)
+        {
+            ImeStatusWindow.Text = $"当前窗口: 错误 — {ex.Message}";
+        }
+    }
+
+    private void PopulateImeRules()
+    {
+        var settings = App.SettingsService.Load();
+        ImeRuleListStack.Children.Clear();
+
+        if (settings.ImeRules.Count == 0)
+        {
+            ImeEmptyState.Visibility = Visibility.Visible;
+            return;
+        }
+
+        ImeEmptyState.Visibility = Visibility.Collapsed;
+
+        foreach (var rule in settings.ImeRules)
+        {
+            var card = new Border
+            {
+                Style = (Style)Resources["ToolCardBorderStyle"]
+            };
+
+            var row = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = GridLength.Auto }
+                },
+                ColumnSpacing = 8
+            };
+
+            // Icon
+            row.Children.Add(new TextBlock
+            {
+                Text = "⌨",
+                FontSize = 22,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            // Info
+            var infoPanel = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 1
+            };
+            var lang = rule.UseEnglishMode ? "英文" : "中文";
+            var width = rule.UseFullWidth ? "全角" : "半角";
+            var caps = rule.CapsLockState ? "🔒" : "";
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text = $"{rule.DisplayName} ({rule.ProcessName})",
+                FontSize = 14,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (Brush)Resources["TextPrimaryBrush"]
+            });
+            infoPanel.Children.Add(new TextBlock
+            {
+                Text = $"{rule.ImeDisplayName} · {lang} · {width} {caps}",
+                FontSize = 11,
+                Opacity = 0.6
+            });
+            Grid.SetColumn(infoPanel, 1);
+            row.Children.Add(infoPanel);
+
+            // Toggle
+            var toggle = new ToggleSwitch
+            {
+                IsOn = rule.IsEnabled,
+                MinWidth = 48,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tag = rule
+            };
+            toggle.Toggled += OnImeRuleToggleToggled;
+            Grid.SetColumn(toggle, 2);
+            row.Children.Add(toggle);
+
+            // Edit button
+            var editBtn = new Button
+            {
+                Content = "编辑",
+                MinWidth = 44, MinHeight = 30,
+                CornerRadius = new CornerRadius(4),
+                FontSize = 12, Padding = new Thickness(8, 2, 8, 2),
+                Tag = rule,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            editBtn.Click += OnImeEditRuleClick;
+            Grid.SetColumn(editBtn, 3);
+            row.Children.Add(editBtn);
+
+            // Delete button
+            var delBtn = new Button
+            {
+                Content = "删除",
+                MinWidth = 44, MinHeight = 30,
+                CornerRadius = new CornerRadius(4),
+                FontSize = 12, Padding = new Thickness(8, 2, 8, 2),
+                Tag = rule,
+                VerticalAlignment = VerticalAlignment.Center,
+                Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0x44, 0x44)),
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
+            };
+            delBtn.Click += OnImeDeleteRuleClick;
+            Grid.SetColumn(delBtn, 4);
+            row.Children.Add(delBtn);
+
+            card.Child = row;
+            ImeRuleListStack.Children.Add(card);
+        }
+    }
+
+    private void OnImeToastToggled(object sender, RoutedEventArgs e)
+    {
+        var settings = App.SettingsService.Load();
+        settings.IsImeToastEnabled = ImeToastToggle.IsOn;
+        App.SettingsService.Save(settings);
+    }
+
+    private void OnImeAutoSwitchToggled(object sender, RoutedEventArgs e)
+    {
+        var settings = App.SettingsService.Load();
+        settings.IsImeAutoSwitchEnabled = ImeAutoSwitchToggle.IsOn;
+        App.SettingsService.Save(settings);
+    }
+
+    private void OnImeRefreshStatus(object sender, RoutedEventArgs e)
+    {
+        ShowImeCurrentStatus();
+    }
+
+    private async void OnImeAddRuleClick(object sender, RoutedEventArgs e)
+    {
+        // Build the add/edit dialog
+        var processBox = new TextBox
+        {
+            Header = "进程名",
+            PlaceholderText = "例如: WeChat.exe",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        var pickBtn = new Button
+        {
+            Content = "从运行中程序选取",
+            FontSize = 12,
+            Padding = new Thickness(8, 2, 8, 2),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(0, 0, 0, 6),
+            HorizontalAlignment = HorizontalAlignment.Left
+        };
+
+        var displayBox = new TextBox
+        {
+            Header = "显示名称",
+            PlaceholderText = "例如: 微信",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+
+        // IME picker
+        var imeLabel = new TextBlock
+        {
+            Text = "键盘布局 / 输入法",
+            FontSize = 13,
+            Foreground = (Brush)Resources["TextSecondaryBrush"],
+            Margin = new Thickness(0, 0, 0, 4)
+        };
+        var imeCombo = new ComboBox
+        {
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6),
+            MinWidth = 280
+        };
+        var layouts = ImeService.EnumerateKeyboardLayouts();
+        foreach (var (klid, name) in layouts)
+        {
+            imeCombo.Items.Add(new ComboBoxItem
+            {
+                Content = $"{name} ({klid})",
+                Tag = klid
+            });
+        }
+        if (imeCombo.Items.Count > 0)
+            imeCombo.SelectedIndex = 0;
+
+        // Language mode
+        var langCombo = new ComboBox
+        {
+            Header = "语言模式",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        langCombo.Items.Add(new ComboBoxItem { Content = "🇨🇳 中文", Tag = false });
+        langCombo.Items.Add(new ComboBoxItem { Content = "🇺🇸 英文", Tag = true });
+        langCombo.SelectedIndex = 0;
+
+        // Full-width
+        var widthCombo = new ComboBox
+        {
+            Header = "标点符号",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        widthCombo.Items.Add(new ComboBoxItem { Content = "半角", Tag = false });
+        widthCombo.Items.Add(new ComboBoxItem { Content = "全角", Tag = true });
+        widthCombo.SelectedIndex = 0;
+
+        // CapsLock
+        var capsCombo = new ComboBox
+        {
+            Header = "大小写",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        capsCombo.Items.Add(new ComboBoxItem { Content = "关闭", Tag = false });
+        capsCombo.Items.Add(new ComboBoxItem { Content = "开启", Tag = true });
+        capsCombo.SelectedIndex = 0;
+
+        var dialogStack = new StackPanel { Spacing = 2, MaxWidth = 400 };
+        dialogStack.Children.Add(processBox);
+        dialogStack.Children.Add(pickBtn);
+        dialogStack.Children.Add(displayBox);
+        dialogStack.Children.Add(imeLabel);
+        dialogStack.Children.Add(imeCombo);
+        dialogStack.Children.Add(langCombo);
+        dialogStack.Children.Add(widthCombo);
+        dialogStack.Children.Add(capsCombo);
+
+        // Process picker
+        pickBtn.Click += async (s2, e2) =>
+        {
+            var processes = ImeService.EnumRunningProcesses();
+            if (processes.Count == 0)
+            {
+                processBox.Text = "";
+                return;
+            }
+
+            var pickerStack = new StackPanel { Spacing = 4 };
+            var searchBox = new TextBox
+            {
+                PlaceholderText = "搜索进程...",
+                FontSize = 14,
+                Margin = new Thickness(0, 0, 0, 4)
+            };
+            pickerStack.Children.Add(searchBox);
+
+            var listBox = new ListBox
+            {
+                MinHeight = 240, MaxHeight = 360,
+                DisplayMemberPath = "Display"
+            };
+
+            var items = processes.Select(p => new
+            {
+                p.ProcessName,
+                p.WindowTitle,
+                Display = $"{p.ProcessName} — {p.WindowTitle.Truncate(40)}"
+            }).ToList();
+            listBox.ItemsSource = items;
+
+            searchBox.TextChanged += (s3, e3) =>
+            {
+                var q = searchBox.Text.Trim();
+                listBox.ItemsSource = string.IsNullOrEmpty(q)
+                    ? items
+                    : items.Where(i =>
+                        i.ProcessName.Contains(q, StringComparison.OrdinalIgnoreCase) ||
+                        i.WindowTitle.Contains(q, StringComparison.OrdinalIgnoreCase)).ToList();
+            };
+
+            pickerStack.Children.Add(listBox);
+
+            var pickerDialog = new ContentDialog
+            {
+                Title = "选择运行中的程序",
+                Content = pickerStack,
+                PrimaryButtonText = "确定",
+                CloseButtonText = "取消",
+                DefaultButton = ContentDialogButton.Primary,
+                XamlRoot = XamlRoot
+            };
+
+            if (await pickerDialog.ShowAsync() == ContentDialogResult.Primary)
+            {
+                if (listBox.SelectedItem != null)
+                {
+                    var selected = (dynamic)listBox.SelectedItem;
+                    processBox.Text = selected.ProcessName;
+                    displayBox.Text = System.IO.Path.GetFileNameWithoutExtension(selected.ProcessName);
+                }
+            }
+        };
+
+        var dialog = new ContentDialog
+        {
+            Title = "添加输入法规则",
+            Content = dialogStack,
+            PrimaryButtonText = "保存",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var processName = processBox.Text.Trim();
+            if (string.IsNullOrEmpty(processName)) return;
+
+            if (imeCombo.SelectedItem is ComboBoxItem imeItem && imeItem.Tag is string klid)
+            {
+                var settings = App.SettingsService.Load();
+
+                // Get IME display name
+                var imeDisplay = layouts.FirstOrDefault(l => l.Klid == klid).DisplayName;
+                if (string.IsNullOrEmpty(imeDisplay)) imeDisplay = klid;
+
+                var rule = new ImeRule
+                {
+                    ProcessName = processName,
+                    DisplayName = string.IsNullOrEmpty(displayBox.Text.Trim())
+                        ? Path.GetFileNameWithoutExtension(processName)
+                        : displayBox.Text.Trim(),
+                    Klid = klid,
+                    ImeDisplayName = imeDisplay,
+                    UseEnglishMode = langCombo.SelectedItem is ComboBoxItem langItem && (bool)langItem.Tag,
+                    UseFullWidth = widthCombo.SelectedItem is ComboBoxItem wItem && (bool)wItem.Tag,
+                    CapsLockState = capsCombo.SelectedItem is ComboBoxItem cItem && (bool)cItem.Tag
+                };
+
+                settings.ImeRules.Add(rule);
+                App.SettingsService.Save(settings);
+                PopulateImeRules();
+                App.ImeService.ReloadRules();
+            }
+        }
+    }
+
+    private async void OnImeEditRuleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
+
+        var processBox = new TextBox
+        {
+            Text = rule.ProcessName,
+            Header = "进程名",
+            PlaceholderText = "例如: WeChat.exe",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+        var displayBox = new TextBox
+        {
+            Text = rule.DisplayName,
+            Header = "显示名称",
+            FontSize = 14,
+            Margin = new Thickness(0, 0, 0, 6)
+        };
+
+        var imeCombo = new ComboBox { FontSize = 14, Margin = new Thickness(0, 0, 0, 6), MinWidth = 280 };
+        var layouts = ImeService.EnumerateKeyboardLayouts();
+        int imeIndex = 0;
+        for (int i = 0; i < layouts.Count; i++)
+        {
+            var (klid, name) = layouts[i];
+            var item = new ComboBoxItem { Content = $"{name} ({klid})", Tag = klid };
+            imeCombo.Items.Add(item);
+            if (klid == rule.Klid) imeIndex = i;
+        }
+        imeCombo.SelectedIndex = imeIndex;
+
+        var langCombo = new ComboBox
+        {
+            Header = "语言模式", FontSize = 14, Margin = new Thickness(0, 0, 0, 6)
+        };
+        langCombo.Items.Add(new ComboBoxItem { Content = "🇨🇳 中文", Tag = false });
+        langCombo.Items.Add(new ComboBoxItem { Content = "🇺🇸 英文", Tag = true });
+        langCombo.SelectedIndex = rule.UseEnglishMode ? 1 : 0;
+
+        var widthCombo = new ComboBox
+        {
+            Header = "标点符号", FontSize = 14, Margin = new Thickness(0, 0, 0, 6)
+        };
+        widthCombo.Items.Add(new ComboBoxItem { Content = "半角", Tag = false });
+        widthCombo.Items.Add(new ComboBoxItem { Content = "全角", Tag = true });
+        widthCombo.SelectedIndex = rule.UseFullWidth ? 1 : 0;
+
+        var capsCombo = new ComboBox
+        {
+            Header = "大小写", FontSize = 14, Margin = new Thickness(0, 0, 0, 6)
+        };
+        capsCombo.Items.Add(new ComboBoxItem { Content = "关闭", Tag = false });
+        capsCombo.Items.Add(new ComboBoxItem { Content = "开启", Tag = true });
+        capsCombo.SelectedIndex = rule.CapsLockState ? 1 : 0;
+
+        var stack = new StackPanel { Spacing = 2, MaxWidth = 400 };
+        stack.Children.Add(processBox);
+        stack.Children.Add(displayBox);
+        stack.Children.Add(imeCombo);
+        stack.Children.Add(langCombo);
+        stack.Children.Add(widthCombo);
+        stack.Children.Add(capsCombo);
+
+        var dialog = new ContentDialog
+        {
+            Title = "编辑输入法规则",
+            Content = stack,
+            PrimaryButtonText = "保存",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot
+        };
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var processName = processBox.Text.Trim();
+            if (string.IsNullOrEmpty(processName)) return;
+
+            rule.ProcessName = processName;
+            rule.DisplayName = string.IsNullOrEmpty(displayBox.Text.Trim())
+                ? Path.GetFileNameWithoutExtension(processName)
+                : displayBox.Text.Trim();
+
+            if (imeCombo.SelectedItem is ComboBoxItem imeItem && imeItem.Tag is string klid)
+            {
+                rule.Klid = klid;
+                rule.ImeDisplayName = layouts.FirstOrDefault(l => l.Klid == klid).DisplayName ?? klid;
+            }
+            rule.UseEnglishMode = langCombo.SelectedItem is ComboBoxItem langItem && (bool)langItem.Tag;
+            rule.UseFullWidth = widthCombo.SelectedItem is ComboBoxItem wItem && (bool)wItem.Tag;
+            rule.CapsLockState = capsCombo.SelectedItem is ComboBoxItem cItem && (bool)cItem.Tag;
+
+            var settings = App.SettingsService.Load();
+            App.SettingsService.Save(settings);
+            PopulateImeRules();
+            App.ImeService.ReloadRules();
+        }
+    }
+
+    private async void OnImeDeleteRuleClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
+
+        var dialog = new ContentDialog
+        {
+            Title = "删除规则",
+            Content = $"确定要删除「{rule.DisplayName} ({rule.ProcessName})」的输入法规则吗？",
+            PrimaryButtonText = "删除",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot
+        };
+
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var settings = App.SettingsService.Load();
+            settings.ImeRules.RemoveAll(r => r.Id == rule.Id);
+            App.SettingsService.Save(settings);
+            PopulateImeRules();
+            App.ImeService.ReloadRules();
+        }
+    }
+
+    private void OnImeRuleToggleToggled(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleSwitch toggle || toggle.Tag is not ImeRule rule) return;
+
+        rule.IsEnabled = toggle.IsOn;
+        var settings = App.SettingsService.Load();
+        App.SettingsService.Save(settings);
+        App.ImeService.ReloadRules();
+    }
+
+    #endregion
 
     #region AI 技能设置
 
@@ -731,7 +1249,7 @@ public sealed partial class MainPage : Page
         if (vm.IconSource != null) return;
 
         var tempFile = await Task.Run(() =>
-            IconHelper.ExtractAppIconToAppData(vm.AppPath, aumid: vm.Model.Aumid));
+            IconHelper.ExtractAppIconToAppData(vm.Model.IconPath ?? vm.AppPath, aumid: vm.Model.Aumid));
         if (tempFile == null) return;
 
         try

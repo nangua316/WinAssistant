@@ -34,6 +34,7 @@ public class AppPickerItem : ObservableObject
     public string AppPath { get; }
     public string Arguments { get; }
     public string ShortcutPath { get; }
+    public string IconPath { get; }
     public string IconDisplayChar { get; }
     public int UsageCount { get; }
     public string Aumid { get; }
@@ -85,13 +86,14 @@ public class AppPickerItem : ObservableObject
 
     internal string PinyinSearchData { get; }
 
-    public AppPickerItem(string name, string appPath, string arguments = "", string aumid = "", int usageCount = 0, Action<AppPickerItem>? addAction = null, string shortcutPath = "")
+    public AppPickerItem(string name, string appPath, string arguments = "", string aumid = "", int usageCount = 0, Action<AppPickerItem>? addAction = null, string shortcutPath = "", string? iconPath = null)
     {
         Name = name;
         AppPath = appPath;
         Arguments = arguments;
         Aumid = aumid;
         ShortcutPath = shortcutPath;
+        IconPath = iconPath;
         UsageCount = usageCount;
         IconDisplayChar = name.Length > 0 ? name[..1].ToUpper() : "?";
         _addAction = addAction;

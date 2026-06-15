@@ -281,6 +281,7 @@ public class MainPageViewModel : ObservableObject
             {
                 Name = finalName,
                 AppPath = selected.AppPath,
+                IconPath = selected.IconPath != selected.AppPath ? selected.IconPath : null,
                 Arguments = selected.Arguments,
                 ShortcutPath = selected.ShortcutPath,
                 WorkingDirectory = Path.GetDirectoryName(selected.AppPath) ?? "",
@@ -316,7 +317,7 @@ public class MainPageViewModel : ObservableObject
             .ThenBy(a => a.Name)
             .Select(a =>
             {
-                var item = new AppPickerItem(a.Name, a.AppPath, a.Arguments, a.Aumid, a.UsageCount, AddItem, a.ShortcutPath);
+                var item = new AppPickerItem(a.Name, a.AppPath, a.Arguments, a.Aumid, a.UsageCount, AddItem, a.ShortcutPath, a.IconPath);
                 if (!string.IsNullOrEmpty(a.AppPath) && existingPaths.Contains(a.AppPath))
                     item.IsAdded = true;
                 else if (!string.IsNullOrEmpty(a.Aumid) && existingAumids.Contains(a.Aumid))
@@ -371,7 +372,7 @@ public class MainPageViewModel : ObservableObject
             foreach (var item in pickerItems)
             {
                 if (string.IsNullOrEmpty(item.AppPath) && string.IsNullOrEmpty(item.Aumid)) continue;
-                var tempFile = IconHelper.ExtractAppIconToAppData(item.AppPath, aumid: item.Aumid);
+                var tempFile = IconHelper.ExtractAppIconToAppData(item.IconPath ?? item.AppPath, aumid: item.Aumid);
                 if (tempFile == null) continue;
                 App.DispatcherQueue.TryEnqueue(() =>
                 {
@@ -496,7 +497,7 @@ public class MainPageViewModel : ObservableObject
     {
         _ = Task.Run(() =>
         {
-            var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.AppPath, aumid: vm.Model.Aumid);
+            var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.IconPath ?? vm.Model.AppPath, aumid: vm.Model.Aumid);
             if (tempFile == null) return;
             App.DispatcherQueue.TryEnqueue(() =>
             {

@@ -841,6 +841,9 @@ public static class AppScanner
     {
         exePath = exePath.Replace('/', '\\');
         iconPath = iconPath.Replace('/', '\\');
+        // Strip icon index suffix (",0", ",1", etc.) from shortcut icon paths.
+        var commaIdx = iconPath.LastIndexOf(',');
+        var cleanIconPath = commaIdx > iconPath.LastIndexOf('\\') ? iconPath[..commaIdx] : iconPath;
 
         // If same exe path already exists with a different name, update the existing entry's name
         // (registry names like "长安幻想.7.release" are more descriptive than generic "launcher")
@@ -877,8 +880,8 @@ public static class AppScanner
                     existingByPath.Name = name;
                 }
 
-                if (!string.IsNullOrEmpty(iconPath) && File.Exists(iconPath))
-                    existingByPath.IconPath = iconPath;
+                if (!string.IsNullOrEmpty(cleanIconPath) && File.Exists(cleanIconPath))
+                    existingByPath.IconPath = cleanIconPath;
                 if (!string.IsNullOrEmpty(aumid))
                     existingByPath.Aumid = aumid;
                 if (!string.IsNullOrEmpty(arguments))
@@ -902,7 +905,7 @@ public static class AppScanner
                 AppPath = exePath,
                 Arguments = arguments,
                 ShortcutPath = shortcutPath,
-                IconPath = !string.IsNullOrEmpty(iconPath) && File.Exists(iconPath) ? iconPath : exePath,
+                IconPath = !string.IsNullOrEmpty(cleanIconPath) && File.Exists(cleanIconPath) ? cleanIconPath : exePath,
                 IconDisplayChar = name.Length > 0 ? name[..1].ToUpper() : "?",
                 Aumid = aumid
             };
@@ -912,7 +915,7 @@ public static class AppScanner
         if (AppFilter.IsWindowsSystemBinary(existing.AppPath))
         {
             existing.AppPath = exePath;
-            existing.IconPath = !string.IsNullOrEmpty(iconPath) && File.Exists(iconPath) ? iconPath : exePath;
+            existing.IconPath = !string.IsNullOrEmpty(cleanIconPath) && File.Exists(cleanIconPath) ? cleanIconPath : exePath;
             if (!string.IsNullOrEmpty(aumid)) existing.Aumid = aumid;
             if (!string.IsNullOrEmpty(arguments)) existing.Arguments = arguments;
             if (!string.IsNullOrEmpty(shortcutPath)) existing.ShortcutPath = shortcutPath;

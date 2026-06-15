@@ -4,6 +4,7 @@ public class HotKeyBinding
 {
     public string Name { get; set; } = string.Empty;
     public string AppPath { get; set; } = string.Empty;
+    public string? IconPath { get; set; }
     public string Arguments { get; set; } = string.Empty;
     public string ShortcutPath { get; set; } = string.Empty;
     public string WorkingDirectory { get; set; } = string.Empty;

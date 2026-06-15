@@ -17,4 +17,9 @@ public class AppSettings
     public string AiEndpoint { get; set; } = "https://dashscope.aliyuncs.com";
     public string AiChatModel { get; set; } = "qwen-plus";
     public string AiEmbeddingModel { get; set; } = "text-embedding-v3";
+
+    // 输入法管理
+    public List<ImeRule> ImeRules { get; set; } = [];
+    public bool IsImeToastEnabled { get; set; } = true;
+    public bool IsImeAutoSwitchEnabled { get; set; } = true;
 }

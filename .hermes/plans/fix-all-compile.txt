@@ -1,0 +1,21 @@
+WinAssistant 项目编译有 5 个错误，全部需要你修复：
+
+**错误 1-5：`SkillDefinition` 缺少 `AgentType` 属性**
+- `Agents/BrowserAgent.cs:81`
+- `Agents/AppAgent.cs:118`
+- `Agents/CompAgent.cs:98,117,140`
+
+这些文件引用了 `SkillDefinition.AgentType`，但该属性在当前 `Models/SkillDefinition.cs` 中不存在（它之前被你添加但后来被恢复了）。
+
+**错误 6-7：`MainPage.xaml.cs` 引用了不存在的方法**
+- `MainPage.xaml.cs:293` — 调用 `_library.GroupedSkills` 但该属性在 `SkillLibraryService` 中不存在
+- `MainPage.xaml.cs:589` — 调用 `_library.GetByAgentType()` 但该方法不存在
+
+**约束：**
+- 不要修改 `QwenService.cs`、`SkillLibraryService.cs`、`ChatWindow.xaml.cs`、`HotKeyToast.cs`（这些文件已恢复原始状态，不要动）
+- `SkillDefinition.cs` 可以改（加回 `AgentType` 属性），但确保不破坏现有用法
+- Agents/*.cs 全都可以改
+- `MainPage.xaml.cs` 可以改，但如果某段代码依赖已被恢复的类型/方法且无法简单修复，直接删除那段代码（它属于其他功能，不是输入法功能）
+- 不要创建新的文件
+
+改完后 `dotnet build` 0 错误通过。

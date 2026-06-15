@@ -1,5 +1,7 @@
 using Microsoft.Windows.Storage.Pickers;
 using System.Collections.Specialized;
+using System.Diagnostics;
+using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -34,6 +36,7 @@ public sealed partial class LaunchpadPage : Page
         InitializeComponent();
         ViewModel = new LaunchpadPageViewModel();
         ViewModel.Items.CollectionChanged += OnItemsChanged;
+        ViewModel.FilteredItems.CollectionChanged += (_, _) => UpdateEmptyState();
         ViewModel.PropertyChanged += (s, e) =>
         {
             if (e.PropertyName == nameof(LaunchpadPageViewModel.SearchText))
@@ -258,30 +261,54 @@ public sealed partial class LaunchpadPage : Page
         }
     }
 
-    private void LaunchSelected()
+    private async void LaunchSelected()
     {
-        var vm = AppGrid.SelectedItem as LaunchpadItemViewModel;
-        // Fall back to first filtered item when GridView selection is stale
-        // (e.g. just after search text changes).
-        if (vm == null && ViewModel.FilteredItems.Count > 0)
-            vm = ViewModel.FilteredItems[0];
+        var vm = AppGrid.SelectedItem as LaunchpadItemViewModel
+            ?? (ViewModel.FilteredItems.Count > 0 ? ViewModel.FilteredItems[0] : null);
         if (vm != null)
-        {
-            if (HandleToolClick(vm)) return;
-            var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
-            ShowLaunchToast(action, vm.Name, vm.AppPath);
-            Close(clearSearch: true);
-        }
+            LaunchOrClose(vm);
     }
 
-    private void OnItemClick(object sender, ItemClickEventArgs e)
+    private async void OnItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is LaunchpadItemViewModel vm)
+            LaunchOrClose(vm);
+    }
+
+    private async void LaunchOrClose(LaunchpadItemViewModel vm)
+    {
+        if (HandleToolClick(vm)) return;
+        if (vm.IsUninstalled) { await ShowUninstalledDialog(vm); return; }
+
+        Close(clearSearch: true);
+        var path = vm.AppPath;
+        var args = vm.Model.Arguments;
+        var aumid = vm.Model.Aumid;
+        var name = vm.Name;
+        _ = Task.Run(() =>
         {
-            if (HandleToolClick(vm)) return;
-            var action = AppLauncher.LaunchOrActivate(vm.AppPath, vm.Model.Arguments, vm.Model.Aumid);
-            ShowLaunchToast(action, vm.Name, vm.AppPath);
-            Close(clearSearch: true);
+            var action = AppLauncher.LaunchOrActivate(path, args, aumid);
+            App.DispatcherQueue.TryEnqueue(() =>
+                ShowLaunchToast(action, name, path));
+        });
+    }
+
+    /// <summary>Show dialog for uninstalled app, offer to remove the item.</summary>
+    private async Task ShowUninstalledDialog(LaunchpadItemViewModel vm)
+    {
+        var dialog = new ContentDialog
+        {
+            Title = "应用已卸载",
+            Content = $"\"{vm.Name}\" 已从电脑中移除，无法启动。\n是否从启动台删除此图标？",
+            PrimaryButtonText = "删除图标",
+            CloseButtonText = "保留",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Primary)
+        {
+            ViewModel.RemoveItem(vm);
         }
     }
 
@@ -289,6 +316,9 @@ public sealed partial class LaunchpadPage : Page
     private bool HandleToolClick(LaunchpadItemViewModel vm)
     {
         if (!vm.IsTool || vm.Tool == null) return false;
+
+        Close(clearSearch: true);
+
         if (vm.Tool.IsOneClickAction)
         {
             var msg = vm.Tool.Activate();
@@ -297,18 +327,15 @@ public sealed partial class LaunchpadPage : Page
                 try
                 {
                     var iconPath = vm.Tool.IconExtractPath;
-                    // Fall back to app's own icon for tools without an extract path
                     if (string.IsNullOrEmpty(iconPath))
-                        iconPath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+                        iconPath = Process.GetCurrentProcess().MainModule?.FileName;
                     HotKeyToast.Show(msg, iconPath: iconPath);
                 }
                 catch { }
             }
-            Close(clearSearch: true);
             return true;
         }
         ToolHostWindow.OpenOrActivate(vm.Tool);
-        Close(clearSearch: true);
         return true;
     }
 

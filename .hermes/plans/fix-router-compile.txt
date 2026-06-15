@@ -1,0 +1,8 @@
+WinAssistant 项目编译报错：`Agents/Router.cs` 第31行引用了 `AgentRouteContext` 类型，但该类型不存在。
+
+项目上下文：
+- `RouteAsync` 方法的返回值 `(AgentMatchResult? Result, AgentRouteContext Context)` 需要改
+- 你的上一轮修改对 `ChatWindow.xaml.cs`、`QwenService.cs`、`SkillLibraryService.cs`、`SkillDefinition.cs` 的改动已被恢复（那些改动跑偏了）
+- 请只修复 Router.cs 的编译错误，不要改其他无关文件
+
+改完 dotnet build 验证通过。
