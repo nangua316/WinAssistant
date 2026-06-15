@@ -34,7 +34,7 @@ public class AppPickerItem : ObservableObject
     public string AppPath { get; }
     public string Arguments { get; }
     public string ShortcutPath { get; }
-    public string IconPath { get; }
+    public string IconPath { get; } = string.Empty;
     public string IconDisplayChar { get; }
     public int UsageCount { get; }
     public string Aumid { get; }
@@ -93,7 +93,7 @@ public class AppPickerItem : ObservableObject
         Arguments = arguments;
         Aumid = aumid;
         ShortcutPath = shortcutPath;
-        IconPath = iconPath;
+        IconPath = iconPath ?? string.Empty;
         UsageCount = usageCount;
         IconDisplayChar = name.Length > 0 ? name[..1].ToUpper() : "?";
         _addAction = addAction;

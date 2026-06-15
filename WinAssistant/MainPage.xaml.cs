@@ -7,7 +7,6 @@ using Microsoft.UI.Xaml.Media.Imaging;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
-using Microsoft.UI; // Added for theme-aware colors
 using WinAssistant.Controls.AiChat;
 using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;

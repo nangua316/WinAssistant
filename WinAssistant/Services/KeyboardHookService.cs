@@ -22,6 +22,10 @@ public class KeyboardHookService : IDisposable
     // Throttle IME state checks
     private DateTime _lastImeCheckTime = DateTime.MinValue;
     private static readonly TimeSpan ImeCheckThrottle = TimeSpan.FromMilliseconds(150);
+    // 输入法切换保护：Ctrl+Shift/Win+Space 触发后，抑制后续 IME 检测
+    private volatile bool _imeSwitchPending;
+    // Ctrl 曾按下（解决 Ctrl 先于 Shift 弹起的键序问题）
+    private bool _ctrlWasDown;
 
     private static readonly string LogPath = @"C:\Users\likan\AppData\Local\Temp\kb_hook.log";
     private static void Log(string m) { try { File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss.fff}] {m}\n"); } catch { } }
@@ -79,7 +83,16 @@ public class KeyboardHookService : IDisposable
             if (vkCode == 0x5B) _leftWinDown = isKeyDown;
             else if (vkCode == 0x5C) _rightWinDown = isKeyDown;
             else if (vkCode == 0x12 || vkCode == 0xA4 || vkCode == 0xA5) _altDown = isKeyDown;
-            else if (vkCode == 0x11 || vkCode == 0xA2 || vkCode == 0xA3) _ctrlDown = isKeyDown;
+            else if (vkCode == 0x11 || vkCode == 0xA2 || vkCode == 0xA3)
+            {
+                _ctrlDown = isKeyDown;
+                if (isKeyDown)
+                {
+                    _ctrlWasDown = true;
+                    _ = ClearCtrlWasDownAfterDelay();
+                }
+                // 不在 Ctrl 弹起时清除 _ctrlWasDown → 等 Shift 弹起时判断使用后清除
+            }
 
             bool winDown = _leftWinDown || _rightWinDown;
 
@@ -98,6 +111,8 @@ public class KeyboardHookService : IDisposable
             if (winDown && vkCode == 0x20 && isKeyUp)
             {
                 Log("Win+Space detected");
+                _imeSwitchPending = true;
+                _ = ClearImeSwitchPendingAfterDelay();
                 App.DispatcherQueue.TryEnqueue(() => WinSpaceDetected?.Invoke());
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
@@ -111,12 +126,15 @@ public class KeyboardHookService : IDisposable
             }
 
             // ── Ctrl+Shift: IME switch (只有 Ctrl+Shift 会切输入法，Alt+Shift 不会) ──
-            if (isKeyUp && (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1) && _ctrlDown && !_altDown)
+            if (isKeyUp && (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1) && (_ctrlDown || _ctrlWasDown) && !_altDown)
             {
                 Log("Ctrl+Shift detected");
+                _ctrlWasDown = false;
+                _imeSwitchPending = true;
+                _ = ClearImeSwitchPendingAfterDelay();
                 App.DispatcherQueue.TryEnqueue(() => WinSpaceDetected?.Invoke());
             }
-            else if (isKeyUp && (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1) && !_ctrlDown && !_altDown)
+            else if (isKeyUp && (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1) && !_ctrlDown && !_ctrlWasDown && !_altDown)
             {
                 // Plain Shift → CN/EN toggle
                 App.DispatcherQueue.TryEnqueue(() => ShiftToggled?.Invoke());
@@ -144,10 +162,23 @@ public class KeyboardHookService : IDisposable
 
     private void ScheduleImeCheck(int delayMs)
     {
+        if (_imeSwitchPending) return; // 输入法切换中，不检测
         _ = Task.Delay(delayMs).ContinueWith(_ =>
         {
-            try { ImeStateMayHaveChanged?.Invoke(); } catch { }
+            try { if (!_imeSwitchPending) ImeStateMayHaveChanged?.Invoke(); } catch { }
         });
+    }
+
+    private async Task ClearImeSwitchPendingAfterDelay()
+    {
+        await Task.Delay(300);
+        _imeSwitchPending = false;
+    }
+
+    private async Task ClearCtrlWasDownAfterDelay()
+    {
+        await Task.Delay(1000);
+        _ctrlWasDown = false;
     }
 
     private static bool IsCapsLockOn() => (GetKeyState(0x14) & 1) == 1;
