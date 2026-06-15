@@ -7,6 +7,7 @@ using Windows.System;
 using Windows.UI;
 using WinAssistant.Controls.AiChat;
 using WinAssistant.Controls.Tools;
+using WinAssistant.Helpers;
 using WinAssistant.Services;
 using WinAssistant.ViewModels;
 
@@ -28,6 +29,9 @@ public partial class App : Application
     public static QwenService QwenService { get; } = new();
     public static SkillLibraryService SkillLibraryService { get; } = new();
     public static SkillExecutionService SkillExecutionService { get; } = new(QwenService);
+    public static KeyboardHookService KeyboardHookService { get; } = new();
+    public static ImeService ImeService { get; } = new();
+    public static TsfImeMonitorService TsfImeMonitorService { get; } = new();
 
     /// <summary>Fired when the system theme changes (light ↔ dark).</summary>
     public static event EventHandler? SystemThemeChanged;
@@ -60,6 +64,9 @@ public partial class App : Application
 
         AppDomain.CurrentDomain.ProcessExit += (s, e) =>
         {
+            TsfImeMonitorService.Stop();
+            ImeService.Stop();
+            KeyboardHookService.Dispose();
             ToolHostWindow.CloseAll();
             _mutex?.Dispose();
         };
@@ -130,6 +137,30 @@ public partial class App : Application
         DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
 
         WinAssistant.Services.AppScanner.PreloadCache();
+
+        // 输入法管理服务
+        KeyboardHookService.Start();
+        ImeService.Start();
+
+        // 键盘输入触发 IME 状态检测（Shift 中英文切换、全半角等）
+        KeyboardHookService.ShiftToggled += () => ImeService.OnShiftToggled();
+        KeyboardHookService.ImeStateMayHaveChanged += () =>
+        {
+            Logger.Log("IME", "StateMayHaveChanged fired");
+            ImeService.CheckImeStateChanged();
+        };
+
+        // 输入法切换监控（Win+Space / Ctrl+Shift / Alt+Shift）
+        TsfImeMonitorService.ImeProfileChanged += name =>
+            DispatcherQueue.TryEnqueue(() =>
+                HotKeyToast.Show("输入法", name));
+        KeyboardHookService.WinSpaceDetected += () =>
+        {
+            ImeService.ClearImeChangeEvent();
+            ImeService.SuppressChangeDetection();
+            TsfImeMonitorService.OnWinSpaceDetected();
+        };
+        TsfImeMonitorService.Start();
 
         ApplyThemeToRoot();
         StartThemeListener();
