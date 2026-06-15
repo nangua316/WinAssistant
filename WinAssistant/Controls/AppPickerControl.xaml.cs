@@ -40,9 +40,14 @@ public sealed partial class AppPickerControl : UserControl
     {
         var apps = await Task.Run(() => AppScanner.ScanInstalledApps());
         BuildPickerItems(apps, _existingPaths ?? []);
+        Logger.Log("IconHelper", $"Picker loaded {_pickerItems.Count} items");
         var iconSize = GetScaledIconSize(64);
         foreach (var item in _pickerItems)
+        {
+            if (item.Name.Contains("Switch", StringComparison.OrdinalIgnoreCase))
+                Logger.Log("IconHelper", $"CCSwitch: AppPath={item.AppPath} IconPath={item.IconPath}");
             LoadIcon(item, iconSize);
+        }
     }
 
     private void BuildPickerItems(List<InstalledAppInfo> apps, HashSet<string> existingPaths)
@@ -116,9 +121,14 @@ public sealed partial class AppPickerControl : UserControl
     private static void LoadIcon(AppPickerItem item, int targetSize)
     {
         if (string.IsNullOrEmpty(item.AppPath) && string.IsNullOrEmpty(item.Aumid)) return;
+        var path = item.IconPath ?? item.AppPath;
+        if (item.Name.Contains("Switch", StringComparison.OrdinalIgnoreCase))
+            Logger.Log("IconHelper", $"CCSwitch LoadIcon: path={path}");
         _ = Task.Run(() =>
         {
-            var tempFile = IconHelper.ExtractAppIconToAppData(item.IconPath ?? item.AppPath, targetSize, aumid: item.Aumid);
+            var tempFile = IconHelper.ExtractAppIconToAppData(path, targetSize, aumid: item.Aumid);
+            if (item.Name.Contains("Switch", StringComparison.OrdinalIgnoreCase))
+                Logger.Log("IconHelper", $"CCSwitch ExtractAppIconToAppData: tempFile={tempFile ?? "null"}");
             if (tempFile == null) return;
             App.DispatcherQueue.TryEnqueue(() =>
             {

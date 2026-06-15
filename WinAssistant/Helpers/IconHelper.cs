@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Toolbelt.Drawing;
 using Windows.Storage.Streams;
 
 namespace WinAssistant.Helpers;
@@ -30,9 +31,26 @@ public static class IconHelper
             var hashBytes = SHA256.HashData(keyBytes);
             var hash = Convert.ToHexString(hashBytes)[..16]; // first 16 hex chars
             var tempFile = System.IO.Path.Combine(tempDir, $"{hash}.png");
+            var stampFile = tempFile + ".timestamp";
 
-            if (!File.Exists(tempFile))
+            // Cache invalidation: check source file's last-write time.
+            // If the source was updated, re-extract even if the cache file exists.
+            bool cacheValid = File.Exists(tempFile);
+            if (cacheValid && File.Exists(stampFile))
+            {
+                var cachedStamp = File.ReadAllText(stampFile);
+                var sourceStamp = File.GetLastWriteTimeUtc(filePath).Ticks.ToString();
+                if (!cachedStamp.Equals(sourceStamp, StringComparison.Ordinal))
+                    cacheValid = false;
+            }
+
+            if (!cacheValid)
+            {
                 File.WriteAllBytes(tempFile, ms.ToArray());
+                // Store the source's write time so we know when to re-extract.
+                if (!string.IsNullOrEmpty(filePath) && File.Exists(filePath))
+                    File.WriteAllText(stampFile, File.GetLastWriteTimeUtc(filePath).Ticks.ToString());
+            }
             return tempFile;
         }
         catch
@@ -118,9 +136,38 @@ public static class IconHelper
 
         if (!string.IsNullOrEmpty(filePath) && (File.Exists(filePath) || Directory.Exists(filePath)))
         {
-            // Try IShellItemImageFactory first — best quality
-            var shellResult = ExtractIconViaShellFactory(filePath, targetSize);
-            if (shellResult != null) return shellResult;
+            bool isDirectory = !File.Exists(filePath) && Directory.Exists(filePath);
+
+            // Files without an extension (e.g. MSI "ProductIcon") confuse SHGetFileInfo
+            // into returning a generic document icon.  Copy to a temp .ico path.
+            if (!isDirectory && !Path.HasExtension(filePath))
+            {
+                try
+                {
+                    var tempIco = System.IO.Path.Combine(
+                        System.IO.Path.GetTempPath(), "WinAssistant", "icocache",
+                        $"_{System.IO.Path.GetFileName(filePath)}.ico");
+                    Directory.CreateDirectory(System.IO.Path.GetDirectoryName(tempIco)!);
+                    if (!File.Exists(tempIco))
+                        File.Copy(filePath, tempIco, overwrite: false);
+                    if (File.Exists(tempIco))
+                    {
+                        Logger.Log("IconHelper", $"Using .ico copy: {tempIco}");
+                        filePath = tempIco;
+                    }
+                }
+                catch { }
+            }
+
+            // For directories, skip IShellItemImageFactory (it returns inconsistent
+            // thumbnails that vary by folder contents) and use SHGetFileInfo directly
+            // with FILE_ATTRIBUTE_DIRECTORY for a consistent generic folder icon.
+            if (!isDirectory)
+            {
+                // Try IShellItemImageFactory first — best quality
+                var shellResult = ExtractIconViaShellFactory(filePath, targetSize);
+                if (shellResult != null) return shellResult;
+            }
 
             // For Store apps in WindowsApps, the exe is often a stub without embedded icons.
             // Prefer AUMID extraction for them; for regular Win32 exes, prefer file-based icon.
@@ -134,7 +181,25 @@ public static class IconHelper
                 if (aumidResult != null) return aumidResult;
             }
 
-            // SHGetFileInfo for Win32 exe icons
+            // For .ico files, load directly (SHGetFileInfo returns the file-type icon, not the content)
+            if (filePath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Log("IconHelper",$"Loading .ico directly: {filePath}");
+                var icoResult = ExtractIcoFile(filePath, targetSize);
+                if (icoResult != null) return icoResult;
+            }
+
+            // System image list — 256x256 icons from the shell cache (EverythingToolbar approach)
+            Logger.Log("IconHelper",$"ImageList for {filePath}");
+            var imgResult = ExtractIconViaImageList(filePath, targetSize);
+            if (imgResult != null) return imgResult;
+
+            // PrivateExtractIcons — requests the exact size (covers most .exe/.dll)
+            Logger.Log("IconHelper",$"PrivateExtractIcons for {filePath} size={targetSize}");
+            shResult = ExtractIconViaPrivateExtract(filePath, targetSize);
+            if (shResult != null) return shResult;
+
+            // SHGetFileInfo for Win32 exe icons (32x32 fallback)
             shResult = ExtractIconToPngStream(filePath, targetSize);
             if (shResult != null) return shResult;
 
@@ -149,6 +214,83 @@ public static class IconHelper
             // Last resort: try ExtractIconEx
             var exResult = ExtractIconExToPngStream(filePath, targetSize);
             if (exResult != null) return exResult;
+
+            // Last last resort: System.Drawing.Icon.ExtractAssociatedIcon (catches exes
+            // where SHGetFileInfo/ExtractIconEx fail, e.g. some Electron apps like CC Switch)
+            Logger.Log("IconHelper",$"Trying ExtractAssociatedIcon for {filePath}");
+            try
+            {
+                var extracted = System.Drawing.Icon.ExtractAssociatedIcon(filePath);
+                if (extracted != null)
+                {
+                    using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
+                    using var g = System.Drawing.Graphics.FromImage(resized);
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.Clear(System.Drawing.Color.Transparent);
+                    g.DrawIcon(extracted, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+                    var ms = new MemoryStream();
+                    resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                    ms.Position = 0;
+                    Logger.Log("IconHelper",$"ExtractAssociatedIcon OK: {filePath}");
+                    return ms;
+                }
+            }
+            catch { }
+
+            // Last resort: try SHGetFileInfo with SHGFI_SMALLICON (some exes only have 16x16 icon)
+            Logger.Log("IconHelper",$"Trying SHGFI_SMALLICON for {filePath}");
+            try
+            {
+                var shfi = new SHFILEINFO();
+                var ret = SHGetFileInfoW(filePath, 0, ref shfi, Marshal.SizeOf<SHFILEINFO>(), 0x100 | 0x1);
+                if (ret != nint.Zero && shfi.hIcon != nint.Zero)
+                {
+                    using var icon = System.Drawing.Icon.FromHandle(shfi.hIcon);
+                    using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
+                    using var g = System.Drawing.Graphics.FromImage(resized);
+                    g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                    g.Clear(System.Drawing.Color.Transparent);
+                    g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+                    DestroyIcon(shfi.hIcon);
+                    var ms = new MemoryStream();
+                    resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                    ms.Position = 0;
+                    Logger.Log("IconHelper",$"SHGFI_SMALLICON OK: {filePath}");
+                    return ms;
+                }
+            }
+            catch { }
+
+            // Final resort: TsudaKageyu/IconExtractor — direct PE resource parsing
+            // Catches exes where Win32 shell APIs fail (e.g. some packed/compressed exes)
+            if (filePath.EndsWith(".exe", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Log("IconHelper",$"IconExtractor for {filePath}");
+                try
+                {
+                    using var icoStream = new MemoryStream();
+                    IconExtractor.Extract1stIconTo(filePath, icoStream);
+                    if (icoStream.Length > 0)
+                    {
+                        icoStream.Position = 0;
+                        using var extracted = new System.Drawing.Icon(icoStream);
+                        using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
+                        using var g = System.Drawing.Graphics.FromImage(resized);
+                        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                        g.Clear(System.Drawing.Color.Transparent);
+                        g.DrawIcon(extracted, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+                        var ms = new MemoryStream();
+                        resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                        ms.Position = 0;
+                        Logger.Log("IconHelper",$"IconExtractor OK: {filePath}");
+                        return ms;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log("IconHelper", $"IconExtractor error: {ex.Message}");
+                }
+            }
         }
 
         // AUMID fallback when file path is unavailable
@@ -243,12 +385,11 @@ public static class IconHelper
                 try
                 {
                     using var icon = System.Drawing.Icon.FromHandle(shfi.hIcon);
-                    using var bitmap = icon.ToBitmap();
                     using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
                     using var g = System.Drawing.Graphics.FromImage(resized);
                     g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                     g.Clear(System.Drawing.Color.Transparent);
-                    g.DrawImage(bitmap, 0, 0, targetSize, targetSize);
+                    g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
 
                     var ms = new MemoryStream();
                     resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
@@ -328,24 +469,128 @@ public static class IconHelper
     }
 
     /// <summary>
+    /// Load an .ico file directly via System.Drawing.Icon constructor.
+    /// SHGetFileInfo on .ico files returns the file-type icon (a palette), not the content.
+    /// </summary>
+    private static MemoryStream? ExtractIcoFile(string icoPath, int targetSize)
+    {
+        try
+        {
+            using var icon = new System.Drawing.Icon(icoPath);
+            using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
+            using var g = System.Drawing.Graphics.FromImage(resized);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.Clear(System.Drawing.Color.Transparent);
+            g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+            var ms = new MemoryStream();
+            resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            ms.Position = 0;
+            return ms;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IconHelper", $"ExtractIcoFile error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Extract icon via the system image list (SHGetImageList SHIL_JUMBO = 256x256).
+    /// Approach used by EverythingToolbar — gives the highest-quality shell icon.
+    /// </summary>
+    private static MemoryStream? ExtractIconViaImageList(string filePath, int targetSize)
+    {
+        try
+        {
+            var shfi = new SHFILEINFO();
+            var ret = SHGetFileInfoW(filePath, 0, ref shfi, Marshal.SizeOf<SHFILEINFO>(), SHGFI_SYSICONINDEX);
+            if (ret == nint.Zero || shfi.iIcon < 0) return null;
+
+            var iid = new Guid("46EB5926-582E-4017-9FDF-E8998DAA0950"); // IID_IImageList
+            int hr = SHGetImageList(4 /*SHIL_JUMBO*/, ref iid, out var imgList);
+            if (hr < 0 || imgList == null) return null;
+
+            hr = imgList.GetIcon(shfi.iIcon, 0x1 /*ILD_TRANSPARENT*/, out nint hIcon);
+            if (hr < 0 || hIcon == nint.Zero) return null;
+
+            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
+            using var g = System.Drawing.Graphics.FromImage(resized);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.Clear(System.Drawing.Color.Transparent);
+            g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+            DestroyIcon(hIcon);
+
+            var ms = new MemoryStream();
+            resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            ms.Position = 0;
+            Logger.Log("IconHelper", $"ImageList OK: {filePath} size={targetSize}");
+            return ms;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IconHelper", $"ImageList error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Request icon at an exact target size via PrivateExtractIcons.
+    /// Returns a PNG MemoryStream with the best-matching icon size.
+    /// Works for .exe, .dll, .ico — requests up to 256x256.
+    /// </summary>
+    private static MemoryStream? ExtractIconViaPrivateExtract(string filePath, int targetSize)
+    {
+        try
+        {
+            uint count = PrivateExtractIcons(filePath, 0, targetSize, targetSize, out nint hIcon, out _, 1, 0);
+            if (count <= 0 || hIcon == nint.Zero)
+            {
+                // Some exes (e.g. Electron) fail at larger sizes; retry at 32x32
+                count = PrivateExtractIcons(filePath, 0, 32, 32, out hIcon, out _, 1, 0);
+            }
+            if (count <= 0 || hIcon == nint.Zero) return null;
+
+            using var icon = System.Drawing.Icon.FromHandle(hIcon);
+            using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
+            using var g = System.Drawing.Graphics.FromImage(resized);
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.Clear(System.Drawing.Color.Transparent);
+            g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+            DestroyIcon(hIcon);
+
+            var ms = new MemoryStream();
+            resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+            ms.Position = 0;
+            Logger.Log("IconHelper",$"PrivateExtractIcons OK: {filePath} size={targetSize}");
+            return ms;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IconHelper", $"PrivateExtractIcons error: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Extract icon from exe and return PNG bytes in a MemoryStream.
     /// </summary>
     private static MemoryStream? ExtractIconToPngStream(string filePath, int targetSize)
     {
         if (string.IsNullOrEmpty(filePath) || (!File.Exists(filePath) && !Directory.Exists(filePath))) return null;
-        
+
         var hIcon = SHGetFileInfo(filePath);
         if (hIcon == nint.Zero) return null;
 
         using var icon = System.Drawing.Icon.FromHandle(hIcon);
-        using var bitmap = icon.ToBitmap();
-        DestroyIcon(hIcon);
 
+        // DrawIcon preserves alpha; ToBitmap() does not (black background)
         using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
         using var g = System.Drawing.Graphics.FromImage(resized);
         g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
         g.Clear(System.Drawing.Color.Transparent);
-        g.DrawImage(bitmap, 0, 0, targetSize, targetSize);
+        g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
+        DestroyIcon(hIcon);
 
         var ms = new MemoryStream();
         resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
@@ -370,12 +615,11 @@ public static class IconHelper
             try
             {
                 using var icon = System.Drawing.Icon.FromHandle(hIconLarge);
-                using var bitmap = icon.ToBitmap();
                 using var resized = new System.Drawing.Bitmap(targetSize, targetSize);
                 using var g = System.Drawing.Graphics.FromImage(resized);
                 g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
                 g.Clear(System.Drawing.Color.Transparent);
-                g.DrawImage(bitmap, 0, 0, targetSize, targetSize);
+                g.DrawIcon(icon, new System.Drawing.Rectangle(0, 0, targetSize, targetSize));
 
                 var ms = new MemoryStream();
                 resized.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
@@ -395,10 +639,13 @@ public static class IconHelper
         }
     }
 
-    private static nint SHGetFileInfo(string filePath)
+    private static nint SHGetFileInfo(string filePath, uint dwFileAttributes = 0)
     {
         var shfi = new SHFILEINFO();
-        var ret = SHGetFileInfoW(filePath, 0, ref shfi, Marshal.SizeOf<SHFILEINFO>(), SHGFI_ICON | SHGFI_LARGEICON);
+        // FILE_ATTRIBUTE_DIRECTORY (0x10) is required for reliable directory icon retrieval.
+        if (dwFileAttributes == 0 && !File.Exists(filePath) && Directory.Exists(filePath))
+            dwFileAttributes = 0x10;
+        var ret = SHGetFileInfoW(filePath, dwFileAttributes, ref shfi, Marshal.SizeOf<SHFILEINFO>(), SHGFI_ICON | SHGFI_LARGEICON);
         return ret != nint.Zero ? shfi.hIcon : nint.Zero;
     }
 
@@ -410,6 +657,9 @@ public static class IconHelper
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(nint hIcon);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint PrivateExtractIcons(string lpszFile, int nIconIndex, int cxIcon, int cyIcon, out nint phicon, out uint piconid, uint nIcons, uint flags);
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int SHCreateItemFromParsingName(string pszPath, nint pbc, [MarshalAs(UnmanagedType.LPStruct)] Guid riid, out nint ppv);
@@ -473,4 +723,39 @@ public static class IconHelper
         [PreserveSig]
         int GetImage(SIZE size, uint flags, out nint phbm);
     }
+
+    // ── IImageList (SHGetImageList / EverythingToolbar approach) ──
+
+    [ComImport, Guid("46EB5926-582E-4017-9FDF-E8998DAA0950")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IImageList
+    {
+        int Add(nint hbmImage, nint hbmMask, out int pi);
+        int ReplaceIcon(int index, nint hicon, out int pi);
+        int SetOverlayImage(int index, int overlay);
+        int Replace(int index, nint hbmImage, nint hbmMask);
+        int AddMasked(nint hbmImage, int crMask, out int pi);
+        [PreserveSig] int Draw(nint pimldp);
+        int Remove(int index);
+        [PreserveSig] int GetIcon(int index, uint flags, out nint phicon);
+        int GetImageInfo(int index, nint pImageInfo);
+        int Copy(int iDst, nint punkSrc, int iSrc, uint uFlags);
+        int Merge(int i1, nint punkMerge, int i2, int dx, int dy, ref Guid riid, out nint ppv);
+        int Clone(ref Guid riid, out nint ppv);
+        int GetImageRect(int index, nint prc);
+        int GetIconSize(out int cx, out int cy);
+        int SetIconSize(int cx, int cy);
+        int GetImageCount(out int piCount);
+        int SetImageCount(int uNewCount);
+        int SetBegin();
+        int End();
+        int GetDragImage(nint ppt, nint pptHot, ref Guid riid, out nint ppv);
+        int GetItemFlags(int index, out uint dwFlags);
+        int GetOverlayImage(int overlay, out int piIndex);
+    }
+
+    private const uint SHGFI_SYSICONINDEX = 0x4000;
+
+    [DllImport("shell32.dll")]
+    private static extern int SHGetImageList(int iImageList, ref Guid riid, out IImageList ppv);
 }
