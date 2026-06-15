@@ -95,7 +95,7 @@
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </ListViewItem>
-                <ListViewItem>
+                <ListViewItem Visibility="Collapsed">
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE94A;" FontSize="16"
                                   Foreground="{ThemeResource PurpleBrush}"

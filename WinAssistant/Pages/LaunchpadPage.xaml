@@ -354,7 +354,7 @@
                                Foreground="{StaticResource TextDimBrush}"
                                FontSize="12"
                                VerticalAlignment="Center" />
-                    <!-- AI 对话按钮 -->
+                    <!-- AI 对话按钮（暂隐藏） -->
                     <Button Grid.Column="1"
                             x:Name="AiChatButton"
                             Click="OnAiChatClick"
@@ -364,7 +364,8 @@
                             CornerRadius="8"
                             Padding="10,4"
                             MinHeight="30"
-                            FontSize="12">
+                            FontSize="12"
+                            Visibility="Collapsed">
                         <StackPanel Orientation="Horizontal" Spacing="5">
                             <TextBlock Text="🤖" FontSize="14" />
                             <TextBlock Text="AI 指令" FontSize="12" />
