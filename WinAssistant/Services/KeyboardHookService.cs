@@ -26,6 +26,9 @@ public class KeyboardHookService : IDisposable
     private volatile bool _imeSwitchPending;
     // Ctrl 曾按下（解决 Ctrl 先于 Shift 弹起的键序问题）
     private bool _ctrlWasDown;
+    // Shift 键状态追踪 — 防止打字时 Shift+? 等组合误触 CN/EN 切换
+    private bool _shiftDown;
+    private bool _shiftOtherKeyPressed;
 
     private static readonly string LogPath = @"C:\Users\likan\AppData\Local\Temp\kb_hook.log";
     private static void Log(string m) { try { File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss.fff}] {m}\n"); } catch { } }
@@ -93,6 +96,16 @@ public class KeyboardHookService : IDisposable
                 }
                 // 不在 Ctrl 弹起时清除 _ctrlWasDown → 等 Shift 弹起时判断使用后清除
             }
+            else if (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1)
+            {
+                _shiftDown = isKeyDown;
+                if (isKeyDown) _shiftOtherKeyPressed = false; // 新一次 Shift 按下，重置标记
+            }
+            else if (isKeyDown && _shiftDown)
+            {
+                // 非修饰键在 Shift 按下期间被按下 → Shift 用作组合键（如 Shift+/=？）
+                _shiftOtherKeyPressed = true;
+            }
 
             bool winDown = _leftWinDown || _rightWinDown;
 
@@ -136,8 +149,12 @@ public class KeyboardHookService : IDisposable
             }
             else if (isKeyUp && (vkCode == 0x10 || vkCode == 0xA0 || vkCode == 0xA1) && !_ctrlDown && !_ctrlWasDown && !_altDown)
             {
-                // Plain Shift → CN/EN toggle
-                App.DispatcherQueue.TryEnqueue(() => ShiftToggled?.Invoke());
+                if (!_shiftOtherKeyPressed)
+                {
+                    // Plain Shift → CN/EN toggle（中间没按过其他键，是纯 Shift 切换）
+                    App.DispatcherQueue.TryEnqueue(() => ShiftToggled?.Invoke());
+                }
+                _shiftOtherKeyPressed = false;
             }
 
             // Debug: log Win/Space/Ctrl/Alt/Shift events
