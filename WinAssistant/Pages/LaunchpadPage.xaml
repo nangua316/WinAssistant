@@ -196,7 +196,7 @@
                 </GridView.ItemContainerStyle>
                 <GridView.ItemContainerTransitions>
                     <TransitionCollection>
-                        <RepositionThemeTransition IsStaggeringEnabled="False" />
+                        <RepositionThemeTransition />
                     </TransitionCollection>
                 </GridView.ItemContainerTransitions>
                 <GridView.ItemTemplate>

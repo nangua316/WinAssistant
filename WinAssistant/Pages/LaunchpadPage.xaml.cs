@@ -46,7 +46,7 @@ public sealed partial class LaunchpadPage : Page
         };
         SizeChanged += (_, _) => UpdateItemSize();
         AppGrid.Loaded += (_, _) => UpdateItemSize();
-        AppGrid.ItemContainerTransitions = null;
+        // 注意：ItemContainerTransitions 在 XAML 中设置，不要在代码中覆盖为 null
         _dragHandler = new LaunchpadDragHandler(
             AppGrid, DragCanvas,
             ViewModel.Items,

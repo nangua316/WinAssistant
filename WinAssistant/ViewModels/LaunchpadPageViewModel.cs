@@ -423,19 +423,12 @@ public class LaunchpadPageViewModel : ObservableObject
     /// (which resets GridView scroll position) when not searching.</summary>
     private void SyncToFiltered(List<LaunchpadItemViewModel> target)
     {
-        if (string.IsNullOrWhiteSpace(_searchText))
-        {
-            SyncIncremental(target);
-        }
-        else
-        {
-            // Search active: full rebuild — user expects layout change, scroll reset is fine.
-            _filteredItems.Clear();
-            foreach (var item in target)
-                _filteredItems.Add(item);
-            // Notify so SelectFirstItem picks up the new results.
-            OnPropertyChanged(nameof(FilteredItems));
-        }
+        // Always use incremental sync to preserve RepositionThemeTransition animations
+        // — Clear()+Add triggers abrupt flash for all items.
+        var hadItems = _filteredItems.Count > 0;
+        SyncIncremental(target);
+        if (!hadItems)
+            OnPropertyChanged(nameof(FilteredItems)); // initial load: notify for SelectFirstItem
     }
 
     /// <summary>In-place sync: remove, insert, reorder — no Clear(), preserves scroll.</summary>
@@ -510,7 +503,7 @@ public class LaunchpadPageViewModel : ObservableObject
         {
             try
             {
-                await Task.Delay(150, token);
+                await Task.Delay(200, token);
                 token.ThrowIfCancellationRequested();
                 App.DispatcherQueue.TryEnqueue(() =>
                 {
