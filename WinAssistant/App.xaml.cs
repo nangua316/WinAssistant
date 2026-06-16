@@ -253,7 +253,7 @@ public partial class App : Application
     #region System theme support
 
     private ApplicationTheme _lastTheme;
-    private Windows.UI.ViewManagement.UISettings? _uiSettings;
+    private Microsoft.UI.Xaml.DispatcherTimer? _themeTimer;
 
     public static ApplicationTheme GetSystemTheme()
     {
@@ -311,35 +311,27 @@ public partial class App : Application
 
     private void StartThemeListener()
     {
-        try
+        _themeTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        _themeTimer.Interval = TimeSpan.FromMilliseconds(3000);
+        _themeTimer.Tick += (_, _) =>
         {
-            _uiSettings = new Windows.UI.ViewManagement.UISettings();
-            _uiSettings.ColorValuesChanged += (_, _) =>
+            try
             {
                 var current = GetSystemTheme();
                 if (current != _lastTheme)
                 {
-                    App.DispatcherQueue.TryEnqueue(() =>
-                    {
-                        try
-                        {
-                            _lastTheme = current;
-                            RequestedTheme = current;
-                            ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
-                            SystemThemeChanged?.Invoke(null, EventArgs.Empty);
-                        }
-                        catch (COMException ex)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
-                        }
-                    });
+                    _lastTheme = current;
+                    RequestedTheme = current;
+                    ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
+                    SystemThemeChanged?.Invoke(null, EventArgs.Empty);
                 }
-            };
-        }
-        catch
-        {
-            // UISettings 不可用时退回到注册表读取（初始 theme 已在构造时设置）
-        }
+            }
+            catch (COMException ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
+            }
+        };
+        _themeTimer.Start();
     }
 
     #endregion
