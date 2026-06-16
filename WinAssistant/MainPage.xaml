@@ -80,7 +80,7 @@
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE713;" FontSize="16"
-                                  Foreground="{StaticResource AccentBlue}"
+                                  Foreground="{ThemeResource AccentBlue}"
                                   VerticalAlignment="Center" />
                         <TextBlock Text="常规设置" FontSize="15"
                                    VerticalAlignment="Center" />
@@ -89,7 +89,7 @@
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE765;" FontSize="16"
-                                  Foreground="{StaticResource IconAmber}"
+                                  Foreground="{ThemeResource IconAmber}"
                                   VerticalAlignment="Center" />
                         <TextBlock Text="全局快捷键" FontSize="15"
                                    VerticalAlignment="Center" />
@@ -107,7 +107,7 @@
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE916;" FontSize="16"
-                                  Foreground="{StaticResource AccentBlue}"
+                                  Foreground="{ThemeResource AccentBlue}"
                                   VerticalAlignment="Center" />
                         <TextBlock Text="小工具" FontSize="15"
                                    VerticalAlignment="Center" />
@@ -116,7 +116,7 @@
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE96C;" FontSize="16"
-                                  Foreground="{StaticResource IconGreen}"
+                                  Foreground="{ThemeResource IconGreen}"
                                   VerticalAlignment="Center" />
                         <TextBlock Text="输入法状态管理" FontSize="15"
                                    VerticalAlignment="Center" />
@@ -125,7 +125,7 @@
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
                         <FontIcon Glyph="&#xE946;" FontSize="16"
-                                  Foreground="{StaticResource TextDimBrush}"
+                                  Foreground="{ThemeResource TextDimBrush}"
                                   VerticalAlignment="Center" />
                         <TextBlock Text="关于" FontSize="15"
                                    VerticalAlignment="Center" />
@@ -146,10 +146,10 @@
             <StackPanel Grid.Row="0" Margin="0,0,0,16">
                 <TextBlock x:Name="TitleText"
                            Text="常规设置"
-                           Style="{StaticResource TitleLargeTextBlockStyle}" />
+                           Style="{ThemeResource TitleLargeTextBlockStyle}" />
                 <TextBlock x:Name="SubtitleText"
                            Text="设置应用程序的基本选项"
-                           Style="{StaticResource BodyTextBlockStyle}"
+                           Style="{ThemeResource BodyTextBlockStyle}"
                            Opacity="0.7" />
             </StackPanel>
 
@@ -165,7 +165,7 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <FontIcon Grid.Column="0" Glyph="&#xE7FC;" FontSize="16"
-                                      Foreground="{StaticResource AccentBlue}"
+                                      Foreground="{ThemeResource AccentBlue}"
                                       VerticalAlignment="Center" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="开机自启动" FontSize="15" />
@@ -193,7 +193,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
-                                          Foreground="{StaticResource AccentBlue}"
+                                          Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按下中键" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -208,7 +208,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
-                                          Foreground="{StaticResource AccentBlue}"
+                                          Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按下X1键" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -223,7 +223,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
-                                          Foreground="{StaticResource AccentBlue}"
+                                          Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按下X2键" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -244,7 +244,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE765;" FontSize="16"
-                                          Foreground="{StaticResource IconAmber}"
+                                          Foreground="{ThemeResource IconAmber}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="全局快捷键" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -271,7 +271,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE765;" FontSize="16"
-                                          Foreground="{StaticResource IconAmber}"
+                                          Foreground="{ThemeResource IconAmber}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="Alt + 空格" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -342,10 +342,10 @@
                                     </Grid.RowDefinitions>
                                     <TextBlock Grid.Row="0"
                                                Text="{x:Bind Name}"
-                                               Style="{StaticResource BodyStrongTextBlockStyle}" />
+                                               Style="{ThemeResource BodyStrongTextBlockStyle}" />
                                     <TextBlock Grid.Row="1"
                                                Text="{x:Bind AppPath}"
-                                               Style="{StaticResource CaptionTextBlockStyle}"
+                                               Style="{ThemeResource CaptionTextBlockStyle}"
                                                Opacity="0.6"
                                                TextTrimming="CharacterEllipsis"
                                                TextWrapping="NoWrap" />
@@ -390,7 +390,7 @@
                                 Spacing="12"
                                 Padding="48,32">
                         <FontIcon Glyph="&#xE710;" FontSize="64" Opacity="0.5"
-                                  Foreground="{StaticResource AccentBlue}"
+                                  Foreground="{ThemeResource AccentBlue}"
                                   HorizontalAlignment="Center" />
                         <TextBlock Text="还没有添加快捷键绑定"
                                    FontSize="18" Opacity="0.85"
@@ -433,7 +433,7 @@
                             </ComboBox>
                             <TextBlock x:Name="AiConfigStatus"
                                        FontSize="12"
-                                       Foreground="{StaticResource TextDimBrush}" />
+                                       Foreground="{ThemeResource TextDimBrush}" />
                             <Button Content="测试连接"
                                     Click="OnTestAiConnection"
                                     Padding="16,6"
@@ -516,7 +516,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
-                                          Foreground="{StaticResource IconAmber}"
+                                          Foreground="{ThemeResource IconAmber}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="Toast 提示" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -532,7 +532,7 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
                                 <FontIcon Grid.Column="0" Glyph="&#xE768;" FontSize="16"
-                                          Foreground="{StaticResource AccentBlue}"
+                                          Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按窗口自动切换输入法" FontSize="15"
                                            VerticalAlignment="Center" />
@@ -635,7 +635,7 @@
                                            Foreground="{ThemeResource TextSecondaryBrush}" />
                                 <TextBlock Text="Windows 效率工具合集，集成启动台、全局快捷键、AI 对话、小工具等功能。"
                                            FontSize="13"
-                                           Foreground="{StaticResource TextDimBrush}"
+                                           Foreground="{ThemeResource TextDimBrush}"
                                            TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>

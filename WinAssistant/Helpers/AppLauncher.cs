@@ -136,7 +136,7 @@ public static class AppLauncher
         ShowWindowAsync(hWnd, SW_RESTORE);
 
         // PowerToys SendInput trick
-        var input = new INPUT { type = INPUT_MOUSE };
+        var input = new INPUT { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_MOVE } };
         SendInput(1, [input], Marshal.SizeOf<INPUT>());
 
         SetForegroundWindow(hWnd);
@@ -215,7 +215,7 @@ public static class AppLauncher
         }
 
         // 4. PowerToys approach — SendInput + SetForegroundWindow
-        var input = new INPUT { type = INPUT_MOUSE };
+        var input = new INPUT { type = INPUT_MOUSE, mi = new MOUSEINPUT { dwFlags = MOUSEEVENTF_MOVE } };
         SendInput(1, [input], Marshal.SizeOf<INPUT>());
         SetForegroundWindow(hWnd);
 
@@ -447,6 +447,7 @@ public static class AppLauncher
     private const int SW_RESTORE = 9;
     private const int SW_SHOW = 5;
     private const uint INPUT_MOUSE = 0;
+    private const uint MOUSEEVENTF_MOVE = 0x0001;
     private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
     private const int MAX_PATH_BUFFER = 4096;
     private const int GWL_STYLE = -16;

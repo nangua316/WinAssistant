@@ -254,7 +254,11 @@ public static class AppScanner
             if (proc != null)
             {
                 var json = proc.StandardOutput.ReadToEnd();
-                proc.WaitForExit(15000);
+                if (!proc.WaitForExit(15000))
+                {
+                    try { proc.Kill(); } catch { }
+                    proc.WaitForExit(1000);
+                }
                 if (!string.IsNullOrEmpty(json))
                 {
                     using var doc = System.Text.Json.JsonDocument.Parse(json);
@@ -336,7 +340,11 @@ public static class AppScanner
             if (proc == null) return;
 
             var json = proc.StandardOutput.ReadToEnd();
-            proc.WaitForExit(10000);
+            if (!proc.WaitForExit(10000))
+            {
+                try { proc.Kill(); } catch { }
+                proc.WaitForExit(1000);
+            }
             if (string.IsNullOrEmpty(json)) return;
 
             using var doc = System.Text.Json.JsonDocument.Parse(json);

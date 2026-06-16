@@ -14,10 +14,11 @@ public class KeyboardHookService : IDisposable
     private nint _hookId = nint.Zero;
     private LowLevelKeyboardProc? _proc;
     private Thread? _hookThread;
+    private int _hookThreadId;
 
-    // Key state tracking
-    private bool _lastCapsState;
-    private bool _leftWinDown, _rightWinDown, _altDown, _ctrlDown;
+    // Key state tracking — volatile 因为钩子线程写、主线程可能读
+    private volatile bool _lastCapsState;
+    private volatile bool _leftWinDown, _rightWinDown, _altDown, _ctrlDown;
 
     // Throttle IME state checks
     private DateTime _lastImeCheckTime = DateTime.MinValue;
@@ -25,12 +26,12 @@ public class KeyboardHookService : IDisposable
     // 输入法切换保护：Ctrl+Shift/Win+Space 触发后，抑制后续 IME 检测
     private volatile bool _imeSwitchPending;
     // Ctrl 曾按下（解决 Ctrl 先于 Shift 弹起的键序问题）
-    private bool _ctrlWasDown;
+    private volatile bool _ctrlWasDown;
     // Shift 键状态追踪 — 防止打字时 Shift+? 等组合误触 CN/EN 切换
-    private bool _shiftDown;
-    private bool _shiftOtherKeyPressed;
+    private volatile bool _shiftDown;
+    private volatile bool _shiftOtherKeyPressed;
 
-    private static readonly string LogPath = @"C:\Users\likan\AppData\Local\Temp\kb_hook.log";
+    private static readonly string LogPath = Path.Combine(Path.GetTempPath(), "WinAssistant_kb_hook.log");
     private static void Log(string m) { try { File.AppendAllText(LogPath, $"[{DateTime.Now:HH:mm:ss.fff}] {m}\n"); } catch { } }
 
     /// <summary>
@@ -68,10 +69,13 @@ public class KeyboardHookService : IDisposable
         using var module = System.Diagnostics.Process.GetCurrentProcess().MainModule;
         var handle = GetModuleHandleW(module?.ModuleName);
         _hookId = SetWindowsHookEx(WH_KEYBOARD_LL, _proc, handle, 0);
-        Log($"SetWindowsHookEx = 0x{_hookId:X8}");
+        _hookThreadId = GetCurrentThreadId();
+        Log($"SetWindowsHookEx = 0x{_hookId:X8} threadId={_hookThreadId}");
 
         while (GetMessageW(out MSG msg, nint.Zero, 0, 0)) { }
         UnhookWindowsHookEx(_hookId);
+        _hookId = nint.Zero;
+        Log("Hook thread exited");
     }
 
     private nint HookCallback(int nCode, nint wParam, nint lParam)
@@ -177,13 +181,19 @@ public class KeyboardHookService : IDisposable
         return CallNextHookEx(_hookId, nCode, wParam, lParam);
     }
 
+    private CancellationTokenSource? _imeCheckCts;
+
     private void ScheduleImeCheck(int delayMs)
     {
         if (_imeSwitchPending) return; // 输入法切换中，不检测
-        _ = Task.Delay(delayMs).ContinueWith(_ =>
+        _imeCheckCts?.Cancel();
+        _imeCheckCts = new CancellationTokenSource();
+        var token = _imeCheckCts.Token;
+        _ = Task.Delay(delayMs, token).ContinueWith(_ =>
         {
+            if (token.IsCancellationRequested) return;
             try { if (!_imeSwitchPending) ImeStateMayHaveChanged?.Invoke(); } catch { }
-        });
+        }, TaskContinuationOptions.NotOnCanceled);
     }
 
     private async Task ClearImeSwitchPendingAfterDelay()
@@ -212,16 +222,30 @@ public class KeyboardHookService : IDisposable
 
     public void Dispose()
     {
+        _imeCheckCts?.Cancel();
+        _imeCheckCts?.Dispose();
+        _imeCheckCts = null;
+
         if (_hookId != nint.Zero)
         {
             UnhookWindowsHookEx(_hookId);
             _hookId = nint.Zero;
         }
+        // 通知钩子线程退出消息循环
+        if (_hookThreadId != 0)
+        {
+            PostThreadMessageW(_hookThreadId, WM_QUIT, 0, 0);
+            _hookThread?.Join(1000);
+            _hookThreadId = 0;
+        }
+        _hookThread = null;
+        Log("Hook disposed");
     }
 
     private const int WH_KEYBOARD_LL = 13;
     private const nint WM_KEYDOWN = 0x0100;
     private const nint WM_KEYUP = 0x0101;
+    private const uint WM_QUIT = 0x0012;
     private delegate nint LowLevelKeyboardProc(int nCode, nint wParam, nint lParam);
 
     [StructLayout(LayoutKind.Sequential)]
@@ -239,4 +263,8 @@ public class KeyboardHookService : IDisposable
     private static extern nint GetModuleHandleW(string? lpModuleName);
     [DllImport("user32.dll")]
     private static extern bool GetMessageW(out MSG lpMsg, nint hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    [DllImport("kernel32.dll")]
+    private static extern int GetCurrentThreadId();
+    [DllImport("user32.dll")]
+    private static extern bool PostThreadMessageW(int threadId, uint msg, nint wParam, nint lParam);
 }

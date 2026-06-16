@@ -39,6 +39,8 @@ public sealed partial class MainPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        _reorder?.Dispose();
+        _reorder = null;
     }
 
     private void OnMenuSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -574,9 +576,18 @@ public sealed partial class MainPage : Page
             {
                 if (listBox.SelectedItem != null)
                 {
-                    var selected = (dynamic)listBox.SelectedItem;
-                    processBox.Text = selected.ProcessName;
-                    displayBox.Text = System.IO.Path.GetFileNameWithoutExtension(selected.ProcessName);
+                    try
+                    {
+                        // 通过反射读取匿名类型属性，避免 dynamic RuntimeException 崩溃
+                        var selected = listBox.SelectedItem;
+                        var pn = selected.GetType().GetProperty("ProcessName")?.GetValue(selected) as string;
+                        if (!string.IsNullOrEmpty(pn))
+                        {
+                            processBox.Text = pn;
+                            displayBox.Text = System.IO.Path.GetFileNameWithoutExtension(pn);
+                        }
+                    }
+                    catch (Exception ex) { Logger.Log("UI", $"进程选择器反射错误: {ex.Message}"); }
                 }
                 flyout.Hide();
             };
@@ -592,7 +603,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
             var processName = processBox.Text.Trim();
             if (string.IsNullOrEmpty(processName)) return;
@@ -700,7 +711,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
             var processName = processBox.Text.Trim();
             if (string.IsNullOrEmpty(processName)) return;
@@ -740,7 +751,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
             var settings = App.SettingsService.Load();
             settings.ImeRules.RemoveAll(r => r.Id == rule.Id);
@@ -1018,7 +1029,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
             skill.Name = nameBox.Text.Trim();
             skill.Description = descBox.Text.Trim();
@@ -1043,7 +1054,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
             App.SkillLibraryService.Delete(skill.Id);
             PopulateSkillList();
@@ -1062,7 +1073,7 @@ public sealed partial class MainPage : Page
             XamlRoot = XamlRoot
         };
 
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
+        if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
             var skills = App.SkillLibraryService.AllSkills.ToList();
             foreach (var s in skills)
@@ -1180,10 +1191,21 @@ public sealed partial class MainPage : Page
         try
         {
             hex = hex.TrimStart('#');
-            var a = byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber);
-            var r = byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber);
-            var g = byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber);
-            var b = byte.Parse(hex[6..8], System.Globalization.NumberStyles.HexNumber);
+            byte a, r, g, b;
+            if (hex.Length == 6)
+            {
+                a = 0xFF;
+                r = byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber);
+                g = byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber);
+                b = byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber);
+            }
+            else
+            {
+                a = byte.Parse(hex[..2], System.Globalization.NumberStyles.HexNumber);
+                r = byte.Parse(hex[2..4], System.Globalization.NumberStyles.HexNumber);
+                g = byte.Parse(hex[4..6], System.Globalization.NumberStyles.HexNumber);
+                b = byte.Parse(hex[6..8], System.Globalization.NumberStyles.HexNumber);
+            }
             return new SolidColorBrush(Color.FromArgb(a, r, g, b));
         }
         catch { return new SolidColorBrush(Color.FromArgb(0xFF, 0x60, 0xA5, 0xFA)); }
@@ -1264,7 +1286,7 @@ public sealed partial class MainPage : Page
             ke.Handled = true;
         };
 
-        var result = await dialog.ShowAsync();
+        var result = await SafeShowDialog(dialog);
         if (result == ContentDialogResult.Primary && capturedMods > 0 && capturedVk > 0)
         {
             ViewModel.SetLaunchpadHotKey(capturedMods, capturedVk, capturedDisplay);
@@ -1278,6 +1300,19 @@ public sealed partial class MainPage : Page
     }
 
     #region Hotkey list event handlers
+
+    /// <summary>
+    /// 安全地显示 ContentDialog，如果已有对话框打开则捕获异常不崩溃。
+    /// </summary>
+    private static async Task<ContentDialogResult> SafeShowDialog(ContentDialog dialog)
+    {
+        try { return await dialog.ShowAsync(); }
+        catch (Exception ex)
+        {
+            Logger.Log("UI", $"ContentDialog 嵌套冲突: {ex.Message}");
+            return ContentDialogResult.None;
+        }
+    }
 
     private bool _toggling;
 
@@ -1296,13 +1331,20 @@ public sealed partial class MainPage : Page
             {
                 toggle.IsOn = false;
                 _toggling = false;
-                _ = new ContentDialog
+                try
                 {
-                    Title = "快捷键冲突",
-                    Content = $"无法启用：快捷键 {vm.Model.HotKeyDisplay} 已被 \"{conflict.Name}\" 使用",
-                    CloseButtonText = "确定",
-                    XamlRoot = this.XamlRoot
-                }.ShowAsync();
+                    await new ContentDialog
+                    {
+                        Title = "快捷键冲突",
+                        Content = $"无法启用：快捷键 {vm.Model.HotKeyDisplay} 已被 \"{conflict.Name}\" 使用",
+                        CloseButtonText = "确定",
+                        XamlRoot = this.XamlRoot
+                    }.ShowAsync();
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log("UI", $"ContentDialog 冲突: {ex.Message}");
+                }
                 return;
             }
         }

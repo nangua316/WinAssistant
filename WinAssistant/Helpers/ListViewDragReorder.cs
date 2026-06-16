@@ -11,8 +11,17 @@ using WinAssistant.ViewModels;
 
 namespace WinAssistant.Helpers;
 
-internal sealed class ListViewDragReorder
+internal sealed class ListViewDragReorder : IDisposable
 {
+    public void Dispose()
+    {
+        _listView.RemoveHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPressed));
+        _listView.RemoveHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnMoved));
+        _listView.RemoveHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnReleased));
+        _listView.RemoveHandler(UIElement.PointerCanceledEvent, new PointerEventHandler(OnCanceled));
+        _parentGrid.Children.Remove(_overlay);
+    }
+
     private readonly ListView _listView;
     private readonly Grid _parentGrid;
     private readonly ObservableCollection<HotKeyBindingViewModel> _items;

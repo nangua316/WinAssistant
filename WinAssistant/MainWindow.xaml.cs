@@ -67,11 +67,15 @@ public sealed partial class MainWindow : Window
 
         InitializeTrayIcon(_hwnd);
 
-        // Intercept close → hide to tray
+        // Intercept close → hide to tray (如果托盘图标可用)
         AppWindow.Closing += (s, e) =>
         {
-            e.Cancel = true;
-            ShowWindow(_hwnd, SW_HIDE);
+            if (_trayIconAdded)
+            {
+                e.Cancel = true;
+                ShowWindow(_hwnd, SW_HIDE);
+            }
+            // 如果没有托盘图标（初始化失败），允许窗口真正关闭退出
         };
     }
 
@@ -130,6 +134,7 @@ public sealed partial class MainWindow : Window
             var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
             exStyle = (exStyle & ~WS_EX_APPWINDOW) | WS_EX_TOOLWINDOW;
             SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+            SetWindowPos(_hwnd, nint.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
         }
         catch { }
     }
@@ -141,6 +146,7 @@ public sealed partial class MainWindow : Window
             var exStyle = GetWindowLong(_hwnd, GWL_EXSTYLE);
             exStyle = (exStyle & ~WS_EX_TOOLWINDOW) | WS_EX_APPWINDOW;
             SetWindowLong(_hwnd, GWL_EXSTYLE, exStyle);
+            SetWindowPos(_hwnd, nint.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
         }
         catch { }
     }
@@ -284,6 +290,15 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool ShowWindow(nint hWnd, int nCmdShow);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOZORDER = 0x0004;
+    private const uint SWP_FRAMECHANGED = 0x0020;
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

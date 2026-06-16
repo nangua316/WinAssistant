@@ -20,34 +20,55 @@ public class TsfImeMonitorService : IDisposable
     private readonly List<Guid> _profileList = new();
     private readonly Dictionary<Guid, string> _profileIcons = new();
 
+    // 复用后台 STA 线程执行 COM 查询
+    private readonly AutoResetEvent _querySignal = new(false);
+    private volatile TaskCompletionSource<(string Name, string? Icon)>? _queryTcs;
+
     public bool IsRunning => _running;
     public event Action<string>? ImeProfileChanged;
+
+    private ManualResetEvent? _stopEvent;
 
     public void Start()
     {
         if (_running) return;
         _running = true;
         _cts = new CancellationTokenSource();
+        _stopEvent = new ManualResetEvent(false);
 
         BuildProfileMap();
         Logger.Log("IME2", $"Loaded {_profileMap.Count} profiles, ordered {_profileList.Count}");
 
         _thread = new Thread(Run) { IsBackground = true, Name = "ImeMon" };
         _thread.SetApartmentState(ApartmentState.STA);
-        _thread.Start(_cts.Token);
+        _thread.Start();
     }
-    public void Stop() { _running = false; _cts?.Cancel(); }
+    public void Stop()
+    {
+        _running = false;
+        _cts?.Cancel();
+        _stopEvent?.Set(); // 通知 Run 线程退出等待
+    }
 
     public void OnWinSpaceDetected()
     {
-        // 异步查询真实激活的输入法（通过 TSF COM）
-        _ = Task.Run(() =>
+        // 在后台 STA 线程上查询真实激活的输入法（通过 TSF COM）
+        var tcs = new TaskCompletionSource<(string Name, string? Icon)>();
+        // 用 Interlocked 避免并发覆盖导致前一个请求丢失
+        var old = Interlocked.Exchange(ref _queryTcs, tcs);
+        old?.TrySetCanceled();
+        _querySignal.Set();
+
+        _ = tcs.Task.ContinueWith(t =>
         {
-            var (name, icon) = QueryActiveProfile();
-            Logger.Log("IME2", $"IME → {name}");
-            App.DispatcherQueue.TryEnqueue(() =>
-                HotKeyToast.Show("输入法", name, icon));
-        });
+            if (!t.IsFaulted && !t.IsCanceled)
+            {
+                var (name, icon) = t.Result;
+                Logger.Log("IME2", $"IME → {name}");
+                App.DispatcherQueue.TryEnqueue(() =>
+                    HotKeyToast.Show("输入法", name, icon));
+            }
+        }, TaskContinuationOptions.NotOnFaulted);
     }
 
     /// <summary>
@@ -82,48 +103,6 @@ public class TsfImeMonitorService : IDisposable
     // Cycling fallback for when TSF COM fails
     private int _profileIndex;
 
-    /// <summary>
-    /// 在独立 STA 线程上查询真实激活的 Profile GUID，返回显示名。
-    /// 如果查询失败则回退到循环（与 Windows 输入法切换顺序一致）。
-    /// </summary>
-    private (string Name, string? Icon) QueryActiveProfile()
-    {
-        Guid? guid = null;
-        var done = new ManualResetEvent(false);
-        var t = new Thread(() =>
-        {
-            try
-            {
-                CoInitializeEx(nint.Zero, 2);
-                guid = QueryActiveProfileGuid();
-            }
-            catch { }
-            finally { done.Set(); }
-        });
-        t.SetApartmentState(ApartmentState.STA);
-        t.Start();
-        done.WaitOne(3000);
-
-        if (guid.HasValue && _profileMap.TryGetValue(guid.Value, out var n))
-        {
-            var icon = _profileIcons.TryGetValue(guid.Value, out var i) ? i : null;
-            return (MapDisplayName(n, guid.Value), icon);
-        }
-
-        // TSF COM failed — fallback: cycling through _profileList
-        if (_profileList.Count > 0)
-        {
-            _profileIndex = (_profileIndex + 1) % _profileList.Count;
-            var prof = _profileList[_profileIndex];
-            var name = _profileMap.TryGetValue(prof, out var n2) ? MapDisplayName(n2, prof) : "输入法";
-            var icon = _profileIcons.TryGetValue(prof, out var i2) ? i2 : null;
-            Logger.Log("IME2", $"COM fallback: cycle to {name}");
-            return (name, icon);
-        }
-
-        return ("输入法", null);
-    }
-
     private static string MapDisplayName(string rawName, Guid profGuid)
     {
         if (profGuid == new Guid("FA550B04-5AD7-411F-A5AC-CA038EC515D7")) return "微软拼音";
@@ -139,9 +118,10 @@ public class TsfImeMonitorService : IDisposable
 
     // ── Background thread: HKL + profile switch detection ──
 
-    private void Run(object? state)
+    private void Run()
     {
-        var tok = (CancellationToken)state!;
+        var tok = _cts?.Token ?? CancellationToken.None;
+        var stopEvent = _stopEvent;
         nint lastHkl = nint.Zero;
 
         try
@@ -149,27 +129,71 @@ public class TsfImeMonitorService : IDisposable
             CoInitializeEx(nint.Zero, 2);
             lastHkl = GetFgHkl();
             Logger.Log("IME2", $"BG start hkl=0x{(ulong)lastHkl:X8}");
-        }
-        catch (Exception ex) { Logger.Log("IME2", $"BG init: {ex.Message}"); }
 
-        while (!tok.IsCancellationRequested)
-        {
-            Thread.Sleep(500);
-            try
+            var waitHandles = new WaitHandle[] { stopEvent!, _querySignal };
+
+            while (!tok.IsCancellationRequested)
             {
-                var hkl = GetFgHkl();
-
-                // Cross-language HKL change (e.g., Chinese ↔ English keyboard layout)
-                if (hkl != nint.Zero && hkl != lastHkl)
+                var signalled = WaitHandle.WaitAny(waitHandles, 500);
+                if (signalled == 0) break; // cancellation
+                if (signalled == 1)
                 {
-                    lastHkl = hkl;
-                    var name = ResolveHklName(hkl);
-                    Logger.Log("IME2", $"HKL={name}");
-                    App.DispatcherQueue.TryEnqueue(() => ImeProfileChanged?.Invoke(name));
+                    // COM 查询请求
+                    var tcs = Interlocked.Exchange(ref _queryTcs, null);
+                    if (tcs != null && !tok.IsCancellationRequested)
+                    {
+                        var result = QueryActiveProfileInternal();
+                        tcs.TrySetResult(result);
+                    }
+                    continue;
                 }
+
+                // timeout — HKL polling
+                try
+                {
+                    var hkl = GetFgHkl();
+                    if (hkl != nint.Zero && hkl != lastHkl)
+                    {
+                        lastHkl = hkl;
+                        var name = ResolveHklName(hkl);
+                        Logger.Log("IME2", $"HKL={name}");
+                        App.DispatcherQueue.TryEnqueue(() => ImeProfileChanged?.Invoke(name));
+                    }
+                }
+                catch { }
             }
-            catch { }
         }
+        catch (Exception ex) { Logger.Log("IME2", $"BG error: {ex.Message}"); }
+        finally
+        {
+            CoUninitialize();
+        }
+    }
+
+    /// <summary>
+    /// 在后台 STA 线程上同步执行 COM 查询（必须在 STA 线程调用）。
+    /// </summary>
+    private (string Name, string? Icon) QueryActiveProfileInternal()
+    {
+        var guid = QueryActiveProfileGuid();
+        if (guid.HasValue && _profileMap.TryGetValue(guid.Value, out var n))
+        {
+            var icon = _profileIcons.TryGetValue(guid.Value, out var i) ? i : null;
+            return (MapDisplayName(n, guid.Value), icon);
+        }
+
+        // TSF COM 失败 — fallback 循环
+        if (_profileList.Count > 0)
+        {
+            _profileIndex = (_profileIndex + 1) % _profileList.Count;
+            var prof = _profileList[_profileIndex];
+            var name = _profileMap.TryGetValue(prof, out var n2) ? MapDisplayName(n2, prof) : "输入法";
+            var icon = _profileIcons.TryGetValue(prof, out var i2) ? i2 : null;
+            Logger.Log("IME2", $"COM fallback: cycle to {name}");
+            return (name, icon);
+        }
+
+        return ("输入法", null);
     }
 
     // ── Build profile maps ──
@@ -357,6 +381,7 @@ public class TsfImeMonitorService : IDisposable
     }
 
     [DllImport("ole32.dll")] static extern int CoInitializeEx(nint r, uint f);
+    [DllImport("ole32.dll")] static extern void CoUninitialize();
     [DllImport("ole32.dll")] static extern int CoCreateInstance(ref Guid rclsid, nint pUnkOuter, uint dwClsContext, ref Guid riid, out nint ppv);
     [DllImport("user32.dll")] static extern nint GetForegroundWindow();
     [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);

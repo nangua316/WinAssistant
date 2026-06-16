@@ -21,8 +21,8 @@ public class ImeService : IDisposable
     // EVENT_IME_CHANGE tracking (for TSF-only IMEs like Microsoft Pinyin/WeType)
     private nint _imeChangeHook;
     private WinEventDelegate? _imeChangeDelegate;
-    private int _imeChangeMode;
-    private DateTime _imeChangeTime = DateTime.MinValue;
+    private volatile int _imeChangeMode;
+    private long _imeChangeTimeTicks; // DateTime.UtcNow.Ticks, 用 Interlocked 读写
 
     private bool _running;
 
@@ -45,7 +45,7 @@ public class ImeService : IDisposable
 
     // Suppress change detection during our own switches
     private volatile int _suppressChangeCounter;
-    private bool _lastConversionInitialized;
+    private volatile bool _lastConversionInitialized;
 
     #endregion
 
@@ -241,7 +241,7 @@ public class ImeService : IDisposable
     /// <summary>
     /// 清除最近一次 EVENT_IME_CHANGE 事件的时间戳（Win+Space 切换输入法后调用，防止误触 CN/EN toast）。
     /// </summary>
-    public void ClearImeChangeEvent() => _imeChangeTime = DateTime.MinValue;
+    public void ClearImeChangeEvent() => Interlocked.Exchange(ref _imeChangeTimeTicks, 0);
 
     /// <summary>
     /// 由 KeyboardHookService.ShiftToggled 调用：纯 Shift 键弹起时触发 CN/EN 切换检测。
@@ -345,7 +345,10 @@ public class ImeService : IDisposable
         if (himc == nint.Zero)
         {
             // TSF-only IME (Microsoft Pinyin, WeType, etc.) — use EVENT_IME_CHANGE to detect CN/EN toggles
-            var elapsed = DateTime.UtcNow - _imeChangeTime;
+            var lastChangeTicks = Interlocked.Read(ref _imeChangeTimeTicks);
+            var elapsed = lastChangeTicks > 0
+                ? DateTime.UtcNow - new DateTime(lastChangeTicks, DateTimeKind.Utc)
+                : TimeSpan.FromDays(1);
             if (elapsed.TotalMilliseconds < 500)
             {
                 uint tsfConv = (uint)_imeChangeMode;
@@ -626,7 +629,7 @@ public class ImeService : IDisposable
     {
         // idObject = new conversion mode (IME_CMODE_* flags), idChild = sentence mode
         _imeChangeMode = idObject;
-        _imeChangeTime = DateTime.UtcNow;
+        Interlocked.Exchange(ref _imeChangeTimeTicks, DateTime.UtcNow.Ticks);
         Logger.Log("IME", $"EVENT_IME_CHANGE: obj=0x{idObject:X8} child=0x{idChild:X8}");
     }
 
@@ -714,12 +717,11 @@ public class ImeService : IDisposable
                 ImmReleaseContext(hwnd, himc);
             }
 
-            // 3. Set CapsLock
+            // 3. Set CapsLock — SendInput 需要消息队列线程，调度到 UI 线程执行
             bool currentCaps = (GetKeyState(0x14) & 1) == 1;
             if (rule.CapsLockState != currentCaps)
             {
-                // Simulate CapsLock key press via SendInput
-                SimulateCapsLockPress();
+                App.DispatcherQueue.TryEnqueue(SimulateCapsLockPress);
             }
 
             // Update tracked state

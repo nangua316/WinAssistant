@@ -14,8 +14,17 @@ namespace WinAssistant.Pages;
 /// Handles custom pointer-based drag reordering for the Launchpad GridView.
 /// Extracted from LaunchpadPage.xaml.cs to keep page lifecycle separate from drag state.
 /// </summary>
-internal sealed class LaunchpadDragHandler
+internal sealed class LaunchpadDragHandler : IDisposable
 {
+    public void Dispose()
+    {
+        _dwellTimer.Stop();
+        _gridView.RemoveHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed));
+        _gridView.RemoveHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnPointerMoved));
+        _gridView.RemoveHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnPointerReleased));
+        _gridView.RemoveHandler(UIElement.PointerCanceledEvent, new PointerEventHandler(OnPointerCanceled));
+    }
+
     private const double DragThreshold = 8;
 
     private readonly GridView _gridView;

@@ -325,7 +325,7 @@ public class MainPageViewModel : ObservableObject
                 return item;
             })
             .ToList();
-        var viewModel = new AppPickerViewModel(pickerItems);
+        var viewModel = new InternalPickerViewModel(pickerItems);
 
         // Build dialog content via code to avoid XAML compilation issues
         var grid = new Microsoft.UI.Xaml.Controls.Grid
@@ -890,12 +890,12 @@ public class HotKeyBindingViewModel : ObservableObject
     }
 }
 
-public class AppPickerViewModel : ObservableObject
+public class InternalPickerViewModel : ObservableObject
 {
     private readonly List<AppPickerItem> _allApps;
     private readonly ObservableCollection<AppPickerItem> _filteredApps;
 
-    public AppPickerViewModel(List<AppPickerItem> apps)
+    public InternalPickerViewModel(List<AppPickerItem> apps)
     {
         _allApps = apps;
         _filteredApps = new ObservableCollection<AppPickerItem>(apps);

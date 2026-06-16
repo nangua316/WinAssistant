@@ -64,6 +64,7 @@ public partial class App : Application
 
         AppDomain.CurrentDomain.ProcessExit += (s, e) =>
         {
+            HotKeyToast.Cleanup();
             TsfImeMonitorService.Stop();
             ImeService.Stop();
             KeyboardHookService.Dispose();
@@ -188,7 +189,7 @@ public partial class App : Application
     {
         try
         {
-            var hwnd = FindWindowW(null, "WinAssistant - 全局快捷键工具");
+            var hwnd = FindWindowW(null, "WinAssistant - 设置");
             if (hwnd == nint.Zero)
             {
                 foreach (var proc in System.Diagnostics.Process.GetProcessesByName("WinAssistant"))

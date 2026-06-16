@@ -9,13 +9,16 @@ public static class SearchHelper
 
         if (text.Contains(query, StringComparison.OrdinalIgnoreCase)) return true;
 
+        // Pre-lowercase for faster sequential matching
+        var lowerText = text.ToLowerInvariant();
+        var lowerQuery = query.ToLowerInvariant();
+
         int ti = 0;
-        foreach (var qc in query)
+        foreach (var qc in lowerQuery)
         {
-            while (ti < text.Length &&
-                   char.ToLowerInvariant(text[ti]) != char.ToLowerInvariant(qc))
+            while (ti < lowerText.Length && lowerText[ti] != qc)
                 ti++;
-            if (ti >= text.Length) return false;
+            if (ti >= lowerText.Length) return false;
             ti++;
         }
         return true;
@@ -31,17 +34,20 @@ public static class SearchHelper
         if (string.IsNullOrEmpty(query)) return true;
         if (string.IsNullOrEmpty(pinyinData)) return false;
 
+        var lowerQuery = query.ToLowerInvariant();
+
         // Try matching the full concatenated pinyin (e.g. "weixin" in "wx wei xin")
         var full = pinyinData.Replace(" ", "");
-        if (full.Contains(query, StringComparison.OrdinalIgnoreCase))
+        if (full.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase))
             return true;
+
+        var lowerFull = full.ToLowerInvariant();
         int ti = 0;
-        foreach (var qc in query)
+        foreach (var qc in lowerQuery)
         {
-            while (ti < full.Length &&
-                   char.ToLowerInvariant(full[ti]) != char.ToLowerInvariant(qc))
+            while (ti < lowerFull.Length && lowerFull[ti] != qc)
                 ti++;
-            if (ti >= full.Length) goto checkSegments;
+            if (ti >= lowerFull.Length) goto checkSegments;
             ti++;
         }
         return true;
@@ -50,15 +56,15 @@ public static class SearchHelper
         foreach (var segment in pinyinData.Split(' '))
         {
             if (string.IsNullOrEmpty(segment)) continue;
-            if (segment.Contains(query, StringComparison.OrdinalIgnoreCase))
+            if (segment.Contains(lowerQuery, StringComparison.OrdinalIgnoreCase))
                 return true;
+            var lowerSeg = segment.ToLowerInvariant();
             int si = 0;
-            foreach (var qc in query)
+            foreach (var qc in lowerQuery)
             {
-                while (si < segment.Length &&
-                       char.ToLowerInvariant(segment[si]) != char.ToLowerInvariant(qc))
+                while (si < lowerSeg.Length && lowerSeg[si] != qc)
                     si++;
-                if (si >= segment.Length) goto nextSegment;
+                if (si >= lowerSeg.Length) goto nextSegment;
                 si++;
             }
             return true;

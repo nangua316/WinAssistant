@@ -31,6 +31,23 @@ internal static class HotKeyToast
     /// Show a three-part toast: verb + icon + app name.
     /// When appName is empty, shows verb as plain text (no icon).
     /// </summary>
+    /// <summary>
+    /// 释放 GDI 资源（字体句柄），应用退出前调用。
+    /// </summary>
+    public static void Cleanup()
+    {
+        if (_hfont != nint.Zero)
+        {
+            DeleteObject(_hfont);
+            _hfont = nint.Zero;
+        }
+        if (_hicon != nint.Zero)
+        {
+            DestroyIcon(_hicon);
+            _hicon = nint.Zero;
+        }
+    }
+
     public static void Show(string verb, string appName = "", string? iconPath = null)
     {
         try

@@ -92,6 +92,8 @@ public class LaunchpadPageViewModel : ObservableObject
                 pendingIcons.Add(vm);
         }
 
+        // Dispose old items, then clear
+        foreach (var vm in _items) vm.Dispose();
         _items.Clear();
         foreach (var vm in viewModels)
             _items.Add(vm);
@@ -167,7 +169,10 @@ public class LaunchpadPageViewModel : ObservableObject
             .Where(i => i.Model.ToolId != null && !settingsToolIds.Contains(i.Model.ToolId))
             .ToList();
         foreach (var item in toRemove)
+        {
             _items.Remove(item);
+            item.Dispose();
+        }
 
         // Add tools that were toggled on in settings.
         var currentToolIds = _items
@@ -251,6 +256,7 @@ public class LaunchpadPageViewModel : ObservableObject
     public void RemoveItem(LaunchpadItemViewModel item)
     {
         _items.Remove(item);
+        item.Dispose();
         SaveItems();
     }
 
@@ -629,7 +635,7 @@ public class LaunchpadPageViewModel : ObservableObject
     }
 }
 
-public class LaunchpadItemViewModel : ObservableObject
+public class LaunchpadItemViewModel : ObservableObject, IDisposable
 {
     private ImageSource? _iconSource;
     private readonly IAssistantTool? _tool;
@@ -652,6 +658,12 @@ public class LaunchpadItemViewModel : ObservableObject
             if (_tool.IconExtractPath is string extractPath && !string.IsNullOrEmpty(extractPath))
                 _ = LoadToolIconAsync(extractPath);
         }
+    }
+
+    public void Dispose()
+    {
+        if (_tool != null)
+            App.SystemThemeChanged -= OnSystemThemeChanged;
     }
 
     private async Task LoadToolIconAsync(string extractPath)
