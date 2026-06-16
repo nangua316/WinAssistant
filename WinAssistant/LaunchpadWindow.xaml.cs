@@ -121,7 +121,7 @@ public sealed partial class LaunchpadWindow : Window
         // Show the window offscreen so DWM's white flash is invisible to the
         // user. After ~60ms (WinUI's first composition frames are done), move
         // it onscreen and activate.
-        MakeToolWindow();
+        // 构造函数已调用 MakeToolWindow()，此处重复调用会导致卡顿
         var (winW, winH) = CalcWindowSize();
         AppWindow.MoveAndResize(new RectInt32(-9999, -9999, winW, winH));
         ShowWindow(_hwnd, SW_SHOW);

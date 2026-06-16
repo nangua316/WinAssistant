@@ -71,8 +71,6 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += (s, e) =>
         {
             e.Cancel = true;
-            // Set toolwindow before hiding so next SW_SHOW doesn't create taskbar entry.
-            MakeToolWindow();
             ShowWindow(_hwnd, SW_HIDE);
         };
     }

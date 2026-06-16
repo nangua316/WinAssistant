@@ -313,13 +313,21 @@ public partial class App : Application
         _themeTimer.Interval = TimeSpan.FromMilliseconds(1500);
         _themeTimer.Tick += (_, _) =>
         {
-            var current = GetSystemTheme();
-            if (current != _lastTheme)
+            try
             {
-                _lastTheme = current;
-                RequestedTheme = current;
-                ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
-                SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+                var current = GetSystemTheme();
+                if (current != _lastTheme)
+                {
+                    _lastTheme = current;
+                    RequestedTheme = current;
+                    ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
+                    SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+                }
+            }
+            catch (COMException ex)
+            {
+                // 窗口隐藏时设置 RequestedTheme 会抛 COMException，忽略即可
+                System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
             }
         };
         _themeTimer.Start();
