@@ -6,9 +6,11 @@ using WinAssistant.Models;
 
 namespace WinAssistant.Services;
 
-public class QwenService
+public class QwenService : IDisposable
 {
     private readonly HttpClient _http = new();
+
+    public void Dispose() => _http.Dispose();
     private string? _apiKey;
     private string _endpoint = "https://dashscope.aliyuncs.com";
     private string _model = "qwen-plus";

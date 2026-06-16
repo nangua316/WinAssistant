@@ -100,13 +100,5 @@ public class AppPickerItem : ObservableObject
         PinyinSearchData = ComputePinyinSearchData(name);
     }
 
-    private static string ComputePinyinSearchData(string name)
-    {
-        var initials = PinyinHelper.GetInitials(name);
-        var full = PinyinHelper.GetPinyin(name);
-        if (string.IsNullOrEmpty(initials)) return full;
-        if (string.Equals(initials, full, StringComparison.OrdinalIgnoreCase))
-            return full;
-        return $"{initials} {full}";
-    }
+    private static string ComputePinyinSearchData(string name) => PinyinHelper.GetSearchData(name);
 }

@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using Interop.UIAutomationClient;
 using WinAssistant.Services;
 
@@ -288,12 +289,13 @@ public static class AppLauncher
 
             if (isChrome)
             {
-                // Use default profile to avoid the multi-user picker dialog.
-                Logger.Log("AppLauncher",$"Launch Chrome with default profile: {appPath}");
+                // 读取 Local State 获取上次使用的配置文件，避免硬编码 Default
+                var profileArg = DetectBrowserProfileArg(exeName.ToString()) ?? "--profile-directory=\"Default\"";
+                Logger.Log("AppLauncher",$"Launch Chrome with profile arg: {profileArg}");
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = appPath,
-                    Arguments = "--profile-directory=\"Default\"",
+                    Arguments = profileArg,
                     UseShellExecute = true
                 });
             }
@@ -435,6 +437,46 @@ public static class AppLauncher
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetClassNameW(nint hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    /// <summary>
+    /// 读取 Chrome/Edge/Brave 的 Local State 文件，返回上次使用的配置文件参数。
+    /// 避免硬编码 --profile-directory="Default" 导致用户其他配置文件被忽略。
+    /// </summary>
+    internal static string? DetectBrowserProfileArg(string exeName)
+    {
+        var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["chrome.exe"] = @"Google\Chrome\User Data",
+            ["msedge.exe"] = @"Microsoft\Edge\User Data",
+            ["brave.exe"] = @"BraveSoftware\Brave-Browser\User Data",
+            ["chromium.exe"] = @"Chromium\User Data",
+        };
+
+        if (!paths.TryGetValue(exeName, out var relativePath))
+            return null;
+
+        var localState = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            relativePath, "Local State");
+
+        if (!File.Exists(localState)) return null;
+
+        try
+        {
+            var json = File.ReadAllText(localState);
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("profile", out var profile) &&
+                profile.TryGetProperty("last_used", out var lastUsed) &&
+                lastUsed.ValueKind == System.Text.Json.JsonValueKind.String)
+            {
+                var dir = lastUsed.GetString();
+                if (!string.IsNullOrEmpty(dir))
+                    return $"--profile-directory=\"{dir}\"";
+            }
+        }
+        catch { }
+        return null;
+    }
 
     private static string GetWindowClassName(nint hWnd)
     {

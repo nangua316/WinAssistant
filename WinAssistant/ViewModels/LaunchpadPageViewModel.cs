@@ -207,25 +207,28 @@ public class LaunchpadPageViewModel : ObservableObject
     /// <summary>Extract uncached icons in background (throttled), then batch-apply in one UI frame.</summary>
     private async Task LoadIconsBatchAsync(List<LaunchpadItemViewModel> items, int size)
     {
+        // 第一次提取：写入磁盘缓存，同时记录返回的缓存路径
+        var cacheResults = new Dictionary<LaunchpadItemViewModel, string?>();
         var extractTasks = items.Select(vm => Task.Run(async () =>
         {
             await _iconLoadThrottle.WaitAsync();
             try
             {
-                IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
+                var cachedPath = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
+                lock (cacheResults) { cacheResults[vm] = cachedPath; }
             }
             finally { _iconLoadThrottle.Release(); }
         }));
         await Task.WhenAll(extractTasks);
 
-        // All cached to disk now — apply in a single UI batch.
+        // 所有图标已缓存到磁盘 — 直接使用缓存路径，不再二次提取
         App.DispatcherQueue.TryEnqueue(() =>
         {
             foreach (var vm in items)
             {
                 try
                 {
-                    var tempFile = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
+                    var tempFile = cacheResults.GetValueOrDefault(vm);
                     if (tempFile == null) continue;
                     var bitmap = new BitmapImage();
                     bitmap.UriSource = new Uri(tempFile);
@@ -236,15 +239,7 @@ public class LaunchpadPageViewModel : ObservableObject
         });
     }
 
-    private static string ComputePinyin(string name)
-    {
-        var initials = PinyinHelper.GetInitials(name);
-        var full = PinyinHelper.GetPinyin(name);
-        if (string.IsNullOrEmpty(initials)) return full;
-        if (string.Equals(initials, full, StringComparison.OrdinalIgnoreCase))
-            return full;
-        return $"{initials} {full}";
-    }
+    private static string ComputePinyin(string name) => PinyinHelper.GetSearchData(name);
 
     public void SaveItems()
     {
@@ -737,15 +732,7 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
     private readonly string _pinyinSearchData;
     public string PinyinSearchData => _pinyinSearchData;
 
-    private static string ComputePinyin(string name)
-    {
-        var initials = PinyinHelper.GetInitials(name);
-        var full = PinyinHelper.GetPinyin(name);
-        if (string.IsNullOrEmpty(initials)) return full;
-        if (string.Equals(initials, full, StringComparison.OrdinalIgnoreCase))
-            return full;
-        return $"{initials} {full}";
-    }
+    private static string ComputePinyin(string name) => PinyinHelper.GetSearchData(name);
 
     public ImageSource? IconSource
     {

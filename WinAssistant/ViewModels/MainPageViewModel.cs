@@ -293,7 +293,7 @@ public class MainPageViewModel : ObservableObject
             if (string.IsNullOrEmpty(binding.Arguments))
             {
                 var exeName = Path.GetFileName(binding.AppPath);
-                var profileArg = DetectBrowserProfileArg(exeName);
+                var profileArg = AppLauncher.DetectBrowserProfileArg(exeName);
                 if (profileArg != null)
                     binding.Arguments = profileArg;
             }
@@ -493,18 +493,25 @@ public class MainPageViewModel : ObservableObject
         await dialog.ShowAsync();
     }
 
+    private static readonly SemaphoreSlim _iconLoadThrottle = new(3, 3);
+
     private static void PreloadIcon(HotKeyBindingViewModel vm)
     {
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
-            var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.IconPath ?? vm.Model.AppPath, aumid: vm.Model.Aumid);
-            if (tempFile == null) return;
-            App.DispatcherQueue.TryEnqueue(() =>
+            await _iconLoadThrottle.WaitAsync();
+            try
             {
-                var bitmap = new BitmapImage();
-                bitmap.UriSource = new Uri(tempFile);
-                vm.IconSource = bitmap;
-            });
+                var tempFile = IconHelper.ExtractAppIconToAppData(vm.Model.IconPath ?? vm.Model.AppPath, aumid: vm.Model.Aumid);
+                if (tempFile == null) return;
+                App.DispatcherQueue.TryEnqueue(() =>
+                {
+                    var bitmap = new BitmapImage();
+                    bitmap.UriSource = new Uri(tempFile);
+                    vm.IconSource = bitmap;
+                });
+            }
+            finally { _iconLoadThrottle.Release(); }
         });
     }
 
@@ -779,46 +786,6 @@ public class MainPageViewModel : ObservableObject
             b != exclude &&
             b.Model.Modifiers == modifiers &&
             b.Model.VirtualKey == virtualKey);
-    }
-
-    /// <summary>
-    /// Read the last-used profile from a Chromium-based browser's Local State
-    /// and return the --profile-directory arg. Supports Chrome, Edge, Brave, Chromium.
-    /// </summary>
-    private static string? DetectBrowserProfileArg(string exeName)
-    {
-        var paths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["chrome.exe"] = @"Google\Chrome\User Data",
-            ["msedge.exe"] = @"Microsoft\Edge\User Data",
-            ["brave.exe"] = @"BraveSoftware\Brave-Browser\User Data",
-            ["chromium.exe"] = @"Chromium\User Data",
-        };
-
-        if (!paths.TryGetValue(exeName, out var relativePath))
-            return null;
-
-        var localState = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            relativePath, "Local State");
-
-        if (!File.Exists(localState)) return null;
-
-        try
-        {
-            var json = File.ReadAllText(localState);
-            using var doc = System.Text.Json.JsonDocument.Parse(json);
-            if (doc.RootElement.TryGetProperty("profile", out var profile) &&
-                profile.TryGetProperty("last_used", out var lastUsed) &&
-                lastUsed.ValueKind == System.Text.Json.JsonValueKind.String)
-            {
-                var dir = lastUsed.GetString();
-                if (!string.IsNullOrEmpty(dir))
-                    return $"--profile-directory=\"{dir}\"";
-            }
-        }
-        catch { }
-        return null;
     }
 
     private static void SetAutoStartRegistry(bool enable)

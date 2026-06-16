@@ -253,7 +253,7 @@ public partial class App : Application
     #region System theme support
 
     private ApplicationTheme _lastTheme;
-    private Microsoft.UI.Xaml.DispatcherTimer? _themeTimer;
+    private Windows.UI.ViewManagement.UISettings? _uiSettings;
 
     public static ApplicationTheme GetSystemTheme()
     {
@@ -311,28 +311,35 @@ public partial class App : Application
 
     private void StartThemeListener()
     {
-        _themeTimer = new Microsoft.UI.Xaml.DispatcherTimer();
-        _themeTimer.Interval = TimeSpan.FromMilliseconds(1500);
-        _themeTimer.Tick += (_, _) =>
+        try
         {
-            try
+            _uiSettings = new Windows.UI.ViewManagement.UISettings();
+            _uiSettings.ColorValuesChanged += (_, _) =>
             {
-                var current = GetSystemTheme();
-                if (current != _lastTheme)
+                try
                 {
-                    _lastTheme = current;
-                    RequestedTheme = current;
-                    ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
-                    SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+                    var current = GetSystemTheme();
+                    if (current != _lastTheme)
+                    {
+                        App.DispatcherQueue.TryEnqueue(() =>
+                        {
+                            _lastTheme = current;
+                            RequestedTheme = current;
+                            ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
+                            SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+                        });
+                    }
                 }
-            }
-            catch (COMException ex)
-            {
-                // 窗口隐藏时设置 RequestedTheme 会抛 COMException，忽略即可
-                System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
-            }
-        };
-        _themeTimer.Start();
+                catch (COMException ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
+                }
+            };
+        }
+        catch
+        {
+            // UISettings 不可用时退回到注册表读取（初始 theme 已在构造时设置）
+        }
     }
 
     #endregion
