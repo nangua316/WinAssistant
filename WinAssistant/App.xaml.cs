@@ -316,23 +316,23 @@ public partial class App : Application
             _uiSettings = new Windows.UI.ViewManagement.UISettings();
             _uiSettings.ColorValuesChanged += (_, _) =>
             {
-                try
+                var current = GetSystemTheme();
+                if (current != _lastTheme)
                 {
-                    var current = GetSystemTheme();
-                    if (current != _lastTheme)
+                    App.DispatcherQueue.TryEnqueue(() =>
                     {
-                        App.DispatcherQueue.TryEnqueue(() =>
+                        try
                         {
                             _lastTheme = current;
                             RequestedTheme = current;
                             ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
                             SystemThemeChanged?.Invoke(null, EventArgs.Empty);
-                        });
-                    }
-                }
-                catch (COMException ex)
-                {
-                    System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
+                        }
+                        catch (COMException ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
+                        }
+                    });
                 }
             };
         }
