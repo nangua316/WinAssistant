@@ -230,13 +230,120 @@ public sealed partial class MainPage : Page
         if (rules.Count == 0)
         {
             ImeEmptyState.Visibility = Visibility.Visible;
-            ImeRuleListControl.Visibility = Visibility.Collapsed;
+            ImeRuleStack.Visibility = Visibility.Collapsed;
             return;
         }
 
         ImeEmptyState.Visibility = Visibility.Collapsed;
-        ImeRuleListControl.Visibility = Visibility.Visible;
-        ImeRuleListControl.ItemsSource = rules.ToList(); // ToList() to snapshot
+        ImeRuleStack.Visibility = Visibility.Visible;
+        ImeRuleStack.Children.Clear();
+
+        foreach (var rule in rules)
+        {
+            var card = new Border
+            {
+                Background = (Brush)Resources["CardBgBrush"],
+                BorderBrush = (Brush)Resources["CardBorderBrush"],
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(12, 10, 12, 10),
+                Margin = new Thickness(0, 0, 0, 6)
+            };
+
+            var grid = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition { Width = GridLength.Auto },
+                    new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) },
+                    new ColumnDefinition { Width = GridLength.Auto }
+                },
+                ColumnSpacing = 8
+            };
+
+            // Icon
+            grid.Children.Add(new TextBlock
+            {
+                Text = "⌨",
+                FontSize = 22,
+                VerticalAlignment = VerticalAlignment.Center
+            });
+
+            // Info
+            var infoStack = new StackPanel
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                Spacing = 1
+            };
+            var nameRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+            nameRow.Children.Add(new TextBlock
+            {
+                Text = rule.DisplayName,
+                FontSize = 14,
+                FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+                Foreground = (Brush)Resources["TextPrimaryBrush"]
+            });
+            nameRow.Children.Add(new TextBlock
+            {
+                Text = rule.ProcessName,
+                FontSize = 12,
+                Opacity = 0.6,
+                Foreground = (Brush)Resources["TextSecondaryBrush"]
+            });
+            infoStack.Children.Add(nameRow);
+            infoStack.Children.Add(new TextBlock
+            {
+                Text = rule.SubtitleText,
+                FontSize = 11,
+                Opacity = 0.5,
+                Foreground = (Brush)Resources["TextSecondaryBrush"]
+            });
+            Grid.SetColumn(infoStack, 1);
+            grid.Children.Add(infoStack);
+
+            // Actions
+            var actions = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 4,
+                VerticalAlignment = VerticalAlignment.Center
+            };
+
+            var moveUpBtn = new Button { Content = "▲", FontSize = 11, MinWidth = 28, MinHeight = 28, CornerRadius = new CornerRadius(4), Tag = rule };
+            moveUpBtn.Click += OnImeRuleMoveUp;
+            actions.Children.Add(moveUpBtn);
+
+            var moveDownBtn = new Button { Content = "▼", FontSize = 11, MinWidth = 28, MinHeight = 28, CornerRadius = new CornerRadius(4), Tag = rule };
+            moveDownBtn.Click += OnImeRuleMoveDown;
+            actions.Children.Add(moveDownBtn);
+
+            var applyBtn = new Button { Content = "▶", FontSize = 11, MinWidth = 28, MinHeight = 28, CornerRadius = new CornerRadius(4), Tag = rule };
+            applyBtn.Click += OnImeApplyRuleClick;
+            actions.Children.Add(applyBtn);
+
+            var editBtn = new Button { Content = "编辑", FontSize = 11, MinWidth = 40, MinHeight = 28, CornerRadius = new CornerRadius(4), Tag = rule };
+            editBtn.Click += OnImeEditRuleClick;
+            actions.Children.Add(editBtn);
+
+            var delBtn = new Button
+            {
+                Content = "删除", FontSize = 11, MinWidth = 40, MinHeight = 28, CornerRadius = new CornerRadius(4),
+                Tag = rule, Background = new SolidColorBrush(Color.FromArgb(0x22, 0xFF, 0x44, 0x44)),
+                Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x6B, 0x6B))
+            };
+            delBtn.Click += OnImeDeleteRuleClick;
+            actions.Children.Add(delBtn);
+
+            var toggle = new ToggleSwitch { IsOn = rule.IsEnabled, MinWidth = 36, Tag = rule };
+            toggle.Toggled += OnImeRuleToggleToggled;
+            actions.Children.Add(toggle);
+
+            Grid.SetColumn(actions, 2);
+            grid.Children.Add(actions);
+
+            card.Child = grid;
+            ImeRuleStack.Children.Add(card);
+        }
     }
 
     private static void SaveAndReloadImeRules()
@@ -398,8 +505,9 @@ public sealed partial class MainPage : Page
         dialogStack.Children.Add(widthCombo);
         dialogStack.Children.Add(capsCombo);
 
-        // Process picker
-        pickBtn.Click += async (s2, e2) =>
+        // Process picker — use Flyout instead of nested ContentDialog to avoid
+        // "Only a single ContentDialog can be open at any time" crashes.
+        pickBtn.Click += (s2, e2) =>
         {
             var processes = ImeService.EnumRunningProcesses();
             if (processes.Count == 0)
@@ -408,7 +516,7 @@ public sealed partial class MainPage : Page
                 return;
             }
 
-            var pickerStack = new StackPanel { Spacing = 4 };
+            var pickerStack = new StackPanel { Spacing = 4, MaxWidth = 400 };
             var searchBox = new TextBox
             {
                 PlaceholderText = "搜索进程...",
@@ -419,7 +527,7 @@ public sealed partial class MainPage : Page
 
             var listBox = new ListBox
             {
-                MinHeight = 240, MaxHeight = 360,
+                MinHeight = 200, MaxHeight = 300,
                 DisplayMemberPath = "Display"
             };
 
@@ -443,17 +551,26 @@ public sealed partial class MainPage : Page
 
             pickerStack.Children.Add(listBox);
 
-            var pickerDialog = new ContentDialog
+            // Confirm button
+            var confirmBtn = new Button
             {
-                Title = "选择运行中的程序",
-                Content = pickerStack,
-                PrimaryButtonText = "确定",
-                CloseButtonText = "取消",
-                DefaultButton = ContentDialogButton.Primary,
-                XamlRoot = XamlRoot
+                Content = "确定",
+                FontSize = 14,
+                Padding = new Thickness(16, 6, 16, 6),
+                CornerRadius = new CornerRadius(4),
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 6, 0, 0)
             };
+            pickerStack.Children.Add(confirmBtn);
 
-            if (await pickerDialog.ShowAsync() == ContentDialogResult.Primary)
+            var flyout = new Flyout
+            {
+                Content = pickerStack,
+                Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom
+            };
+            flyout.ShowAt(pickBtn);
+
+            confirmBtn.Click += (s4, e4) =>
             {
                 if (listBox.SelectedItem != null)
                 {
@@ -461,7 +578,8 @@ public sealed partial class MainPage : Page
                     processBox.Text = selected.ProcessName;
                     displayBox.Text = System.IO.Path.GetFileNameWithoutExtension(selected.ProcessName);
                 }
-            }
+                flyout.Hide();
+            };
         };
 
         var dialog = new ContentDialog

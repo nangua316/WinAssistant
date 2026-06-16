@@ -580,7 +580,7 @@
                                                FontSize="13" Foreground="{ThemeResource TextSecondaryBrush}" />
                                     <TextBlock x:Name="ImeStatusMatched"
                                                Text="匹配规则: —"
-                                               FontSize="13" Foreground="{ThemeResource AccentBrush}" />
+                                               FontSize="13" Foreground="{ThemeResource AccentBlue}" />
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -610,83 +610,10 @@
                                        Margin="0,8,0,0"
                                        Visibility="Visible" />
 
-                            <!-- Rule list with DataTemplate -->
-                            <ItemsControl x:Name="ImeRuleListControl"
-                                          Visibility="Collapsed"
-                                          Margin="0,4,0,0">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Border Background="{ThemeResource CardBgBrush}"
-                                                BorderBrush="{ThemeResource CardBorderBrush}"
-                                                BorderThickness="1" CornerRadius="8"
-                                                Padding="12,10" Margin="0,0,0,6">
-                                            <Grid ColumnSpacing="8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="Auto" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <!-- Icon -->
-                                                <TextBlock Text="⌨" FontSize="22"
-                                                           VerticalAlignment="Center" />
-                                                <!-- Info -->
-                                                <StackPanel Grid.Column="1"
-                                                            VerticalAlignment="Center" Spacing="1">
-                                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                                        <TextBlock Text="{Binding DisplayName}"
-                                                                   FontSize="14"
-                                                                   FontWeight="SemiBold"
-                                                                   Foreground="{ThemeResource TextPrimaryBrush}" />
-                                                        <TextBlock Text="{Binding ProcessName}"
-                                                                   FontSize="12" Opacity="0.6"
-                                                                   Foreground="{ThemeResource TextSecondaryBrush}" />
-                                                    </StackPanel>
-                                                    <TextBlock Text="{Binding SubtitleText}"
-                                                               FontSize="11" Opacity="0.5"
-                                                               Foreground="{ThemeResource TextSecondaryBrush}" />
-                                                </StackPanel>
-                                                <!-- Actions -->
-                                                <StackPanel Grid.Column="2"
-                                                            Orientation="Horizontal"
-                                                            Spacing="4"
-                                                            VerticalAlignment="Center">
-                                                    <Button Content="▲" FontSize="11"
-                                                            MinWidth="28" MinHeight="28"
-                                                            CornerRadius="4"
-                                                            Tag="{Binding}"
-                                                            Click="OnImeRuleMoveUp" />
-                                                    <Button Content="▼" FontSize="11"
-                                                            MinWidth="28" MinHeight="28"
-                                                            CornerRadius="4"
-                                                            Tag="{Binding}"
-                                                            Click="OnImeRuleMoveDown" />
-                                                    <Button Content="▶" FontSize="11"
-                                                            MinWidth="28" MinHeight="28"
-                                                            CornerRadius="4"
-                                                            Tag="{Binding}"
-                                                            Click="OnImeApplyRuleClick" />
-                                                    <Button Content="编辑" FontSize="11"
-                                                            MinWidth="40" MinHeight="28"
-                                                            CornerRadius="4"
-                                                            Tag="{Binding}"
-                                                            Click="OnImeEditRuleClick" />
-                                                    <Button Content="删除" FontSize="11"
-                                                            MinWidth="40" MinHeight="28"
-                                                            CornerRadius="4"
-                                                            Tag="{Binding}"
-                                                            Background="#22FF4444"
-                                                            Foreground="#FFFF6B6B"
-                                                            Click="OnImeDeleteRuleClick" />
-                                                    <ToggleSwitch IsOn="{Binding IsEnabled}"
-                                                                  MinWidth="36"
-                                                                  Tag="{Binding}"
-                                                                  Toggled="OnImeRuleToggleToggled" />
-                                                </StackPanel>
-                                            </Grid>
-                                        </Border>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
+                            <!-- Rule list — code-generated UI -->
+                            <StackPanel x:Name="ImeRuleStack"
+                                        Visibility="Collapsed"
+                                        Margin="0,4,0,0" />
 
                         </StackPanel>
                     </Border>

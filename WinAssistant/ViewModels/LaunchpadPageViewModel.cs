@@ -277,11 +277,16 @@ public class LaunchpadPageViewModel : ObservableObject
             return [.. _items];
 
         var query = _searchText.Trim();
-        // Search from user's items.
-        var results = _items
-            .Where(i => SearchHelper.FuzzyMatch(i.Name, query) || SearchHelper.FuzzyMatchPinyin(i.PinyinSearchData, query))
-            .Select(i => (vm: i, isUnadded: false))
-            .ToList();
+
+        // Single-pass: compute score once per item for both filtering and sorting.
+        var scored = new List<(LaunchpadItemViewModel vm, int score, bool isUnadded)>();
+
+        foreach (var item in _items)
+        {
+            int score = GetMatchScore(item.Name, item.PinyinSearchData, query);
+            if (score > 0)
+                scored.Add((item, score, false));
+        }
 
         // Also search from all-apps cache for unadded items.
         var addedPaths = new HashSet<string>(_items
@@ -297,8 +302,8 @@ public class LaunchpadPageViewModel : ObservableObject
             const int maxUnaddedResults = 15;
             foreach (var (cachedItem, pinyin) in _allAppsCache)
             {
-                if (!SearchHelper.FuzzyMatch(cachedItem.Name, query) && !SearchHelper.FuzzyMatchPinyin(pinyin, query))
-                    continue;
+                int score = GetMatchScore(cachedItem.Name, pinyin, query);
+                if (score <= 0) continue;
                 // Skip if already in user's items.
                 if (!string.IsNullOrEmpty(cachedItem.AppPath) && addedPaths.Contains(cachedItem.AppPath))
                     continue;
@@ -306,14 +311,111 @@ public class LaunchpadPageViewModel : ObservableObject
                     continue;
                 if (++unaddedCount > maxUnaddedResults) break;
                 var vm = new LaunchpadItemViewModel(cachedItem, pinyin) { IsUnadded = true };
-                // Load icon in background (throttled to 3 concurrent).
                 LoadSingleIcon(vm);
-                results.Add((vm, isUnadded: true));
+                scored.Add((vm, score, isUnadded: true));
             }
         }
 
-        // Sort: user's items first, then unadded cache items.
-        return results.OrderBy(r => r.isUnadded).Select(r => r.vm).ToList();
+        // Sort by combined display rank: exact name match items first regardless
+        // of added status, then user items by score, then unadded by score.
+        return scored
+            .OrderBy(r => GetDisplayRank(r.score, r.isUnadded))
+            .Select(r => r.vm)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Calculate match relevance score. Higher = better match.
+    /// Name matches always beat pinyin matches; exact prefix/substring beats fuzzy sequential.
+    /// </summary>
+    private static int GetMatchScore(string name, string? pinyinData, string query)
+    {
+        // 1. Name matching (highest weight)
+        if (name.StartsWith(query, StringComparison.OrdinalIgnoreCase))
+            return 1000;
+        if (name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            return 500;
+
+        // Sequential fuzzy match on name
+        int ti = 0;
+        bool nameFuzzy = false;
+        foreach (var qc in query)
+        {
+            while (ti < name.Length && char.ToLowerInvariant(name[ti]) != char.ToLowerInvariant(qc))
+                ti++;
+            if (ti >= name.Length) { nameFuzzy = false; break; }
+            nameFuzzy = true;
+            ti++;
+        }
+        if (nameFuzzy) return 200;
+
+        // 2. Pinyin matching
+        if (!string.IsNullOrEmpty(pinyinData))
+        {
+            var fullPinyin = pinyinData.Replace(" ", "");
+
+            // Full pinyin contains query as substring (e.g. "weixin" in "wx wei xin")
+            if (fullPinyin.Contains(query, StringComparison.OrdinalIgnoreCase))
+                return 100;
+
+            // Check first segment (initials, e.g. "wx")
+            var segments = pinyinData.Split(' ');
+            if (segments.Length > 0 && segments[0].Contains(query, StringComparison.OrdinalIgnoreCase))
+                return 60;
+
+            // Sequential fuzzy on concatenated pinyin
+            ti = 0;
+            bool pinyinFuzzy = false;
+            foreach (var qc in query)
+            {
+                while (ti < fullPinyin.Length && char.ToLowerInvariant(fullPinyin[ti]) != char.ToLowerInvariant(qc))
+                    ti++;
+                if (ti >= fullPinyin.Length) { pinyinFuzzy = false; break; }
+                pinyinFuzzy = true;
+                ti++;
+            }
+            if (pinyinFuzzy) return 30;
+
+            // Slowest: sequential fuzzy on individual segments
+            foreach (var seg in segments)
+            {
+                if (string.IsNullOrEmpty(seg)) continue;
+                int si = 0;
+                bool segFuzzy = false;
+                foreach (var qc in query)
+                {
+                    while (si < seg.Length && char.ToLowerInvariant(seg[si]) != char.ToLowerInvariant(qc))
+                        si++;
+                    if (si >= seg.Length) { segFuzzy = false; break; }
+                    segFuzzy = true;
+                    si++;
+                }
+                if (segFuzzy) return 15;
+            }
+        }
+
+        return 0;
+    }
+
+    /// <summary>
+    /// Combined display rank: lower = shown first.
+    /// Takes the already-computed score + isUnadded to avoid redundant work.
+    /// Items with exact/substring name match (score >= 500) get top priority
+    /// regardless of whether they're in the user's launchpad, so a highly
+    /// relevant unadded item beats a weakly-matching user item.
+    /// </summary>
+    private static int GetDisplayRank(int score, bool isUnadded)
+    {
+        // Top tier: exact/substring name match — always first
+        if (score >= 500)
+            return 500 - score; // -500..0; higher score = lower rank
+
+        // Middle tier: user items with fuzzy/pinyin match
+        if (!isUnadded)
+            return 10000 + (500 - score); // 10001..10500; higher score = lower rank
+
+        // Bottom tier: unadded items with fuzzy/pinyin match
+        return 20000 + (500 - score); // 20001..20500; higher score = lower rank
     }
 
     /// <summary>Sync _filteredItems to match target list, avoiding CollectionReset

@@ -114,18 +114,12 @@ public sealed partial class MainWindow : Window
 
     public void ShowSettings()
     {
-        // Hide launchpad if visible
-        LaunchpadOverlay.Visibility = Microsoft.UI.Xaml.Visibility.Collapsed;
+        LaunchpadOverlay.Visibility = Visibility.Collapsed;
         AppWindow.SetPresenter(AppWindowPresenterKind.Default);
         SetTitleBar(AppTitleBar);
-
-        // Navigate to settings page if not already loaded
-        if (RootFrame.Content == null || RootFrame.Content.GetType() != typeof(MainPage))
-            RootFrame.Navigate(typeof(MainPage));
-
-        // Show as a normal app window with taskbar entry
+        RootFrame.Navigate(typeof(MainPage));
         MakeAppWindow();
-        ShowWindow(_hwnd, SW_RESTORE);
+        ShowWindow(_hwnd, SW_SHOW);
         SetForegroundWindow(_hwnd);
     }
 

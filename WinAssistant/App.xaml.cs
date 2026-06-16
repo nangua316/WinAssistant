@@ -216,8 +216,9 @@ public partial class App : Application
     private static extern bool ShowWindow(nint hWnd, int nCmdShow);
 
     private const int SW_HIDE = 0;
-    private const int SW_RESTORE = 9;
     private const int SW_SHOW = 5;
+    private const int SW_MINIMIZE = 6;
+    private const int SW_RESTORE = 9;
 
 
     [DllImport("user32.dll", SetLastError = true)]
