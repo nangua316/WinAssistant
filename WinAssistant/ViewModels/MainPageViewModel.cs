@@ -3,6 +3,7 @@ using System.Windows.Input;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinAssistant.Helpers;
 using WinAssistant.Models;
@@ -28,6 +29,7 @@ public class MainPageViewModel : ObservableObject
     private List<InstalledAppInfo>? _cachedApps;
     private Task<List<InstalledAppInfo>>? _preloadTask;
     private bool _loaded;
+    private int _themeMode;
 
     public MainPageViewModel(SettingsService settingsService, HotKeyService hotKeyService)
     {
@@ -153,6 +155,28 @@ public class MainPageViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 主题模式：0=跟随系统, 1=浅色, 2=深色
+    /// </summary>
+    public int ThemeMode
+    {
+        get => _themeMode;
+        set
+        {
+            if (SetProperty(ref _themeMode, value))
+            {
+                SaveSettings();
+                // 手动切换时直接应用主题
+                if (value == 2)
+                    App.RefreshTheme(ApplicationTheme.Dark);
+                else if (value == 1)
+                    App.RefreshTheme(ApplicationTheme.Light);
+                else
+                    App.RefreshTheme();
+            }
+        }
+    }
+
     public Microsoft.UI.Xaml.Visibility GlobalHotKeySettingsVisibility =>
         _isKeyboardTriggerGlobalHotKey ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
@@ -199,6 +223,9 @@ public class MainPageViewModel : ObservableObject
         OnPropertyChanged(nameof(IsKeyboardTriggerAltSpace));
         OnPropertyChanged(nameof(GlobalHotKeySettingsVisibility));
 
+        _themeMode = settings.ThemeMode;
+        OnPropertyChanged(nameof(ThemeMode));
+
         ParseLaunchpadHotKeyString(settings.LaunchpadHotKey);
         OnPropertyChanged(nameof(LaunchpadHotKeyDisplay));
 
@@ -227,6 +254,7 @@ public class MainPageViewModel : ObservableObject
         current.MouseTriggers = BuildMouseTriggersList();
         current.KeyboardTriggers = BuildKeyboardTriggersList();
         current.LaunchpadHotKey = _launchpadHotKeyDisplay;
+        current.ThemeMode = _themeMode;
         current.Bindings = Bindings.Select(b => b.Model).ToList();
         _settingsService.Save(current);
     }

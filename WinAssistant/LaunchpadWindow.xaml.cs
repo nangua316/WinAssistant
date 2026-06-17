@@ -28,9 +28,13 @@ public sealed partial class LaunchpadWindow : Window
 
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        // Dark mode
-        var darkMode = 1;
+        // Dark mode — follow system theme
+        var isDark = App.CurrentTheme == ApplicationTheme.Dark;
+        var darkMode = isDark ? 1 : 0;
         DwmSetWindowAttribute(_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+
+        // Update DWM title bar dark mode when system theme changes
+        App.SystemThemeChanged += OnSystemThemeChanged;
 
         // Popup — no taskbar entry, no caption buttons
         MakeToolWindow();
@@ -77,6 +81,13 @@ public sealed partial class LaunchpadWindow : Window
             }
             catch { }
         }
+    }
+
+    private void OnSystemThemeChanged(object? sender, EventArgs e)
+    {
+        var isDark = App.CurrentTheme == ApplicationTheme.Dark;
+        var darkMode = isDark ? 1 : 0;
+        DwmSetWindowAttribute(_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
     }
 
     public void Open()

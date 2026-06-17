@@ -17,9 +17,15 @@ public class ThemeSwitcherTool : IAssistantTool
 
     public string? Activate()
     {
-        var isLight = IsLightTheme();
-        // Run the heavy work (registry write + system broadcast) off the UI thread.
-        _ = Task.Run(() => SetTheme(isLight ? 0 : 1));
+        var settings = App.SettingsService.Load();
+        var isLight = IsLightTheme(); // 读注册表判断系统当前主题
+        var targetValue = isLight ? 0 : 1;
+        var targetTheme = isLight ? ApplicationTheme.Dark : ApplicationTheme.Light;
+        // 工具永远写注册表改系统主题
+        _ = Task.Run(() => SetTheme(targetValue));
+        // 仅在跟随系统模式时同步改 app 主题
+        if (settings.ThemeMode == 0)
+            App.RefreshTheme(targetTheme);
         return isLight ? "已切换为深色模式" : "已切换为浅色模式";
     }
 
@@ -31,8 +37,14 @@ public class ThemeSwitcherTool : IAssistantTool
 
     public static void ToggleTheme()
     {
-        var isLight = IsLightTheme();
-        SetTheme(isLight ? 0 : 1);
+        var settings = App.SettingsService.Load();
+        var isLight = IsLightTheme(); // 读注册表判断系统当前主题
+        var targetTheme = isLight ? ApplicationTheme.Dark : ApplicationTheme.Light;
+        // 工具永远写注册表改系统主题
+        _ = Task.Run(() => SetTheme(isLight ? 0 : 1));
+        // 仅在跟随系统模式时同步改 app 主题
+        if (settings.ThemeMode == 0)
+            App.RefreshTheme(targetTheme);
     }
 
     public static bool IsLightTheme()

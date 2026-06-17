@@ -194,6 +194,12 @@ public sealed partial class LaunchpadPage : Page
     {
         switch (e.Key)
         {
+            // DEBUG: F5 切主题并打开设置（测试用）
+            case Windows.System.VirtualKey.F5:
+                ThemeSwitcherTool.ToggleTheme();
+                (App.Window as MainWindow)?.ShowSettings();
+                e.Handled = true;
+                break;
             case Windows.System.VirtualKey.Escape:
                 if (!string.IsNullOrEmpty(SearchBox.Text))
                 {

@@ -22,6 +22,7 @@ public sealed partial class MainWindow : Window
     private const int WM_TRAY_CALLBACK = 0x0400 + 1001;
     private const int WM_HOTKEY = 0x0312;
     private const int WM_DESTROY = 0x0002;
+    private const uint WM_SETTINGCHANGE = 0x001A;
     private const int GWLP_WNDPROC = -4;
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
@@ -77,6 +78,17 @@ public sealed partial class MainWindow : Window
             }
             // 如果没有托盘图标（初始化失败），允许窗口真正关闭退出
         };
+
+        // 主题切换时同步 MainWindow 根元素 RequestedTheme
+        App.SystemThemeChanged += (_, _) =>
+        {
+            if (Content is FrameworkElement root)
+            {
+                root.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+                    ? ElementTheme.Light : ElementTheme.Dark;
+            }
+            App.UpdateTitleBarTheme();
+        };
     }
 
     private void InitializeTrayIcon(nint hwnd)
@@ -121,10 +133,20 @@ public sealed partial class MainWindow : Window
         LaunchpadOverlay.Visibility = Visibility.Collapsed;
         AppWindow.SetPresenter(AppWindowPresenterKind.Default);
         SetTitleBar(AppTitleBar);
-        RootFrame.Navigate(typeof(MainPage));
         MakeAppWindow();
         ShowWindow(_hwnd, SW_SHOW);
         SetForegroundWindow(_hwnd);
+
+        // 显示窗口后再调用 WinUI 激活，确保 XAML 框架正确处理视觉树连接
+        try { Activate(); } catch { }
+
+        if (Content is FrameworkElement root)
+        {
+            root.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+                ? ElementTheme.Light : ElementTheme.Dark;
+        }
+
+        RootFrame.Navigate(typeof(MainPage));
     }
 
     private void MakeToolWindow()
@@ -260,6 +282,24 @@ public sealed partial class MainWindow : Window
 
             case WM_DESTROY:
                 CleanupTrayIcon();
+                break;
+
+            case WM_SETTINGCHANGE:
+                // Detect system theme change (light ↔ dark) via native Win32 broadcast
+                if (lParam != nint.Zero)
+                {
+                    var setting = Marshal.PtrToStringUni(lParam);
+                    if (string.Equals(setting, "ImmersiveColorSet", StringComparison.OrdinalIgnoreCase))
+                    {
+                        App.DispatcherQueue.TryEnqueue(() =>
+                        {
+                            Helpers.Logger.Log("THEME", "WM_SETTINGCHANGE ImmersiveColorSet detected");
+                            var s = App.SettingsService.Load();
+                            if (s.ThemeMode == 0)
+                                App.RefreshTheme();
+                        });
+                    }
+                }
                 break;
         }
 

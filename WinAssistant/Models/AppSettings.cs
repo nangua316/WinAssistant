@@ -22,4 +22,7 @@ public class AppSettings
     public List<ImeRule> ImeRules { get; set; } = [];
     public bool IsImeToastEnabled { get; set; } = true;
     public bool IsImeAutoSwitchEnabled { get; set; } = true;
+
+    // 主题模式：0=跟随系统, 1=浅色, 2=深色
+    public int ThemeMode { get; set; } = 0;
 }

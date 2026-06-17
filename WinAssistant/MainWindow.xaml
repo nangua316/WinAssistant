@@ -8,11 +8,9 @@
     Title="WinAssistant - 设置"
     mc:Ignorable="d">
 
-    <Window.SystemBackdrop>
-        <MicaBackdrop />
-    </Window.SystemBackdrop>
+    <!-- MicaBackdrop 已移除：它与 RequestedTheme 切换存在兼容性问题（见 microsoft-ui-xaml #5886）-->
 
-    <Grid>
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -30,6 +28,6 @@
         <Grid x:Name="LaunchpadOverlay"
               Grid.RowSpan="2"
               Visibility="Collapsed"
-              Background="#FF1A1A1A" />
+              Background="{ThemeResource LaunchpadBgBrush}" />
     </Grid>
 </Window>

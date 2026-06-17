@@ -36,6 +36,9 @@ public partial class App : Application
     /// <summary>Fired when the system theme changes (light ↔ dark).</summary>
     public static event EventHandler? SystemThemeChanged;
 
+    /// <summary>当前实际启用的主题（可能不同于注册表值，例如通过 F5/ThemeSwitcherTool 临时切换）。</summary>
+    public static ApplicationTheme CurrentTheme => _lastTheme;
+
     private static MainPageViewModel? _mainViewModel;
 
     public static nint WindowHandle =>
@@ -125,6 +128,8 @@ public partial class App : Application
         DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         HotKeyService.Initialize(WindowHandle);
         Window.Activate();
+        // 在窗口隐藏前设置主题，确保根元素 RequestedTheme 正确
+        ApplyThemeToRoot();
         ShowWindow(App.WindowHandle, SW_HIDE);
 
         MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
@@ -163,7 +168,6 @@ public partial class App : Application
         };
         TsfImeMonitorService.Start();
 
-        ApplyThemeToRoot();
         StartThemeListener();
     }
 
@@ -252,8 +256,8 @@ public partial class App : Application
 
     #region System theme support
 
-    private ApplicationTheme _lastTheme;
-    private Microsoft.UI.Xaml.DispatcherTimer? _themeTimer;
+    private static ApplicationTheme _lastTheme;
+    private static Windows.UI.ViewManagement.UISettings? _uiSettings;
 
     public static ApplicationTheme GetSystemTheme()
     {
@@ -273,6 +277,42 @@ public partial class App : Application
             ? ElementTheme.Light
             : ElementTheme.Dark;
 
+    /// <summary>
+    /// 切换应用主题并刷新 UI。
+    /// 供 ThemeSwitcherTool 直接调用（传目标主题，不绕注册表）；
+    /// 无参数重载从注册表读取（供轮询/事件使用）。
+    ///
+    /// 注意：不设置 App.Current.RequestedTheme —— 该属性在 WinUI3 窗口激活后
+    /// 再修改会抛 COMException（非打包应用限制）。改为通过 SystemThemeChanged
+    /// 事件让各窗口自行更新根元素的 RequestedTheme，{ThemeResource} 即可正确重解析。
+    /// </summary>
+    public static void RefreshTheme(ApplicationTheme? target = null)
+    {
+        var theme = target ?? GetSystemTheme();
+        // 自动跟随（无 target）时才用 guard 避免冗余更新；
+        // 手动指定 target 时总是执行，确保用户选择即时生效
+        if (target == null && theme == _lastTheme) return;
+        _lastTheme = theme;
+
+        // 不修改 App.Current.RequestedTheme（窗口激活后设不了），
+        // 由各窗口的 SystemThemeChanged 处理器更新元素级 RequestedTheme。
+        SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+
+        LogTheme($"RefreshTheme applied: theme={(theme == ApplicationTheme.Light ? "Light" : "Dark")} (element-level)");
+    }
+
+    /// <summary>
+    /// 供外部主题切换时更新标题栏颜色。
+    /// </summary>
+    public static void UpdateTitleBarTheme()
+    {
+        if (App.Current is App app)
+        {
+            var isDark = CurrentTheme == ApplicationTheme.Dark;
+            app.ApplyThemeToRoot(isDark ? ElementTheme.Dark : ElementTheme.Light);
+        }
+    }
+
     private void ApplyThemeToRoot()
     {
         ApplyThemeToRoot(GetSystemElementTheme());
@@ -280,9 +320,7 @@ public partial class App : Application
 
     private void ApplyThemeToRoot(ElementTheme theme)
     {
-        if (Window?.Content is FrameworkElement root)
-            root.RequestedTheme = theme;
-
+        // 启动时窗口可见，显式设置根元素主题（运行时不重复设置以避免 COMException）
         var isDark = theme == ElementTheme.Dark;
         try
         {
@@ -311,27 +349,64 @@ public partial class App : Application
 
     private void StartThemeListener()
     {
-        _themeTimer = new Microsoft.UI.Xaml.DispatcherTimer();
-        _themeTimer.Interval = TimeSpan.FromMilliseconds(3000);
-        _themeTimer.Tick += (_, _) =>
+        try
         {
-            try
+            _uiSettings = new Windows.UI.ViewManagement.UISettings();
+            _uiSettings.ColorValuesChanged += (_, _) =>
             {
-                var current = GetSystemTheme();
-                if (current != _lastTheme)
+                LogTheme("UISettings.ColorValuesChanged fired (background thread)");
+                // ColorValuesChanged fires on a background thread — must marshal to UI thread
+                DispatcherQueue?.TryEnqueue(() =>
                 {
-                    _lastTheme = current;
-                    RequestedTheme = current;
-                    ApplyThemeToRoot(current == ApplicationTheme.Light ? ElementTheme.Light : ElementTheme.Dark);
-                    SystemThemeChanged?.Invoke(null, EventArgs.Empty);
-                }
-            }
-            catch (COMException ex)
+                    // 检查 ThemeMode，仅在跟随系统时自动跟随
+                    var s = SettingsService.Load();
+                    if (s.ThemeMode != 0) return;
+                    RefreshTheme();
+                });
+            };
+        }
+        catch
+        {
+            // UISettings 不可用时捕获，不影响应用运行
+        }
+
+        // Fallback: poll registry every 2s for system theme change.
+        // 仅在 ThemeMode=0（跟随系统）时自动跟随。
+        var pollTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        pollTimer.Interval = TimeSpan.FromSeconds(2);
+        pollTimer.Tick += (_, _) =>
+        {
+            LogTheme("Registry poll tick");
+            // 读取设置判断是否跟随系统
+            var settings = SettingsService.Load();
+            if (settings.ThemeMode != 0)
             {
-                System.Diagnostics.Debug.WriteLine($"[Theme] skip: {ex.Message}");
+                // 手动锁定模式，不跟随系统
+                if (GetSystemTheme() != _lastTheme)
+                    LogTheme($"Registry poll skipped: ThemeMode={settings.ThemeMode} (manual lock)");
+                return;
+            }
+
+            var currentTheme = GetSystemTheme();
+            if (currentTheme != _lastTheme)
+            {
+                LogTheme($"Registry poll detected change: {_lastTheme} → {currentTheme}");
+                RefreshTheme(currentTheme);
             }
         };
-        _themeTimer.Start();
+        pollTimer.Start();
+    }
+
+    /// <summary>Debug log for theme change diagnostics.</summary>
+    private static void LogTheme(string message)
+    {
+        try
+        {
+            File.AppendAllText(
+                Path.Combine(Path.GetTempPath(), "WinAssistant_theme.log"),
+                $"[{DateTime.Now:HH:mm:ss.fff}] {message}{Environment.NewLine}");
+        }
+        catch { }
     }
 
     #endregion

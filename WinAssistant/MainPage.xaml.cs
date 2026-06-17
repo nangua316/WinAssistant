@@ -4,6 +4,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml.Navigation;
 using Windows.System;
 using Windows.UI;
 using Windows.UI.Core;
@@ -22,8 +23,30 @@ public sealed partial class MainPage : Page
 
     public MainPage()
     {
+        // 先设 RequestedTheme，再解析 XAML，确保 ThemeResource 用目标主题
+        this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+            ? ElementTheme.Light : ElementTheme.Dark;
         InitializeComponent();
         ViewModel = App.GetService<MainPageViewModel>();
+    }
+
+    protected override void OnNavigatedTo(NavigationEventArgs e)
+    {
+        base.OnNavigatedTo(e);
+        // 主题变化时更新本页面的 RequestedTheme
+        App.SystemThemeChanged += OnSystemThemeChanged;
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        base.OnNavigatedFrom(e);
+        App.SystemThemeChanged -= OnSystemThemeChanged;
+    }
+
+    private void OnSystemThemeChanged(object? sender, EventArgs e)
+    {
+        this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+            ? ElementTheme.Light : ElementTheme.Dark;
     }
 
     private ListViewDragReorder? _reorder;

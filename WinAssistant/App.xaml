@@ -15,10 +15,32 @@
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="ButtonOverlayHoverBrush" Color="#0A000000" />
                     <SolidColorBrush x:Key="ButtonOverlayPressedBrush" Color="#19000000" />
+                    <!-- MainPage 设置页颜色 — 放在 App 级别确保 RequestedTheme 切换时刷新 -->
+                    <SolidColorBrush x:Key="CardBgBrush" Color="#FBFBFD" />
+                    <SolidColorBrush x:Key="CardBorderBrush" Color="#EDEDF0" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1C1C1E" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#6E6E73" />
+                    <SolidColorBrush x:Key="TextDimBrush" Color="#9E9EA2" />
+                    <SolidColorBrush x:Key="AccentBlue" Color="{ThemeResource SystemAccentColor}" />
+                    <SolidColorBrush x:Key="IconAmber" Color="{ThemeResource SystemAccentColorLight1}" />
+                    <SolidColorBrush x:Key="PurpleBrush" Color="{ThemeResource SystemAccentColorDark1}" />
+                    <SolidColorBrush x:Key="IconGreen" Color="{ThemeResource SystemAccentColorLight2}" />
+                    <SolidColorBrush x:Key="LaunchpadBgBrush" Color="#F0F0F5" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="ButtonOverlayHoverBrush" Color="#1AFFFFFF" />
                     <SolidColorBrush x:Key="ButtonOverlayPressedBrush" Color="#33FFFFFF" />
+                    <!-- MainPage 设置页颜色 -->
+                    <SolidColorBrush x:Key="CardBgBrush" Color="#262B3B" />
+                    <SolidColorBrush x:Key="CardBorderBrush" Color="#2E3447" />
+                    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F0F0F5" />
+                    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A0A0A8" />
+                    <SolidColorBrush x:Key="TextDimBrush" Color="#7A7A80" />
+                    <SolidColorBrush x:Key="AccentBlue" Color="{ThemeResource SystemAccentColor}" />
+                    <SolidColorBrush x:Key="IconAmber" Color="{ThemeResource SystemAccentColorLight1}" />
+                    <SolidColorBrush x:Key="PurpleBrush" Color="{ThemeResource SystemAccentColorLight3}" />
+                    <SolidColorBrush x:Key="IconGreen" Color="{ThemeResource SystemAccentColorLight2}" />
+                    <SolidColorBrush x:Key="LaunchpadBgBrush" Color="#1A1A1A" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 
