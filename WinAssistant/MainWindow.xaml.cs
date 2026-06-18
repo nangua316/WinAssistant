@@ -60,9 +60,10 @@ public sealed partial class MainWindow : Window
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _wndProcHook = WndProc;
 
-        // 标准 WinUI MicaBackdrop — 与元素级 RequestedTheme 切换兼容
-        // MicaKind.BaseAlt 效果比 Base 更明显，深色模式下仍可见
+        // MicaBackdrop — 与 Win11 设置页面效果一致
         SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        // DWM 暗色模式（SystemBackdrop 之后设置，确保 Mica 用正确主题渲染）
+        App.UpdateDwmDarkMode(_hwnd);
 
         var newProc = Marshal.GetFunctionPointerForDelegate(_wndProcHook);
         SetLastError(0);

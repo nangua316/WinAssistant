@@ -33,8 +33,8 @@ internal sealed class LaunchpadDragHandler : IDisposable
     private readonly Func<ObservableCollection<LaunchpadItemViewModel>> _filteredItemsGetter;
     private readonly Func<bool> _isSearchActive;
     private readonly Action _saveItems;
-    private readonly Brush _itemNameBrush;
-    private readonly Brush _accentBrush;
+    private Brush _itemNameBrush;
+    private Brush _accentBrush;
 
     private LaunchpadItemViewModel? _pressedItem;
     private Point _pressedPoint;
@@ -96,6 +96,13 @@ internal sealed class LaunchpadDragHandler : IDisposable
             if (_isDragging && args.ItemContainer is GridViewItem c)
                 c.IsHitTestVisible = false;
         };
+    }
+
+    /// <summary>主题切换时更新缓存的 Brush 引用。</summary>
+    public void UpdateBrushes(Brush itemNameBrush, Brush accentBrush)
+    {
+        _itemNameBrush = itemNameBrush;
+        _accentBrush = accentBrush;
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)

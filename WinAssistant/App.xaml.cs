@@ -244,7 +244,7 @@ public partial class App : Application
 
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
-    private const int DWMSBT_MAINWINDOW = 2; // Mica
+    private const int DWMSBT_MAINWINDOW = 2; // Mica Base
 
     private static void RestoreTaskbar()
     {

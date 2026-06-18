@@ -1,8 +1,10 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
+using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.UI.Composition;
@@ -28,10 +30,10 @@ public sealed partial class LaunchpadWindow : Window
 
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        // Dark mode — follow system theme
-        var isDark = App.CurrentTheme == ApplicationTheme.Dark;
-        var darkMode = isDark ? 1 : 0;
-        DwmSetWindowAttribute(_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
+        // MicaBackdrop — 与 Win11 设置页面效果一致
+        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        // DWM 暗色模式（SystemBackdrop 之后设置，确保 Mica 用正确主题渲染）
+        App.UpdateDwmDarkMode(_hwnd);
 
         // Update DWM title bar dark mode when system theme changes
         App.SystemThemeChanged += OnSystemThemeChanged;

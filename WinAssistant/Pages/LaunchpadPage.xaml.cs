@@ -33,6 +33,10 @@ public sealed partial class LaunchpadPage : Page
 
     public LaunchpadPage()
     {
+        // 先设置主题再解析 XAML，确保 ThemeResource 用目标主题
+        this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+            ? ElementTheme.Light : ElementTheme.Dark;
+
         InitializeComponent();
         ViewModel = new LaunchpadPageViewModel();
         ViewModel.Items.CollectionChanged += OnItemsChanged;
@@ -56,6 +60,20 @@ public sealed partial class LaunchpadPage : Page
             (Brush)Resources["ItemNameBrush"],
             (Brush)Resources["AccentBrush"]);
         UpdateReorderState();
+
+        // 主题切换时更新
+        App.SystemThemeChanged += OnSystemThemeChanged;
+    }
+
+    private void OnSystemThemeChanged(object? sender, EventArgs e)
+    {
+        this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+            ? ElementTheme.Light : ElementTheme.Dark;
+
+        // 更新 DragHandler 引用的内存 Brush
+        _dragHandler?.UpdateBrushes(
+            (Brush)Resources["ItemNameBrush"],
+            (Brush)Resources["AccentBrush"]);
     }
 
     private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -75,6 +93,10 @@ public sealed partial class LaunchpadPage : Page
 
     public void Activate()
     {
+        // 每次打开时刷新主题（防止关闭期间系统主题变化）
+        this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+            ? ElementTheme.Light : ElementTheme.Dark;
+
         var settings = App.SettingsService.Load();
         ViewModel.PreloadSearchText(settings.LastSearchText ?? "");
         ViewModel.LoadItems();
