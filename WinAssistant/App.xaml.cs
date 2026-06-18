@@ -243,6 +243,8 @@ public partial class App : Application
     private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    private const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    private const int DWMSBT_MAINWINDOW = 2; // Mica
 
     private static void RestoreTaskbar()
     {
@@ -282,9 +284,10 @@ public partial class App : Application
     /// 供 ThemeSwitcherTool 直接调用（传目标主题，不绕注册表）；
     /// 无参数重载从注册表读取（供轮询/事件使用）。
     ///
-    /// 注意：不设置 App.Current.RequestedTheme —— 该属性在 WinUI3 窗口激活后
-    /// 再修改会抛 COMException（非打包应用限制）。改为通过 SystemThemeChanged
-    /// 事件让各窗口自行更新根元素的 RequestedTheme，{ThemeResource} 即可正确重解析。
+    /// 注意：不设置 App.Current.RequestedTheme —— WinUI 3 官方限制，
+    /// Application.RequestedTheme 只能在启动时设置一次，运行时会抛 COMException。
+    /// 改为通过 SystemThemeChanged 事件让各窗口更新元素级 RequestedTheme，
+    /// {ThemeResource} 即可在根 RequestedTheme 下正确重解析。
     /// </summary>
     public static void RefreshTheme(ApplicationTheme? target = null)
     {
@@ -294,9 +297,11 @@ public partial class App : Application
         if (target == null && theme == _lastTheme) return;
         _lastTheme = theme;
 
-        // 不修改 App.Current.RequestedTheme（窗口激活后设不了），
-        // 由各窗口的 SystemThemeChanged 处理器更新元素级 RequestedTheme。
+        // 通知各窗口更新元素级 RequestedTheme
         SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+
+        // 更新标题栏颜色
+        UpdateTitleBarTheme();
 
         LogTheme($"RefreshTheme applied: theme={(theme == ApplicationTheme.Light ? "Light" : "Dark")} (element-level)");
     }
@@ -343,6 +348,36 @@ public partial class App : Application
                 tb.ButtonPressedBackgroundColor = Color.FromArgb(0x33, 0x00, 0x00, 0x00);
                 tb.ButtonInactiveForegroundColor = Color.FromArgb(0x66, 0x00, 0x00, 0x00);
             }
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// 通过 DWM API 直接为窗口启用 Mica 背景效果（不依赖 WinUI MicaBackdrop）。
+    /// 适用于 Win11 22621+，与元素级 RequestedTheme 切换兼容。
+    /// </summary>
+    public static void SetMica(nint hwnd)
+    {
+        try
+        {
+            var backdropType = DWMSBT_MAINWINDOW;
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+            // 同步当前暗色/浅色模式
+            var isDark = CurrentTheme == ApplicationTheme.Dark ? 1 : 0;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref isDark, sizeof(int));
+        }
+        catch { }
+    }
+
+    /// <summary>
+    /// 主题切换时更新 DWM 暗色模式属性（影响 Mica 颜色和标题栏着色）。
+    /// </summary>
+    public static void UpdateDwmDarkMode(nint hwnd)
+    {
+        try
+        {
+            var isDark = CurrentTheme == ApplicationTheme.Dark ? 1 : 0;
+            DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref isDark, sizeof(int));
         }
         catch { }
     }

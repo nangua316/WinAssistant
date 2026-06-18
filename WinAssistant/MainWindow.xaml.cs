@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Composition.SystemBackdrops;
 using Windows.Graphics;
 using WinAssistant.Controls.Tools;
 
@@ -57,6 +59,11 @@ public sealed partial class MainWindow : Window
         // Subclass the window for hotkey + tray messages
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _wndProcHook = WndProc;
+
+        // 标准 WinUI MicaBackdrop — 与元素级 RequestedTheme 切换兼容
+        // MicaKind.BaseAlt 效果比 Base 更明显，深色模式下仍可见
+        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+
         var newProc = Marshal.GetFunctionPointerForDelegate(_wndProcHook);
         SetLastError(0);
         _oldWndProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC, newProc);
@@ -79,7 +86,7 @@ public sealed partial class MainWindow : Window
             // 如果没有托盘图标（初始化失败），允许窗口真正关闭退出
         };
 
-        // 主题切换时同步 MainWindow 根元素 RequestedTheme
+        // 主题切换时同步 MainWindow 根元素 RequestedTheme 和 DWM 暗色模式
         App.SystemThemeChanged += (_, _) =>
         {
             if (Content is FrameworkElement root)
@@ -87,6 +94,8 @@ public sealed partial class MainWindow : Window
                 root.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
                     ? ElementTheme.Light : ElementTheme.Dark;
             }
+            // 更新 DWM 暗色模式以更新 Mica 颜色
+            App.UpdateDwmDarkMode(_hwnd);
             App.UpdateTitleBarTheme();
         };
     }
@@ -414,3 +423,4 @@ public sealed partial class MainWindow : Window
 
     #endregion
 }
+

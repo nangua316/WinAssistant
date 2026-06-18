@@ -15,8 +15,7 @@
                 <ResourceDictionary x:Key="Light">
                     <SolidColorBrush x:Key="ButtonOverlayHoverBrush" Color="#0A000000" />
                     <SolidColorBrush x:Key="ButtonOverlayPressedBrush" Color="#19000000" />
-                    <!-- MainPage 设置页颜色 — 放在 App 级别确保 RequestedTheme 切换时刷新 -->
-                    <SolidColorBrush x:Key="CardBgBrush" Color="#FBFBFD" />
+                    <SolidColorBrush x:Key="CardBgBrush" Color="#F9F9F9" />
                     <SolidColorBrush x:Key="CardBorderBrush" Color="#EDEDF0" />
                     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1C1C1E" />
                     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#6E6E73" />
@@ -30,8 +29,7 @@
                 <ResourceDictionary x:Key="Dark">
                     <SolidColorBrush x:Key="ButtonOverlayHoverBrush" Color="#1AFFFFFF" />
                     <SolidColorBrush x:Key="ButtonOverlayPressedBrush" Color="#33FFFFFF" />
-                    <!-- MainPage 设置页颜色 -->
-                    <SolidColorBrush x:Key="CardBgBrush" Color="#262B3B" />
+                    <SolidColorBrush x:Key="CardBgBrush" Color="#2C2C2C" />
                     <SolidColorBrush x:Key="CardBorderBrush" Color="#2E3447" />
                     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#F0F0F5" />
                     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#A0A0A8" />

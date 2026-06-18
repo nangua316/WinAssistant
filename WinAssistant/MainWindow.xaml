@@ -8,9 +8,8 @@
     Title="WinAssistant - 设置"
     mc:Ignorable="d">
 
-    <!-- MicaBackdrop 已移除：它与 RequestedTheme 切换存在兼容性问题（见 microsoft-ui-xaml #5886）-->
-
-    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <!-- 根 Grid 透明，让 MicaBackdrop 透过卡片间隙显示 -->
+    <Grid Background="Transparent">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />

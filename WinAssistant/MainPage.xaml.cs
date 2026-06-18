@@ -21,6 +21,14 @@ public sealed partial class MainPage : Page
 {
     public MainPageViewModel ViewModel { get; }
 
+    /// <summary>Try to load a system Brush; fallback to a known-safe replacement if unavailable.</summary>
+    private static Brush SysBrush(string resourceKey, Brush fallback)
+    {
+        if (Application.Current.Resources.TryGetValue(resourceKey, out object v) && v is Brush b)
+            return b;
+        return fallback;
+    }
+
     public MainPage()
     {
         // 先设 RequestedTheme，再解析 XAML，确保 ThemeResource 用目标主题
@@ -267,9 +275,8 @@ public sealed partial class MainPage : Page
         {
             var card = new Border
             {
-                Background = (Brush)Resources["CardBgBrush"],
-                BorderBrush = (Brush)Resources["CardBorderBrush"],
-                BorderThickness = new Thickness(1),
+                Background = SysBrush("SystemControlPageBackgroundListLowBrush", (Brush)Resources["CardBgBrush"]),
+                BorderThickness = new Thickness(0),
                 CornerRadius = new CornerRadius(8),
                 Padding = new Thickness(12, 10, 12, 10),
                 Margin = new Thickness(0, 0, 0, 6)
@@ -306,14 +313,14 @@ public sealed partial class MainPage : Page
                 Text = rule.DisplayName,
                 FontSize = 14,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = (Brush)Resources["TextPrimaryBrush"]
+                Foreground = SysBrush("SystemControlPageTextBaseHighBrush", (Brush)Resources["TextPrimaryBrush"])
             });
             nameRow.Children.Add(new TextBlock
             {
                 Text = rule.ProcessName,
                 FontSize = 12,
                 Opacity = 0.6,
-                Foreground = (Brush)Resources["TextSecondaryBrush"]
+                Foreground = SysBrush("SystemControlForegroundBaseLowBrush", (Brush)Resources["TextSecondaryBrush"])
             });
             infoStack.Children.Add(nameRow);
             infoStack.Children.Add(new TextBlock
@@ -321,7 +328,7 @@ public sealed partial class MainPage : Page
                 Text = rule.SubtitleText,
                 FontSize = 11,
                 Opacity = 0.5,
-                Foreground = (Brush)Resources["TextSecondaryBrush"]
+                Foreground = SysBrush("SystemControlForegroundBaseLowBrush", (Brush)Resources["TextSecondaryBrush"])
             });
             Grid.SetColumn(infoStack, 1);
             grid.Children.Add(infoStack);
@@ -466,7 +473,7 @@ public sealed partial class MainPage : Page
         {
             Text = "键盘布局 / 输入法",
             FontSize = 13,
-            Foreground = (Brush)Resources["TextSecondaryBrush"],
+            Foreground = SysBrush("SystemControlForegroundBaseLowBrush", (Brush)Resources["TextSecondaryBrush"]),
             Margin = new Thickness(0, 0, 0, 4)
         };
         var imeCombo = new ComboBox
@@ -957,7 +964,7 @@ public sealed partial class MainPage : Page
                 Text = skill.Name,
                 FontSize = 14,
                 FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-                Foreground = (Brush)Resources["TextPrimaryBrush"]
+                Foreground = SysBrush("SystemControlPageTextBaseHighBrush", (Brush)Resources["TextPrimaryBrush"])
             });
             info.Children.Add(new TextBlock
             {
