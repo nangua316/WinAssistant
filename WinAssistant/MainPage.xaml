@@ -560,7 +560,7 @@
                                         CornerRadius="4" MinHeight="28" />
                             </Grid>
 
-                            <Border Background="#15FFFFFF" CornerRadius="6" Padding="14,10">
+                            <Border Background="{ThemeResource CardBgBrush}" BorderBrush="{ThemeResource CardBorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14,10">
                                 <StackPanel x:Name="ImeStatusStack" Spacing="6">
                                     <TextBlock x:Name="ImeStatusWindow"
                                                Text="当前窗口: —"

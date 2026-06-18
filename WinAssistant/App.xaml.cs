@@ -259,6 +259,7 @@ public partial class App : Application
     #region System theme support
 
     private static ApplicationTheme _lastTheme;
+    private static int _lastThemeMode; // 缓存 ThemeMode，避免每 tick 读 JSON
     private static Windows.UI.ViewManagement.UISettings? _uiSettings;
 
     public static ApplicationTheme GetSystemTheme()
@@ -297,13 +298,22 @@ public partial class App : Application
         if (target == null && theme == _lastTheme) return;
         _lastTheme = theme;
 
-        // 通知各窗口更新元素级 RequestedTheme
-        SystemThemeChanged?.Invoke(null, EventArgs.Empty);
+        // 从设置同步 ThemeMode 缓存（手动切换时会更新设置文件）
+        if (target != null)
+        {
+            try
+            {
+                var s = SettingsService.Load();
+                _lastThemeMode = s.ThemeMode;
+            }
+            catch { }
+        }
 
+        // 不修改 App.Current.RequestedTheme（窗口激活后设不了），
+        // 由各窗口的 SystemThemeChanged 处理器更新元素级 RequestedTheme。
+        SystemThemeChanged?.Invoke(null, EventArgs.Empty);
         // 更新标题栏颜色
         UpdateTitleBarTheme();
-
-        LogTheme($"RefreshTheme applied: theme={(theme == ApplicationTheme.Light ? "Light" : "Dark")} (element-level)");
     }
 
     /// <summary>
@@ -384,18 +394,19 @@ public partial class App : Application
 
     private void StartThemeListener()
     {
+        // 初始化 ThemeMode 缓存
+        try { _lastThemeMode = SettingsService.Load().ThemeMode; } catch { }
+
         try
         {
             _uiSettings = new Windows.UI.ViewManagement.UISettings();
             _uiSettings.ColorValuesChanged += (_, _) =>
             {
-                LogTheme("UISettings.ColorValuesChanged fired (background thread)");
                 // ColorValuesChanged fires on a background thread — must marshal to UI thread
                 DispatcherQueue?.TryEnqueue(() =>
                 {
-                    // 检查 ThemeMode，仅在跟随系统时自动跟随
-                    var s = SettingsService.Load();
-                    if (s.ThemeMode != 0) return;
+                    // 检查缓存 ThemeMode，仅在跟随系统时自动跟随
+                    if (_lastThemeMode != 0) return;
                     RefreshTheme();
                 });
             };
@@ -411,21 +422,16 @@ public partial class App : Application
         pollTimer.Interval = TimeSpan.FromSeconds(2);
         pollTimer.Tick += (_, _) =>
         {
-            LogTheme("Registry poll tick");
-            // 读取设置判断是否跟随系统
-            var settings = SettingsService.Load();
-            if (settings.ThemeMode != 0)
+            // 检查缓存 ThemeMode，避免每 tick 读磁盘 JSON
+            if (_lastThemeMode != 0)
             {
                 // 手动锁定模式，不跟随系统
-                if (GetSystemTheme() != _lastTheme)
-                    LogTheme($"Registry poll skipped: ThemeMode={settings.ThemeMode} (manual lock)");
                 return;
             }
 
             var currentTheme = GetSystemTheme();
             if (currentTheme != _lastTheme)
             {
-                LogTheme($"Registry poll detected change: {_lastTheme} → {currentTheme}");
                 RefreshTheme(currentTheme);
             }
         };

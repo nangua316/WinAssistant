@@ -29,7 +29,11 @@ public class MainPageViewModel : ObservableObject
     private List<InstalledAppInfo>? _cachedApps;
     private Task<List<InstalledAppInfo>>? _preloadTask;
     private bool _loaded;
+
     private int _themeMode;
+    private AppSettings? _cachedSettings;
+
+    public AppSettings Settings => _cachedSettings ??= _settingsService.Load();
 
     public MainPageViewModel(SettingsService settingsService, HotKeyService hotKeyService)
     {
@@ -206,6 +210,7 @@ public class MainPageViewModel : ObservableObject
         if (_loaded) return;
         _loaded = true;
         var settings = _settingsService.Load();
+        _cachedSettings = settings;
         Bindings = new ObservableCollection<HotKeyBindingViewModel>(
             settings.Bindings.Select(b => new HotKeyBindingViewModel(b))
         );

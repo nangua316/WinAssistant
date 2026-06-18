@@ -123,7 +123,7 @@ public sealed partial class MainPage : Page
         ToolSettingsPanel.Visibility = Visibility.Collapsed;
         _currentToolSettingsTool = null;
 
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         var toolIdsInLaunchpad = settings.LaunchpadItems
             .Where(i => i.ToolId != null)
             .Select(i => i.ToolId)
@@ -215,7 +215,7 @@ public sealed partial class MainPage : Page
 
     private void PopulateImePanel()
     {
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         ImeToastToggle.IsOn = settings.IsImeToastEnabled;
         ImeAutoSwitchToggle.IsOn = settings.IsImeAutoSwitchEnabled;
         ShowImeCurrentStatus();
@@ -257,7 +257,7 @@ public sealed partial class MainPage : Page
 
     private void PopulateImeRules()
     {
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         var rules = settings.ImeRules;
 
         if (rules.Count == 0)
@@ -386,14 +386,14 @@ public sealed partial class MainPage : Page
 
     private void OnImeToastToggled(object sender, RoutedEventArgs e)
     {
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         settings.IsImeToastEnabled = ImeToastToggle.IsOn;
         App.SettingsService.Save(settings);
     }
 
     private void OnImeAutoSwitchToggled(object sender, RoutedEventArgs e)
     {
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         settings.IsImeAutoSwitchEnabled = ImeAutoSwitchToggle.IsOn;
         App.SettingsService.Save(settings);
     }
@@ -408,7 +408,7 @@ public sealed partial class MainPage : Page
     private void OnImeRuleMoveUp(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         var idx = settings.ImeRules.FindIndex(r => r.Id == rule.Id);
         if (idx <= 0) return;
         (settings.ImeRules[idx], settings.ImeRules[idx - 1]) = (settings.ImeRules[idx - 1], settings.ImeRules[idx]);
@@ -419,7 +419,7 @@ public sealed partial class MainPage : Page
     private void OnImeRuleMoveDown(object sender, RoutedEventArgs e)
     {
         if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         var idx = settings.ImeRules.FindIndex(r => r.Id == rule.Id);
         if (idx < 0 || idx >= settings.ImeRules.Count - 1) return;
         (settings.ImeRules[idx], settings.ImeRules[idx + 1]) = (settings.ImeRules[idx + 1], settings.ImeRules[idx]);
@@ -432,7 +432,7 @@ public sealed partial class MainPage : Page
         if (sender is not Button btn || btn.Tag is not ImeRule rule) return;
         var hwnd = ImeService.GetForegroundHwnd();
         if (hwnd == nint.Zero) return;
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         var targetRule = settings.ImeRules.FirstOrDefault(r => r.Id == rule.Id);
         if (targetRule != null)
             App.ImeService.ApplySpecificRule(targetRule, hwnd);
@@ -640,7 +640,7 @@ public sealed partial class MainPage : Page
 
             if (imeCombo.SelectedItem is ComboBoxItem imeItem && imeItem.Tag is string klid)
             {
-                var settings = App.SettingsService.Load();
+                var settings = ViewModel.Settings;
 
                 // Get IME display name
                 var imeDisplay = layouts.FirstOrDefault(l => l.Klid == klid).DisplayName;
@@ -760,7 +760,7 @@ public sealed partial class MainPage : Page
             rule.UseFullWidth = widthCombo.SelectedItem is ComboBoxItem wItem && (bool)wItem.Tag;
             rule.CapsLockState = capsCombo.SelectedItem is ComboBoxItem cItem && (bool)cItem.Tag;
 
-            var settings = App.SettingsService.Load();
+            var settings = ViewModel.Settings;
             App.SettingsService.Save(settings);
             PopulateImeRules();
             App.ImeService.ReloadRules();
@@ -783,7 +783,7 @@ public sealed partial class MainPage : Page
 
         if (await SafeShowDialog(dialog) == ContentDialogResult.Primary)
         {
-            var settings = App.SettingsService.Load();
+            var settings = ViewModel.Settings;
             settings.ImeRules.RemoveAll(r => r.Id == rule.Id);
             App.SettingsService.Save(settings);
             PopulateImeRules();
@@ -796,7 +796,7 @@ public sealed partial class MainPage : Page
         if (sender is not ToggleSwitch toggle || toggle.Tag is not ImeRule rule) return;
 
         rule.IsEnabled = toggle.IsOn;
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         App.SettingsService.Save(settings);
         App.ImeService.ReloadRules();
     }
@@ -812,7 +812,7 @@ public sealed partial class MainPage : Page
         if (_aiSettingsLoaded) return;
         _aiSettingsLoaded = true;
 
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         AiApiKeyBox.Text = settings.AiApiKey ?? "";
         AiEndpointBox.Text = settings.AiEndpoint;
         var modelIdx = FindModelIndex(settings.AiChatModel);
@@ -830,7 +830,7 @@ public sealed partial class MainPage : Page
 
     private void OnAiConfigChanged(object sender, RoutedEventArgs e)
     {
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
         var changed = false;
 
         var key = AiApiKeyBox.Text.Trim();
@@ -874,7 +874,7 @@ public sealed partial class MainPage : Page
         }
         else
         {
-            AiConfigStatus.Text = $"✅ 已配置 · 模型: {App.SettingsService.Load().AiChatModel}";
+            AiConfigStatus.Text = $"✅ 已配置 · 模型: {ViewModel.Settings.AiChatModel}";
             AiConfigStatus.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x66, 0xBB, 0x6A));
         }
     }
@@ -895,7 +895,7 @@ public sealed partial class MainPage : Page
             }
 
             await App.QwenService.ChatAsync("你好，请回复「连接成功」以测试API连通性。");
-            AiConfigStatus.Text = $"✅ 连接成功 · 模型: {App.SettingsService.Load().AiChatModel}";
+            AiConfigStatus.Text = $"✅ 连接成功 · 模型: {ViewModel.Settings.AiChatModel}";
         }
         catch (Exception ex)
         {
@@ -1168,7 +1168,7 @@ public sealed partial class MainPage : Page
         if (sender is not ToggleSwitch toggle) return;
         if (toggle.Tag is not IAssistantTool tool) return;
 
-        var settings = App.SettingsService.Load();
+        var settings = ViewModel.Settings;
 
         if (toggle.IsOn)
         {
