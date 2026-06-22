@@ -245,6 +245,7 @@ public partial class App : Application
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
     private const int DWMSBT_MAINWINDOW = 2; // Mica Base
+    private const int DWMSBT_TRANSIENTWINDOW = 3; // Mica BaseAlt（强制刷新用）
 
     private static void RestoreTaskbar()
     {
@@ -314,6 +315,30 @@ public partial class App : Application
         SystemThemeChanged?.Invoke(null, EventArgs.Empty);
         // 更新标题栏颜色
         UpdateTitleBarTheme();
+
+        // 集中强制刷新所有窗口的 DWM Mica（MicaBackdrop 在主题切换时不自动刷新，
+        // 导致灰色背景。此处统一处理，避免每个窗口的 handler 各自实现遗漏）
+        RefreshDwmMicaForAllWindows();
+    }
+
+    /// <summary>
+    /// 强制刷新所有已知窗口的 DWM Mica 效果。
+    /// 主题切换时 MicaBackdrop 不会自动通知 DWM，必须手动刷新。
+    /// </summary>
+    private static void RefreshDwmMicaForAllWindows()
+    {
+        try
+        {
+            var backdropType = DWMSBT_TRANSIENTWINDOW;
+            DwmSetWindowAttribute(WindowHandle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+
+            if (_launchpadWindow != null)
+            {
+                var lpHandle = WinRT.Interop.WindowNative.GetWindowHandle(_launchpadWindow);
+                DwmSetWindowAttribute(lpHandle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+            }
+        }
+        catch { }
     }
 
     /// <summary>

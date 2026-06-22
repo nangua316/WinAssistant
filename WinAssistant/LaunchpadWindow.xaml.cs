@@ -90,7 +90,6 @@ public sealed partial class LaunchpadWindow : Window
         var isDark = App.CurrentTheme == ApplicationTheme.Dark;
         var darkMode = isDark ? 1 : 0;
         DwmSetWindowAttribute(_hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkMode, sizeof(int));
-        // 更新根 Grid 的 RequestedTheme，触发 {ThemeResource} 重解析
         RootGrid.RequestedTheme = isDark ? ElementTheme.Dark : ElementTheme.Light;
     }
 
