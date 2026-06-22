@@ -89,12 +89,10 @@ public sealed partial class MainPage : Page
         ToolPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
         ImePanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
-        AddAppButton.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
-
         TitleText.Text = index switch
         {
             0 => "常规设置",
-            1 => "全局快捷键管理",
+            1 => "全局快捷键",
             2 => "AI 技能",
             3 => "小工具",
             4 => "输入法状态管理",
@@ -213,10 +211,9 @@ public sealed partial class MainPage : Page
             }
 
             // Toggle: show in launchpad
-            var toggle = new ToggleSwitch
+            var toggle = new Controls.NoAnimToggleSwitch
             {
                 IsOn = isInLaunchpad,
-                MinWidth = 50,
                 VerticalAlignment = VerticalAlignment.Center,
                 Tag = tool
             };
@@ -387,7 +384,7 @@ public sealed partial class MainPage : Page
             delBtn.Click += OnImeDeleteRuleClick;
             actions.Children.Add(delBtn);
 
-            var toggle = new ToggleSwitch { IsOn = rule.IsEnabled, MinWidth = 36, Tag = rule };
+            var toggle = new Controls.NoAnimToggleSwitch { IsOn = rule.IsEnabled, Tag = rule };
             toggle.Toggled += OnImeRuleToggleToggled;
             actions.Children.Add(toggle);
 
@@ -814,7 +811,7 @@ public sealed partial class MainPage : Page
 
     private void OnImeRuleToggleToggled(object sender, RoutedEventArgs e)
     {
-        if (sender is not ToggleSwitch toggle || toggle.Tag is not ImeRule rule) return;
+        if (sender is not Controls.NoAnimToggleSwitch toggle || toggle.Tag is not ImeRule rule) return;
 
         rule.IsEnabled = toggle.IsOn;
         var settings = ViewModel.Settings;
@@ -833,101 +830,7 @@ public sealed partial class MainPage : Page
         if (_aiSettingsLoaded) return;
         _aiSettingsLoaded = true;
 
-        var settings = ViewModel.Settings;
-        AiApiKeyBox.Text = settings.AiApiKey ?? "";
-        AiEndpointBox.Text = settings.AiEndpoint;
-        var modelIdx = FindModelIndex(settings.AiChatModel);
-        AiModelBox.SelectedIndex = modelIdx >= 0 ? modelIdx : 0;
-
-        UpdateAiConfigStatus();
         PopulateSkillList();
-    }
-
-    private static int FindModelIndex(string? model)
-    {
-        var models = new[] { "qwen-plus", "qwen-max", "qwen-turbo", "qwen-long" };
-        return Array.IndexOf(models, model);
-    }
-
-    private void OnAiConfigChanged(object sender, RoutedEventArgs e)
-    {
-        var settings = ViewModel.Settings;
-        var changed = false;
-
-        var key = AiApiKeyBox.Text.Trim();
-        if (key != (settings.AiApiKey ?? ""))
-        {
-            settings.AiApiKey = string.IsNullOrEmpty(key) ? null : key;
-            changed = true;
-        }
-
-        var endpoint = AiEndpointBox.Text.Trim();
-        if (endpoint != settings.AiEndpoint && !string.IsNullOrEmpty(endpoint))
-        {
-            settings.AiEndpoint = endpoint;
-            changed = true;
-        }
-
-        if (AiModelBox.SelectedItem is ComboBoxItem cbi)
-        {
-            var model = cbi.Content.ToString() ?? "qwen-plus";
-            if (model != settings.AiChatModel)
-            {
-                settings.AiChatModel = model;
-                changed = true;
-            }
-        }
-
-        if (changed)
-        {
-            App.SettingsService.Save(settings);
-            App.QwenService.Configure(settings.AiApiKey, settings.AiEndpoint, settings.AiChatModel);
-            UpdateAiConfigStatus();
-        }
-    }
-
-    private void UpdateAiConfigStatus()
-    {
-        if (!App.QwenService.IsConfigured)
-        {
-            AiConfigStatus.Text = "⚠️ 未配置 API Key，AI 对话功能不可用";
-            AiConfigStatus.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xA7, 0x26));
-        }
-        else
-        {
-            AiConfigStatus.Text = $"✅ 已配置 · 模型: {ViewModel.Settings.AiChatModel}";
-            AiConfigStatus.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0x66, 0xBB, 0x6A));
-        }
-    }
-
-    private async void OnTestAiConnection(object sender, RoutedEventArgs e)
-    {
-        var btn = (Button)sender;
-        btn.IsEnabled = false;
-        btn.Content = "测试中...";
-
-        try
-        {
-            if (!App.QwenService.IsConfigured)
-            {
-                AiConfigStatus.Text = "⚠️ 请先填写 API Key";
-                AiConfigStatus.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xA7, 0x26));
-                return;
-            }
-
-            await App.QwenService.ChatAsync("你好，请回复「连接成功」以测试API连通性。");
-            AiConfigStatus.Text = $"✅ 连接成功 · 模型: {ViewModel.Settings.AiChatModel}";
-        }
-        catch (Exception ex)
-        {
-            AiConfigStatus.Text = $"❌ 连接失败: {ex.Message}";
-            AiConfigStatus.Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x44, 0x44));
-        }
-        finally
-        {
-            btn.IsEnabled = true;
-            btn.Content = "测试连接";
-        }
     }
 
     private void PopulateSkillList()
@@ -989,7 +892,7 @@ public sealed partial class MainPage : Page
             });
             info.Children.Add(new TextBlock
             {
-                Text = $"{skill.ActionType} · 使用 {skill.UsageCount} 次 · {skill.CreatedAt:MM-dd} 创建",
+                Text = $"{skill.ActionType} · {skill.CreatedAt:MM-dd} 创建",
                 FontSize = 11,
                 Opacity = 0.5
             });
@@ -1186,7 +1089,7 @@ public sealed partial class MainPage : Page
 
     private void OnToolLaunchpadToggle(object sender, Microsoft.UI.Xaml.RoutedEventArgs e)
     {
-        if (sender is not ToggleSwitch toggle) return;
+        if (sender is not Controls.NoAnimToggleSwitch toggle) return;
         if (toggle.Tag is not IAssistantTool tool) return;
 
         var settings = ViewModel.Settings;
@@ -1370,17 +1273,17 @@ public sealed partial class MainPage : Page
     private async void OnToggleToggled(object sender, RoutedEventArgs e)
     {
         if (_toggling) return;
-        if (sender is not ToggleSwitch toggle) return;
-        if (toggle.Tag is not HotKeyBindingViewModel vm) return;
+        if (sender is not Controls.NoAnimToggleSwitch nat) return;
+        if (nat.Tag is not HotKeyBindingViewModel vm) return;
 
         _toggling = true;
 
-        if (toggle.IsOn && vm.Model.Modifiers != 0 && vm.Model.VirtualKey != 0)
+        if (nat.IsOn && vm.Model.Modifiers != 0 && vm.Model.VirtualKey != 0)
         {
             var conflict = ViewModel.FindBindingConflict(vm.Model.Modifiers, vm.Model.VirtualKey, vm);
             if (conflict != null)
             {
-                toggle.IsOn = false;
+                nat.IsOn = false;
                 _toggling = false;
                 try
                 {
@@ -1401,7 +1304,7 @@ public sealed partial class MainPage : Page
         }
 
         ViewModel.ToggleBindingCommand.Execute(vm);
-        toggle.IsOn = vm.IsEnabled;
+        // IsOn 已在 OnPressed 中设置，无需重复赋值（否则会打断动画）
         _toggling = false;
     }
 

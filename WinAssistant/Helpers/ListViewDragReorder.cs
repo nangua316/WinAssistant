@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Animation;
 using Windows.Foundation;
 using Windows.UI.Core;
+using WinAssistant.Controls;
 using WinAssistant.ViewModels;
 
 namespace WinAssistant.Helpers;
@@ -146,6 +147,10 @@ internal sealed class ListViewDragReorder : IDisposable
         if (_originalIndex < 0) return; // Guard: Cleanup already ran
 
         var target = InsertIndex(pointerY);
+
+        // target == Count 时 Remove 后 Count--，Insert 越界抛异常
+        if (target > _originalIndex && target >= _items.Count)
+            target = _items.Count - 1;
 
         if (target != _originalIndex)
             _items.Move(_originalIndex, target);
@@ -418,11 +423,11 @@ internal sealed class ListViewDragReorder : IDisposable
 
     private static bool IsInteractive(object s)
     {
-        if (s is Button or ToggleSwitch) return true;
+        if (s is Button or ToggleSwitch or NoAnimToggleSwitch) return true;
         if (s is DependencyObject d)
         {
             for (var p = VisualTreeHelper.GetParent(d); p != null; p = VisualTreeHelper.GetParent(p))
-                if (p is Button or ToggleSwitch) return true;
+                if (p is Button or ToggleSwitch or NoAnimToggleSwitch) return true;
         }
         return false;
     }

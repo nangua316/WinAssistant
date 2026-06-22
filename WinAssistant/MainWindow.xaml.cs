@@ -147,6 +147,15 @@ public sealed partial class MainWindow : Window
 
         var curSize = AppWindow.Size;
 
+        // 保存当前位置（等解除 Cloak 后还原，用户拖动的位置不会丢失）
+        int restoreX = 0, restoreY = 0;
+        bool hasPosition = GetWindowRect(_hwnd, out var currentRect);
+        if (hasPosition)
+        {
+            restoreX = currentRect.left;
+            restoreY = currentRect.top;
+        }
+
         // DWM Cloak: 临时遮蔽窗口渲染，所有构图（Mica / ToggleSwitch 动画）在后台完成，
         // 解除遮蔽后直接展示完成状态，用户不会看到任何中间态闪烁。
         var cloak = 1;
@@ -169,7 +178,7 @@ public sealed partial class MainWindow : Window
                 ? ElementTheme.Light : ElementTheme.Dark;
         }
 
-        // 延迟解除遮蔽 + 居中（等后台构图完成）
+        // 延迟解除遮蔽 + 还原位置（等后台构图完成）
         var uncloakTimer = new Microsoft.UI.Xaml.DispatcherTimer();
         uncloakTimer.Interval = TimeSpan.FromMilliseconds(300);
         uncloakTimer.Tick += (s, e) =>
@@ -180,12 +189,13 @@ public sealed partial class MainWindow : Window
             cloak = 0;
             DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
 
-            // 居中
+            // 还原到保存的位置（首次打开则居中）
             var physW = GetSystemMetrics(SM_CXSCREEN);
             var physH = GetSystemMetrics(SM_CYSCREEN);
             var cx = (physW - curSize.Width) / 2;
             var cy = (physH - curSize.Height) / 2;
-            SetWindowPos(_hwnd, nint.Zero, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+            SetWindowPos(_hwnd, nint.Zero, hasPosition ? restoreX : cx, hasPosition ? restoreY : cy,
+                0, 0, SWP_NOSIZE | SWP_NOZORDER);
             SetForegroundWindow(_hwnd);
         };
         uncloakTimer.Start();
@@ -384,6 +394,10 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(nint hWnd);
 
     [DllImport("user32.dll")]
@@ -434,6 +448,9 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int left; public int top; public int right; public int bottom; }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NOTIFYICONDATAW

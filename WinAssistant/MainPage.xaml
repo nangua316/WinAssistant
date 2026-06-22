@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:vm="using:WinAssistant.ViewModels"
       xmlns:local="using:WinAssistant"
+      xmlns:controls="using:WinAssistant.Controls"
       Loaded="OnLoaded" Unloaded="OnUnloaded"
       Background="Transparent">
     <Page.Resources>
@@ -145,9 +146,8 @@
                             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                                 <TextBlock Text="开机自启动" FontSize="15" />
                             </StackPanel>
-                            <ToggleSwitch Grid.Column="2" MinWidth="48"
-                                          IsOn="{x:Bind ViewModel.IsAutoStart, Mode=TwoWay}"
-                                          OnContent="开" OffContent="关" />
+                            <controls:NoAnimToggleSwitch Grid.Column="2"
+                                          IsOn="{x:Bind ViewModel.IsAutoStart, Mode=TwoWay}" />
                         </Grid>
                     </Border>
 
@@ -196,9 +196,8 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按下中键" FontSize="15"
                                            VerticalAlignment="Center" />
-                                <ToggleSwitch Grid.Column="2" MinWidth="48"
-                                              IsOn="{x:Bind ViewModel.IsMouseTriggerMiddle, Mode=TwoWay}"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsMouseTriggerMiddle, Mode=TwoWay}" />
                             </Grid>
                             <Grid Padding="16,8" ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
@@ -211,9 +210,8 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按下X1键" FontSize="15"
                                            VerticalAlignment="Center" />
-                                <ToggleSwitch Grid.Column="2" MinWidth="48"
-                                              IsOn="{x:Bind ViewModel.IsMouseTriggerX1, Mode=TwoWay}"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsMouseTriggerX1, Mode=TwoWay}" />
                             </Grid>
                             <Grid Padding="16,8" ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
@@ -226,9 +224,8 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按下X2键" FontSize="15"
                                            VerticalAlignment="Center" />
-                                <ToggleSwitch Grid.Column="2" MinWidth="48"
-                                              IsOn="{x:Bind ViewModel.IsMouseTriggerX2, Mode=TwoWay}"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsMouseTriggerX2, Mode=TwoWay}" />
                             </Grid>
 
                             <!-- 键盘触发 -->
@@ -258,9 +255,8 @@
                                         BorderThickness="1"
                                         Background="Transparent"
                                         Visibility="{x:Bind ViewModel.GlobalHotKeySettingsVisibility, Mode=OneWay}" />
-                                <ToggleSwitch Grid.Column="3" MinWidth="48"
-                                              IsOn="{x:Bind ViewModel.IsKeyboardTriggerGlobalHotKey, Mode=TwoWay}"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch Grid.Column="3"
+                                              IsOn="{x:Bind ViewModel.IsKeyboardTriggerGlobalHotKey, Mode=TwoWay}" />
                             </Grid>
 
                             <Grid Padding="16,8" ColumnSpacing="12">
@@ -274,9 +270,8 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="Alt + 空格" FontSize="15"
                                            VerticalAlignment="Center" />
-                                <ToggleSwitch Grid.Column="2" MinWidth="48"
-                                              IsOn="{x:Bind ViewModel.IsKeyboardTriggerAltSpace, Mode=TwoWay}"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsKeyboardTriggerAltSpace, Mode=TwoWay}" />
                             </Grid>
 
                             <Button Content="打开启动台"
@@ -292,7 +287,11 @@
             <!-- ===== Hotkey panel ===== -->
             <Grid x:Name="HotkeyPanel" Grid.Row="1" Visibility="Collapsed">
                 <Grid>
-                    <ListView x:Name="BindingListView"
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ListView x:Name="BindingListView" Grid.Row="0"
                           SelectionMode="Single"
                           ItemsSource="{x:Bind ViewModel.Bindings, Mode=OneWay}">
                     <ListView.ItemContainerStyle>
@@ -306,10 +305,9 @@
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         </Style>
                     </ListView.ItemContainerStyle>
+                    <!-- 拖拽有自己的 Ghost + 指示线动画，不需要 RepositionThemeTransition -->
                     <ListView.ItemContainerTransitions>
-                        <TransitionCollection>
-                            <RepositionThemeTransition />
-                        </TransitionCollection>
+                        <TransitionCollection />
                     </ListView.ItemContainerTransitions>
                     <ListView.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -363,7 +361,7 @@
                                                FontSize="13" />
                                 </Button>
 
-                                <ToggleSwitch Grid.Column="3"
+                                <controls:NoAnimToggleSwitch Grid.Column="3"
                                               IsOn="{x:Bind IsEnabled, Mode=OneWay}"
                                               VerticalAlignment="Center"
                                               Toggled="OnToggleToggled"
@@ -383,7 +381,8 @@
                     </ListView.ItemTemplate>
                 </ListView>
 
-                    <StackPanel Visibility="{x:Bind ViewModel.EmptyStateVisibility, Mode=OneWay}"
+                    <StackPanel Grid.Row="0"
+                                Visibility="{x:Bind ViewModel.EmptyStateVisibility, Mode=OneWay}"
                                 VerticalAlignment="Center"
                                 HorizontalAlignment="Center"
                                 Spacing="12"
@@ -398,6 +397,19 @@
                                    FontSize="13" Opacity="0.5"
                                    HorizontalAlignment="Center" />
                     </StackPanel>
+
+                    <!-- 添加应用程序按钮（右下角） -->
+                    <Button Grid.Row="1"
+                            Command="{x:Bind ViewModel.AddApplicationCommand}"
+                            Margin="0,12,16,12"
+                            Padding="16,8"
+                            CornerRadius="6"
+                            HorizontalAlignment="Right">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE710;" FontSize="14" />
+                            <TextBlock Text="添加应用程序" />
+                        </StackPanel>
+                    </Button>
                 </Grid>
             </Grid>
 
@@ -405,45 +417,7 @@
             <ScrollViewer x:Name="AIPanel" Grid.Row="1" Visibility="Collapsed"
                           VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="16" Margin="0,0,24,0">
-                    <!-- API 配置区域 -->
-                    <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="16,14">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="API 配置"
-                                       FontSize="16" FontWeight="SemiBold"
-                                       Foreground="{ThemeResource SystemControlPageTextBaseHighBrush}" />
-                            <TextBox x:Name="AiApiKeyBox"
-                                     Header="API Key"
-                                     PlaceholderText="输入通义千问 API Key"
-                                     TextChanged="OnAiConfigChanged"
-                                     FontSize="14" />
-                            <TextBox x:Name="AiEndpointBox"
-                                     Header="Endpoint"
-                                     PlaceholderText="https://dashscope.aliyuncs.com"
-                                     TextChanged="OnAiConfigChanged"
-                                     FontSize="14" />
-                            <ComboBox x:Name="AiModelBox"
-                                      Header="对话模型"
-                                      SelectedIndex="0"
-                                      FontSize="14">
-                                <ComboBoxItem Content="qwen-plus" />
-                                <ComboBoxItem Content="qwen-max" />
-                                <ComboBoxItem Content="qwen-turbo" />
-                                <ComboBoxItem Content="qwen-long" />
-                            </ComboBox>
-                            <TextBlock x:Name="AiConfigStatus"
-                                       FontSize="12"
-                                       Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}" />
-                            <Button Content="测试连接"
-                                    Click="OnTestAiConnection"
-                                    Padding="16,6"
-                                    CornerRadius="6"
-                                    FontSize="13"
-                                    HorizontalAlignment="Left"
-                                    MinHeight="32" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 技能列表区域 -->
+                    <!-- 技能列表区域（查询记录入口） -->
                     <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="16,14">
                         <StackPanel Spacing="10">
                             <Grid>
@@ -519,9 +493,8 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="Toast 提示" FontSize="15"
                                            VerticalAlignment="Center" />
-                                <ToggleSwitch x:Name="ImeToastToggle" Grid.Column="2" MinWidth="48"
-                                              Toggled="OnImeToastToggled"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch x:Name="ImeToastToggle" Grid.Column="2"
+                                              Toggled="OnImeToastToggled" />
                             </Grid>
 
                             <Grid ColumnSpacing="12">
@@ -535,9 +508,8 @@
                                           VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="1" Text="按窗口自动切换输入法" FontSize="15"
                                            VerticalAlignment="Center" />
-                                <ToggleSwitch x:Name="ImeAutoSwitchToggle" Grid.Column="2" MinWidth="48"
-                                              Toggled="OnImeAutoSwitchToggled"
-                                              OnContent="开" OffContent="关" />
+                                <controls:NoAnimToggleSwitch x:Name="ImeAutoSwitchToggle" Grid.Column="2"
+                                              Toggled="OnImeAutoSwitchToggled" />
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -660,19 +632,6 @@
                 </ScrollViewer>
             </Grid>
 
-            <!-- Add application button (only visible on hotkey tab) -->
-            <Button x:Name="AddAppButton" Grid.Row="2"
-                    Visibility="Collapsed"
-                    Command="{x:Bind ViewModel.AddApplicationCommand}"
-                    Margin="0,12,0,0"
-                    Padding="16,8"
-                    CornerRadius="6">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon Glyph="&#xE710;" FontSize="14" />
-                    <TextBlock Text="添加应用程序" />
-                </StackPanel>
-            </Button>
-
-        </Grid>
-    </Grid>
-</Page>
+	        </Grid>
+	    </Grid>
+	</Page>
