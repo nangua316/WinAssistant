@@ -31,11 +31,12 @@ public sealed partial class MainPage : Page
 
     public MainPage()
     {
-        // 先设 RequestedTheme，再解析 XAML，确保 ThemeResource 用目标主题
+        // 先在 InitializeComponent 前设置 ViewModel，确保 x:Bind 能正确解析初始值
+        ViewModel = App.GetService<MainPageViewModel>();
+        // RequestedTheme 也在 InitializeComponent 前设置，确保 ThemeResource 用目标主题
         this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
             ? ElementTheme.Light : ElementTheme.Dark;
         InitializeComponent();
-        ViewModel = App.GetService<MainPageViewModel>();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -66,6 +67,9 @@ public sealed partial class MainPage : Page
 
         var ver = typeof(App).Assembly.GetName().Version;
         VersionText.Text = ver != null ? $"版本 {ver.Major}.{ver.Minor}.{ver.Build}" : "";
+
+        // 预填充工具列表（此时窗口在 DWM Cloak 中，ToggleSwitch 的初始动画不被用户看到）
+        PopulateToolList();
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -110,14 +114,28 @@ public sealed partial class MainPage : Page
 
         if (index == 2)
             PopulateAISettings();
-        else if (index == 3)
-            PopulateToolList();
         else if (index == 4)
             PopulateImePanel();
     }
 
+    private bool _toolsPopulated;
+
     private void PopulateToolList()
     {
+        if (_toolsPopulated)
+        {
+            // 后续调用仅切换面板可见性，不重建控件
+            ToolListPanel.Visibility = Visibility.Visible;
+            ToolSettingsPanel.Visibility = Visibility.Collapsed;
+            _currentToolSettingsTool = null;
+            return;
+        }
+        _toolsPopulated = true;
+
+        // 临时让面板可见，使 ToggleSwitch 进入视觉树完成初始化动画
+        // （此时窗口在 DWM Cloak 中，用户看不到任何闪烁）
+        ToolPanel.Visibility = Visibility.Visible;
+
         ToolListStack.Children.Clear();
         ToolListPanel.Visibility = Visibility.Visible;
         ToolSettingsPanel.Visibility = Visibility.Collapsed;
@@ -209,6 +227,9 @@ public sealed partial class MainPage : Page
             card.Child = row;
             ToolListStack.Children.Add(card);
         }
+
+        // 预填充完成后恢复面板隐藏
+        ToolPanel.Visibility = Visibility.Collapsed;
     }
 
     #region 输入法状态管理

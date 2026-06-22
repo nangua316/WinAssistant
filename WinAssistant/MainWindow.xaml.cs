@@ -145,9 +145,19 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         MakeAppWindow();
 
-        // 先移到屏幕外，避免 WinUI 首帧构图前的白框闪现
         var curSize = AppWindow.Size;
-        SetWindowPos(_hwnd, nint.Zero, -9999, -9999, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
+        // DWM Cloak: 临时遮蔽窗口渲染，所有构图（Mica / ToggleSwitch 动画）在后台完成，
+        // 解除遮蔽后直接展示完成状态，用户不会看到任何中间态闪烁。
+        var cloak = 1;
+        DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
+
+        // 只在首次打开时导航到 MainPage；后续复用已有的页面实例
+        if (RootFrame.Content == null)
+        {
+            RootFrame.Navigate(typeof(MainPage), null,
+                new Microsoft.UI.Xaml.Media.Animation.SuppressNavigationTransitionInfo());
+        }
 
         ShowWindow(_hwnd, SW_SHOW);
         SetForegroundWindow(_hwnd);
@@ -159,14 +169,18 @@ public sealed partial class MainWindow : Window
                 ? ElementTheme.Light : ElementTheme.Dark;
         }
 
-        RootFrame.Navigate(typeof(MainPage), null, new Microsoft.UI.Xaml.Media.Animation.SuppressNavigationTransitionInfo());
-
-        // 延迟移到屏幕中央（等 MicaBackdrop 渲染完毕，消除白框）
-        var moveTimer = new Microsoft.UI.Xaml.DispatcherTimer();
-        moveTimer.Interval = TimeSpan.FromMilliseconds(60);
-        moveTimer.Tick += (s, e) =>
+        // 延迟解除遮蔽 + 居中（等后台构图完成）
+        var uncloakTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        uncloakTimer.Interval = TimeSpan.FromMilliseconds(300);
+        uncloakTimer.Tick += (s, e) =>
         {
-            moveTimer.Stop();
+            uncloakTimer.Stop();
+
+            // 解除 DWM Cloak — 窗口直接展示完成状态
+            cloak = 0;
+            DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
+
+            // 居中
             var physW = GetSystemMetrics(SM_CXSCREEN);
             var physH = GetSystemMetrics(SM_CYSCREEN);
             var cx = (physW - curSize.Width) / 2;
@@ -174,7 +188,7 @@ public sealed partial class MainWindow : Window
             SetWindowPos(_hwnd, nint.Zero, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
             SetForegroundWindow(_hwnd);
         };
-        moveTimer.Start();
+        uncloakTimer.Start();
     }
 
     private void MakeToolWindow()
@@ -397,7 +411,14 @@ public sealed partial class MainWindow : Window
     private static extern int GetSystemMetrics(int nIndex);
 
     private const int SM_CXSCREEN = 0;
-    private const int SM_CYSCREEN = 1;    [DllImport("user32.dll")]
+    private const int SM_CYSCREEN = 1;
+
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(nint hwnd, uint attr, ref int attrValue, int attrSize);
+
+    private const uint DWMWA_CLOAK = 14;
+
+    [DllImport("user32.dll")]
     private static extern nint CreatePopupMenu();
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
