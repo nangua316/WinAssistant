@@ -144,10 +144,13 @@ public sealed partial class MainWindow : Window
         AppWindow.SetPresenter(AppWindowPresenterKind.Default);
         SetTitleBar(AppTitleBar);
         MakeAppWindow();
+
+        // 先移到屏幕外，避免 WinUI 首帧构图前的白框闪现
+        var curSize = AppWindow.Size;
+        SetWindowPos(_hwnd, nint.Zero, -9999, -9999, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+
         ShowWindow(_hwnd, SW_SHOW);
         SetForegroundWindow(_hwnd);
-
-        // 显示窗口后再调用 WinUI 激活，确保 XAML 框架正确处理视觉树连接
         try { Activate(); } catch { }
 
         if (Content is FrameworkElement root)
@@ -156,7 +159,22 @@ public sealed partial class MainWindow : Window
                 ? ElementTheme.Light : ElementTheme.Dark;
         }
 
-        RootFrame.Navigate(typeof(MainPage));
+        RootFrame.Navigate(typeof(MainPage), null, new Microsoft.UI.Xaml.Media.Animation.SuppressNavigationTransitionInfo());
+
+        // 延迟移到屏幕中央（等 MicaBackdrop 渲染完毕，消除白框）
+        var moveTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        moveTimer.Interval = TimeSpan.FromMilliseconds(60);
+        moveTimer.Tick += (s, e) =>
+        {
+            moveTimer.Stop();
+            var physW = GetSystemMetrics(SM_CXSCREEN);
+            var physH = GetSystemMetrics(SM_CYSCREEN);
+            var cx = (physW - curSize.Width) / 2;
+            var cy = (physH - curSize.Height) / 2;
+            SetWindowPos(_hwnd, nint.Zero, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+            SetForegroundWindow(_hwnd);
+        };
+        moveTimer.Start();
     }
 
     private void MakeToolWindow()
@@ -376,6 +394,10 @@ public sealed partial class MainWindow : Window
     private static extern bool DestroyIcon(nint hIcon);
 
     [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int nIndex);
+
+    private const int SM_CXSCREEN = 0;
+    private const int SM_CYSCREEN = 1;    [DllImport("user32.dll")]
     private static extern nint CreatePopupMenu();
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
