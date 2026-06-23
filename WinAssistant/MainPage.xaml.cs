@@ -86,16 +86,16 @@ public sealed partial class MainPage : Page
         GeneralPanel.Visibility = index == 0 ? Visibility.Visible : Visibility.Collapsed;
         HotkeyPanel.Visibility = index == 1 ? Visibility.Visible : Visibility.Collapsed;
         AIPanel.Visibility = index == 2 ? Visibility.Visible : Visibility.Collapsed;
-        ToolPanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
-        ImePanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
+        ImePanel.Visibility = index == 3 ? Visibility.Visible : Visibility.Collapsed;
+        ToolPanel.Visibility = index == 4 ? Visibility.Visible : Visibility.Collapsed;
         AboutPanel.Visibility = index == 5 ? Visibility.Visible : Visibility.Collapsed;
         TitleText.Text = index switch
         {
             0 => "常规设置",
             1 => "全局快捷键",
             2 => "AI 技能",
-            3 => "小工具",
-            4 => "输入法状态管理",
+            3 => "输入法状态",
+            4 => "小工具",
             5 => "关于",
             _ => ""
         };
@@ -104,15 +104,15 @@ public sealed partial class MainPage : Page
             0 => "设置应用程序的基本选项",
             1 => "添加应用并设置全局快捷键",
             2 => "配置 AI 并管理已创建的技能",
-            3 => "管理小工具，添加到启动台快速访问",
-            4 => "管理输入法自动切换规则和查看当前状态",
+            3 => "管理输入法自动切换规则和查看当前状态",
+            4 => "管理小工具，添加到启动台快速访问",
             5 => "版本信息和项目链接",
             _ => ""
         };
 
         if (index == 2)
             PopulateAISettings();
-        else if (index == 4)
+        else if (index == 3)
             PopulateImePanel();
     }
 

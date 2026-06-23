@@ -82,19 +82,19 @@
                 </ListViewItem>
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE916;" FontSize="16"
-                                  Foreground="{ThemeResource AccentBlue}"
+                        <FontIcon Glyph="&#xE765;" FontSize="16"
+                                  Foreground="{ThemeResource IconGreen}"
                                   VerticalAlignment="Center" />
-                        <TextBlock Text="小工具" FontSize="15"
+                        <TextBlock Text="输入法状态" FontSize="15"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </ListViewItem>
                 <ListViewItem>
                     <StackPanel Orientation="Horizontal" Spacing="10">
-                        <FontIcon Glyph="&#xE96C;" FontSize="16"
-                                  Foreground="{ThemeResource IconGreen}"
+                        <FontIcon Glyph="&#xE916;" FontSize="16"
+                                  Foreground="{ThemeResource AccentBlue}"
                                   VerticalAlignment="Center" />
-                        <TextBlock Text="输入法状态管理" FontSize="15"
+                        <TextBlock Text="小工具" FontSize="15"
                                    VerticalAlignment="Center" />
                     </StackPanel>
                 </ListViewItem>
