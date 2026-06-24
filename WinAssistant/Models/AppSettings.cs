@@ -18,10 +18,10 @@ public class AppSettings
     public string AiChatModel { get; set; } = "qwen-plus";
     public string AiEmbeddingModel { get; set; } = "text-embedding-v3";
 
-    // 输入法管理
-    public List<ImeRule> ImeRules { get; set; } = [];
-    public bool IsImeToastEnabled { get; set; } = true;
-    public bool IsImeAutoSwitchEnabled { get; set; } = true;
+    // 输入法相关 Toast 提示
+    public bool IsCapsLockToastEnabled { get; set; } = true;
+    public bool IsCnEnToastEnabled { get; set; } = true;
+    public bool IsImeSwitchToastEnabled { get; set; } = true;
 
     // 主题模式：0=跟随系统, 1=浅色, 2=深色
     public int ThemeMode { get; set; } = 0;

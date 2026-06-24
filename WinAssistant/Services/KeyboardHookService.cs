@@ -120,7 +120,8 @@ public class KeyboardHookService : IDisposable
                 // 改为内部翻转（每次按 = 切换一次状态）。
                 _lastCapsState = !_lastCapsState;
                 var msg = _lastCapsState ? "开启 大写锁定" : "关闭 大写锁定";
-                App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("", msg));
+                if (App.SettingsService.Load().IsCapsLockToastEnabled)
+                    App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("", msg));
                 return CallNextHookEx(_hookId, nCode, wParam, lParam);
             }
 

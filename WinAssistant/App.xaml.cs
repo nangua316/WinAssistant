@@ -159,7 +159,10 @@ public partial class App : Application
         // 输入法切换监控（Win+Space / Ctrl+Shift / Alt+Shift）
         TsfImeMonitorService.ImeProfileChanged += name =>
             DispatcherQueue.TryEnqueue(() =>
-                HotKeyToast.Show("输入法", name));
+            {
+                if (SettingsService.Load().IsImeSwitchToastEnabled)
+                    HotKeyToast.Show("输入法", name);
+            });
         KeyboardHookService.WinSpaceDetected += () =>
         {
             ImeService.ClearImeChangeEvent();

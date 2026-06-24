@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using WinAssistant.Helpers;
@@ -64,15 +65,43 @@ public class ImeService : IDisposable
     private const uint KLF_NOTELLSHELL = 0x00000080;
     private const uint KLF_SETFORPROCESS = 0x00000100;
 
+    // ActivateKeyboardLayout flags
+    private const uint KLF_RESET = 0x40000000;
+
+    // TSF profile activation flags
+    private const uint TF_PROFILETYPE_INPUTPROCESSOR = 0x0001;
+    private const uint TF_PROFILETYPE_KEYBOARDLAYOUT = 0x0002;
+    private const uint TF_IPPMF_FORPROCESS = 0x00000001;
+    private const uint TF_IPPMF_FORSESSION = 0x00000002;
+    private const uint TF_IPPMF_DONTCARECURRENTINPUTLANGUAGE = 0x00000010;
+
+    // COM CLSIDs/IIDs
+    private static readonly Guid CLSID_TF_ThreadMgr = new("529A9E6B-6587-4F23-AB9E-9C7D683E3C50");
+    private static readonly Guid CLSID_TF_InputProcessorProfiles = new("33C53A50-F456-4884-B049-85FD643ECFED");
+    private static readonly Guid IID_ITfInputProcessorProfileMgr = new("71C6E74C-0F28-11D8-A82A-00065B84435C");
+    private static readonly Guid IID_ITfThreadMgr = new("AA80E801-2021-11D2-93E0-0060B067B86E");
+    private static readonly Guid IID_ITfCompartmentMgr = new("7DCF57AC-18AD-438B-824D-979BFFB74B7C");
+
+    // TSF predefined compartments (used for CN/EN mode detection/toggling)
+    private static readonly Guid GUID_COMPARTMENT_KEYBOARD_OPENCLOSE = new("58273AAD-01BB-4164-95C6-755BA0B5162D");
+    private static readonly Guid GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION = new("CCF05DD8-4A87-11D7-A6E2-00065B84435C");
+
+    // GUID_TFCAT_TIP_KEYBOARD — used with GetActiveProfile to query the active keyboard TIP
+    private static readonly Guid GUID_TFCAT_TIP_KEYBOARD = new("34745C63-B2F0-4784-8B67-5E12C8701A31");
+
     // Window messages
     private const uint WM_INPUTLANGCHANGEREQUEST = 0x0050;
     private const uint WM_IME_CONTROL = 0x0283;
+    private const uint WM_IME_KEYDOWN = 0x0290;
+    private const uint WM_IME_KEYUP = 0x0291;
     private static readonly nint IMC_GETCONVERSIONSTATUS = 1;
+    private static readonly nint IMC_SETCONVERSIONSTATUS = 2;
 
     // IME conversion mode flags
     private const uint IME_CMODE_ALPHANUMERIC = 0x0000;
     private const uint IME_CMODE_NATIVE = 0x0001;
     private const uint IME_CMODE_FULLSHAPE = 0x0008;
+    private const uint IME_CMODE_ROMAN = 0x0010;
 
     // Keyboard layout name length
     private const int KL_NAMELENGTH = 9;
@@ -155,15 +184,6 @@ public class ImeService : IDisposable
     }
 
     /// <summary>
-    /// 重新加载规则（从当前设置）。
-    /// </summary>
-    public void ReloadRules()
-    {
-        // Rules are loaded on-demand from settings
-        Logger.Log("IME", "Rules reloaded");
-    }
-
-    /// <summary>
     /// 获取当前输入法状态信息（UI 线程安全）。
     /// </summary>
     public ImeStatusInfo GetCurrentStatus()
@@ -200,10 +220,21 @@ public class ImeService : IDisposable
         var himc = ImmGetContext(hwnd);
         if (himc != nint.Zero)
         {
-            ImmGetConversionStatus(himc, out uint conv, out _);
-            info.IsChineseMode = (conv & IME_CMODE_NATIVE) != 0;
-            info.IsFullWidth = (conv & IME_CMODE_FULLSHAPE) != 0;
+            if (ImmGetConversionStatus(himc, out uint conv, out _))
+            {
+                info.IsChineseMode = (conv & IME_CMODE_NATIVE) != 0;
+                info.IsFullWidth = (conv & IME_CMODE_FULLSHAPE) != 0;
+                Logger.Log("IME", $"GetCurrentStatus: HIMC ok conv=0x{conv:X8}");
+            }
+            else
+            {
+                Logger.Log("IME", "GetCurrentStatus: ImmGetConversionStatus failed");
+            }
             ImmReleaseContext(hwnd, himc);
+        }
+        else
+        {
+            Logger.Log("IME", "GetCurrentStatus: no HIMC (TSF-only IME)");
         }
 
         // CapsLock
@@ -221,24 +252,6 @@ public class ImeService : IDisposable
     }
 
     /// <summary>
-    /// 立即对指定窗口应用匹配的规则（手动触发）。
-    /// </summary>
-    public void ApplyRuleForWindow(nint hwnd)
-    {
-        ProcessForegroundChange(hwnd);
-    }
-
-    /// <summary>
-    /// 对指定窗口应用指定的规则（手动触发，用于"立即应用"按钮）。
-    /// </summary>
-    public void ApplySpecificRule(ImeRule rule, nint hwnd)
-    {
-        if (!_running) return;
-        if (hwnd == nint.Zero || rule == null) return;
-        ApplyRule(rule, hwnd);
-    }
-
-    /// <summary>
     /// 清除最近一次 EVENT_IME_CHANGE 事件的时间戳（Win+Space 切换输入法后调用，防止误触 CN/EN toast）。
     /// </summary>
     public void ClearImeChangeEvent() => Interlocked.Exchange(ref _imeChangeTimeTicks, 0);
@@ -251,7 +264,7 @@ public class ImeService : IDisposable
     public void OnShiftToggled()
     {
         if (!_running) return;
-        if (!App.SettingsService.Load().IsImeToastEnabled) return;
+        var settings = App.SettingsService.Load();
         // 不检查 _suppressChangeCounter：Shift CN/EN 切换是用户主动行为，不应被抑制
 
         var hwnd = GetForegroundWindow();
@@ -282,8 +295,9 @@ public class ImeService : IDisposable
                 _lastConversion = conv;
                 bool cn = (conv & IME_CMODE_NATIVE) != 0;
                 Logger.Log("IME", $"IMM32 shift: CN/EN → {(cn ? "中文" : "英文")}");
-                App.DispatcherQueue.TryEnqueue(() =>
-                    HotKeyToast.Show(cn ? "中文" : "英文"));
+                if (settings.IsCnEnToastEnabled)
+                    App.DispatcherQueue.TryEnqueue(() =>
+                        HotKeyToast.Show(cn ? "中文" : "英文"));
                 return;
             }
 
@@ -318,8 +332,9 @@ public class ImeService : IDisposable
         _lastConversion ^= IME_CMODE_NATIVE; // flip the native bit
         bool isChinese = (_lastConversion & IME_CMODE_NATIVE) != 0;
         Logger.Log("IME", $"TSF track: CN/EN → {(isChinese ? "中文" : "英文")}");
-        App.DispatcherQueue.TryEnqueue(() =>
-            HotKeyToast.Show(isChinese ? "中文" : "英文"));
+        if (settings.IsCnEnToastEnabled)
+            App.DispatcherQueue.TryEnqueue(() =>
+                HotKeyToast.Show(isChinese ? "中文" : "英文"));
     }
 
     /// <summary>
@@ -328,11 +343,7 @@ public class ImeService : IDisposable
     public void CheckImeStateChanged()
     {
         if (!_running) return;
-        if (!App.SettingsService.Load().IsImeToastEnabled)
-        {
-            Logger.Log("IME", "Toast disabled in settings");
-            return;
-        }
+        var settings = App.SettingsService.Load();
         if (_suppressChangeCounter > 0) return;
 
         var hwnd = GetForegroundWindow();
@@ -371,7 +382,8 @@ public class ImeService : IDisposable
                     var klid = GetKlidFromHkl(currentHkl);
                     var name = GetLayoutDisplayName(klid);
                     Logger.Log("IME", $"EVENT_IME_CHANGE: HKL changed → {name}");
-                    App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("输入法", name));
+                    if (settings.IsImeSwitchToastEnabled)
+                        App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("输入法", name));
                     return;
                 }
 
@@ -381,8 +393,9 @@ public class ImeService : IDisposable
                     _lastConversion = tsfConv;
                     bool isChinese = (tsfConv & IME_CMODE_NATIVE) != 0;
                     Logger.Log("IME", $"EVENT_IME_CHANGE: CN/EN change → {(isChinese ? "中文" : "英文")}");
-                    App.DispatcherQueue.TryEnqueue(() =>
-                        HotKeyToast.Show(isChinese ? "中文" : "英文"));
+                    if (settings.IsCnEnToastEnabled)
+                        App.DispatcherQueue.TryEnqueue(() =>
+                            HotKeyToast.Show(isChinese ? "中文" : "英文"));
                     return;
                 }
 
@@ -392,8 +405,9 @@ public class ImeService : IDisposable
                     _lastConversion = tsfConv;
                     bool isFull = (tsfConv & IME_CMODE_FULLSHAPE) != 0;
                     Logger.Log("IME", $"EVENT_IME_CHANGE: full/half change → {(isFull ? "全角" : "半角")}");
-                    App.DispatcherQueue.TryEnqueue(() =>
-                        HotKeyToast.Show(isFull ? "全角" : "半角"));
+                    if (settings.IsCnEnToastEnabled)
+                        App.DispatcherQueue.TryEnqueue(() =>
+                            HotKeyToast.Show(isFull ? "全角" : "半角"));
                     return;
                 }
 
@@ -408,7 +422,8 @@ public class ImeService : IDisposable
                 _lastHkl = currentHkl;
                 var klid = GetKlidFromHkl(currentHkl);
                 var name = GetLayoutDisplayName(klid);
-                App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("输入法", name));
+                if (settings.IsImeSwitchToastEnabled)
+                    App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("输入法", name));
             }
             return;
         }
@@ -436,7 +451,8 @@ public class ImeService : IDisposable
             var klid = GetKlidFromHkl(currentHkl);
             var name = GetLayoutDisplayName(klid);
             Logger.Log("IME", $"IMM32: HKL changed → {name}");
-            App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("输入法", name));
+            if (settings.IsImeSwitchToastEnabled)
+                App.DispatcherQueue.TryEnqueue(() => HotKeyToast.Show("输入法", name));
             return;
         }
 
@@ -446,8 +462,9 @@ public class ImeService : IDisposable
             _lastConversion = conv;
             bool isChinese = (conv & IME_CMODE_NATIVE) != 0;
             Logger.Log("IME", $"IMM32: CN/EN change → {(isChinese ? "中文" : "英文")}");
-            App.DispatcherQueue.TryEnqueue(() =>
-                HotKeyToast.Show(isChinese ? "中文" : "英文"));
+            if (settings.IsCnEnToastEnabled)
+                App.DispatcherQueue.TryEnqueue(() =>
+                    HotKeyToast.Show(isChinese ? "中文" : "英文"));
             return;
         }
 
@@ -457,8 +474,9 @@ public class ImeService : IDisposable
             _lastConversion = conv;
             bool isFull = (conv & IME_CMODE_FULLSHAPE) != 0;
             Logger.Log("IME", $"IMM32: full/half change → {(isFull ? "全角" : "半角")}");
-            App.DispatcherQueue.TryEnqueue(() =>
-                HotKeyToast.Show(isFull ? "全角" : "半角"));
+            if (settings.IsCnEnToastEnabled)
+                App.DispatcherQueue.TryEnqueue(() =>
+                    HotKeyToast.Show(isFull ? "全角" : "半角"));
             return;
         }
 
@@ -471,8 +489,9 @@ public class ImeService : IDisposable
     public void SuppressChangeDetection()
     {
         Interlocked.Increment(ref _suppressChangeCounter);
-        // Auto-release after 500ms
-        _ = Task.Delay(500).ContinueWith(_ =>
+        // Auto-release after a longer window so that polling-based activation and
+        // mode switching do not trigger our own toast feedback.
+        _ = Task.Delay(2000).ContinueWith(_ =>
         {
             if (Interlocked.Decrement(ref _suppressChangeCounter) < 0)
                 Interlocked.Exchange(ref _suppressChangeCounter, 0);
@@ -528,6 +547,27 @@ public class ImeService : IDisposable
         }
         catch { }
 
+        // 3. Enumerate all installed layouts from HKLM so layouts that are installed
+        //    but not currently loaded (e.g., WeType, Microsoft Pinyin before first use)
+        //    are still selectable.
+        try
+        {
+            using var hklmKey = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SYSTEM\CurrentControlSet\Control\Keyboard Layouts");
+            if (hklmKey != null)
+            {
+                var seenKlids = new HashSet<string>(result.Select(r => r.Klid));
+                foreach (var subKeyName in hklmKey.GetSubKeyNames())
+                {
+                    if (subKeyName.Length != 8) continue;
+                    if (!seenKlids.Add(subKeyName)) continue;
+                    var name = GetLayoutDisplayName(subKeyName);
+                    result.Add((subKeyName, name));
+                }
+            }
+        }
+        catch { }
+
         // Sort: Chinese layouts first, then others
         result.Sort((a, b) =>
         {
@@ -541,15 +581,91 @@ public class ImeService : IDisposable
     }
 
     /// <summary>
-    /// 返回匹配前台窗口进程的第一条启用规则（供 UI 查询当前匹配状态）。
+    /// 枚举当前系统已启用的 TSF 输入法（精确到输入法，如微软拼音、微信输入法）。
     /// </summary>
-    public static ImeRule? GetMatchingRule(string processName)
+    public static List<(string Id, string Name, short LangId, Guid Clsid, Guid Profile)> EnumerateInputMethods()
     {
-        if (string.IsNullOrEmpty(processName)) return null;
-        var settings = App.SettingsService.Load();
-        return settings.ImeRules.FirstOrDefault(r =>
-            r.IsEnabled &&
-            string.Equals(r.ProcessName, processName, StringComparison.OrdinalIgnoreCase));
+        var result = new List<(string Id, string Name, short LangId, Guid Clsid, Guid Profile)>();
+        var hr = TF_CreateInputProcessorProfiles(out var profiles);
+        if (hr != 0)
+        {
+            Logger.Log("IME", $"TF_CreateInputProcessorProfiles failed hr=0x{hr:X8}");
+            return result;
+        }
+
+        try
+        {
+            hr = profiles.GetLanguageList(out var langPtr, out var count);
+            if (hr != 0)
+            {
+                Logger.Log("IME", $"GetLanguageList failed hr=0x{hr:X8}");
+                return result;
+            }
+
+            var langIds = new short[count];
+            for (int i = 0; i < count; i++)
+                langIds[i] = Marshal.ReadInt16(langPtr, i * sizeof(short));
+            Marshal.FreeCoTaskMem(langPtr);
+
+            foreach (var langId in langIds)
+            {
+                hr = profiles.EnumLanguageProfiles(langId, out var enumObj);
+                if (hr != 0) continue;
+
+                var enumProfiles = (IEnumTfLanguageProfiles)enumObj;
+                try
+                {
+                    var profileArray = new TF_LANGUAGEPROFILE[1];
+                    while (enumProfiles.Next(1, profileArray, out var fetched) == 0 && fetched > 0)
+                    {
+                        var p = profileArray[0];
+                        if (profiles.IsEnabledLanguageProfile(ref p.clsid, p.langid, ref p.guidProfile, out var enabled) != 0 || !enabled)
+                            continue;
+
+                        if (profiles.GetLanguageProfileDescription(ref p.clsid, p.langid, ref p.guidProfile, out var descPtr) != 0)
+                            continue;
+
+                        var name = Marshal.PtrToStringBSTR(descPtr);
+                        Marshal.FreeBSTR(descPtr);
+
+                        var id = FormatInputMethodId(p.langid, p.clsid, p.guidProfile);
+                        result.Add((id, name, p.langid, p.clsid, p.guidProfile));
+                    }
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(enumProfiles);
+                }
+            }
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(profiles);
+        }
+
+        result.Sort((a, b) =>
+        {
+            bool aChinese = a.LangId is 0x0804 or 0x0C04 or 0x0404 or 0x1004 or 0x1404;
+            bool bChinese = b.LangId is 0x0804 or 0x0C04 or 0x0404 or 0x1004 or 0x1404;
+            if (aChinese != bChinese) return aChinese ? -1 : 1;
+            return string.Compare(a.Name, b.Name, StringComparison.Ordinal);
+        });
+
+        return result;
+    }
+
+    public static string FormatInputMethodId(short langId, Guid clsid, Guid profile)
+        => $"{langId:X4}:{clsid:N}:{profile:N}";
+
+    public static (short LangId, Guid Clsid, Guid Profile)? ParseInputMethodId(string id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        var parts = id.Split(':');
+        if (parts.Length != 3) return null;
+        if (!short.TryParse(parts[0], NumberStyles.HexNumber, null, out var langId)) return null;
+        if (!Guid.TryParse(parts[1], out var clsid)) return null;
+        if (!Guid.TryParse(parts[2], out var profile)) return null;
+        return (langId, clsid, profile);
     }
 
     /// <summary>获取前台窗口句柄（供 UI 使用）。</summary>
@@ -651,89 +767,148 @@ public class ImeService : IDisposable
         if (!_running) return;
         if (hwnd == nint.Zero) return;
 
-        // Get process name
         if (!QueryProcessName(hwnd, out var processName) || string.IsNullOrEmpty(processName))
             return;
 
-        // Same-process check: don't switch between windows of the same program
-        if (string.Equals(processName, _lastProcessName, StringComparison.OrdinalIgnoreCase))
+        // Keep basic tracking so state detection stays consistent across window switches,
+        // but no longer perform any automatic input method switching.
+        if (!string.Equals(processName, _lastProcessName, StringComparison.OrdinalIgnoreCase))
         {
-            _lastForegroundHwnd = hwnd;
-            return;
+            _lastProcessName = processName;
+            CaptureCurrentImeState();
         }
 
         _lastForegroundHwnd = hwnd;
-        _lastProcessName = processName;
-
-        // Try to find a matching rule
-        var settings = App.SettingsService.Load();
-        if (!settings.IsImeAutoSwitchEnabled) return;
-
-        var rule = settings.ImeRules.FirstOrDefault(r =>
-            r.IsEnabled &&
-            string.Equals(r.ProcessName, processName, StringComparison.OrdinalIgnoreCase));
-
-        if (rule == null) return;
-
-        Logger.Log("IME", $"Match: {processName} -> {rule.ImeDisplayName} (Klid={rule.Klid})");
-        ApplyRule(rule, hwnd);
     }
 
-    private void ApplyRule(ImeRule rule, nint hwnd)
+    /// <summary>
+    /// Create an ITfInputProcessorProfileMgr instance via CoCreateInstance.
+    /// Note: this interface lives on CLSID_TF_InputProcessorProfiles, not on TF_ThreadMgr.
+    /// </summary>
+    private static ITfInputProcessorProfileMgr? CreateProfileMgr()
     {
         try
         {
-            // Suppress change detection during our own switches
-            SuppressChangeDetection();
-
-            // 1. Switch keyboard layout
-            if (!string.IsNullOrEmpty(rule.Klid))
+            // CLSCTX_INPROC_SERVER = 1
+            var clsid = CLSID_TF_InputProcessorProfiles;
+            var iid = IID_ITfInputProcessorProfileMgr;
+            var hr = CoCreateInstance(
+                ref clsid,
+                nint.Zero,
+                1,
+                ref iid,
+                out var obj);
+            if (hr != 0 || obj == null)
             {
-                var hkl = LoadKeyboardLayoutW(rule.Klid, KLF_ACTIVATE | KLF_NOTELLSHELL);
-                if (hkl != nint.Zero)
-                {
-                    // Request the foreground window to switch input
-                    PostMessageW(hwnd, WM_INPUTLANGCHANGEREQUEST, nint.Zero, hkl);
-                }
+                Logger.Log("IME", $"CoCreateInstance ITfInputProcessorProfileMgr failed hr=0x{hr:X8}");
+                return null;
             }
-
-            // 2. Set Chinese/English mode within the IME
-            var himc = ImmGetContext(hwnd);
-            if (himc != nint.Zero)
-            {
-                ImmGetConversionStatus(himc, out uint conv, out uint sent);
-
-                if (rule.UseEnglishMode)
-                    conv &= ~IME_CMODE_NATIVE;
-                else
-                    conv |= IME_CMODE_NATIVE;
-
-                if (rule.UseFullWidth)
-                    conv |= IME_CMODE_FULLSHAPE;
-                else
-                    conv &= ~IME_CMODE_FULLSHAPE;
-
-                ImmSetConversionStatus(himc, conv, sent);
-                ImmReleaseContext(hwnd, himc);
-            }
-
-            // 3. Set CapsLock — SendInput 需要消息队列线程，调度到 UI 线程执行
-            bool currentCaps = (GetKeyState(0x14) & 1) == 1;
-            if (rule.CapsLockState != currentCaps)
-            {
-                App.DispatcherQueue.TryEnqueue(SimulateCapsLockPress);
-            }
-
-            // Update tracked state
-            CaptureCurrentImeState();
+            return (ITfInputProcessorProfileMgr)obj;
         }
         catch (Exception ex)
         {
-            Logger.Log("IME", $"ApplyRule error: {ex.Message}");
+            Logger.Log("IME", $"CreateProfileMgr failed: {ex.Message}");
+            return null;
         }
     }
 
-    #endregion
+    /// <summary>
+    /// Query the HKL associated with a TSF input processor profile.
+    /// Falls back to the substitute HKL if the primary HKL is zero.
+    /// </summary>
+    private static nint GetProfileHkl(short langId, Guid clsid, Guid profile)
+    {
+        try
+        {
+            var profileMgr = CreateProfileMgr();
+            if (profileMgr == null) return nint.Zero;
+
+            int hr = profileMgr.GetProfile(
+                TF_PROFILETYPE_INPUTPROCESSOR,
+                langId,
+                clsid,
+                profile,
+                nint.Zero,
+                out var p);
+            if (hr != 0)
+            {
+                Logger.Log("IME", $"GetProfile failed hr=0x{hr:X8}");
+                return nint.Zero;
+            }
+
+            var hkl = p.hkl != nint.Zero ? p.hkl : p.hklSubstitute;
+            Logger.Log("IME", $"GetProfile hkl=0x{(ulong)p.hkl:X8} hklSubstitute=0x{(ulong)p.hklSubstitute:X8} selected=0x{(ulong)hkl:X8}");
+            return hkl;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IME", $"GetProfileHkl error: {ex.Message}");
+            return nint.Zero;
+        }
+    }
+
+    /// <summary>
+    /// Attempt to activate a TSF keyboard-layout profile by language id.
+    /// This is a best-effort fallback when ActivateKeyboardLayout fails for pure-TSF IMEs.
+    /// </summary>
+    private static bool TryActivateTsfProfile(short langId)
+    {
+        try
+        {
+            var profileMgr = CreateProfileMgr();
+            if (profileMgr == null) return false;
+
+            // TF_IPPMF_FORPROCESS is the only flag combination that succeeds on this system.
+            // It affects the WinAssistant process; we pair it with PostInputLanguageChange
+            // to actually switch the foreground window's layout.
+            int hr = profileMgr.ActivateProfile(
+                TF_PROFILETYPE_KEYBOARDLAYOUT,
+                langId,
+                Guid.Empty,
+                Guid.Empty,
+                nint.Zero,
+                TF_IPPMF_FORPROCESS);
+            Logger.Log("IME", $"TSF ActivateProfile langid=0x{langId:X4} hr=0x{hr:X8}");
+            return hr >= 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IME", $"TSF ActivateProfile error: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Attempt to activate a specific TSF input method profile in the current process.
+    /// FORPROCESS only affects the calling process; callers pair this with
+    /// ActivateKeyboardLayout / PostInputLanguageChange to propagate to the target window.
+    /// </summary>
+    private static bool TryActivateTsfInputMethod(short langId, Guid clsid, Guid profile, nint _)
+    {
+        try
+        {
+            var profileMgr = CreateProfileMgr();
+            if (profileMgr == null) return false;
+
+            int hr = profileMgr.ActivateProfile(
+                TF_PROFILETYPE_INPUTPROCESSOR,
+                langId,
+                clsid,
+                profile,
+                nint.Zero,
+                TF_IPPMF_FORPROCESS);
+
+            Logger.Log("IME", $"ActivateProfile clsid={clsid} profile={profile} langid=0x{langId:X4} hr=0x{hr:X8}");
+            return hr >= 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IME", $"TSF ActivateProfile error: {ex.Message}");
+            return false;
+        }
+    }
+
+        #endregion
 
     #region IME state helpers
 
@@ -756,20 +931,162 @@ public class ImeService : IDisposable
         _lastCapsState = (GetKeyState(0x14) & 1) == 1;
     }
 
-    private void SimulateCapsLockPress()
+    /// <summary>
+    /// Set the TSF conversion mode compartment directly.
+    /// TSF compartments are strictly per-thread; when the target window belongs to
+    /// another process we cannot affect its IME state from here.  In that case we
+    /// return false so the caller falls back to key simulation.
+    /// </summary>
+    private static bool SetTsfConversionMode(bool englishMode, nint hwnd)
     {
-        var inputs = new INPUT[2];
+        try
+        {
+            uint currentThreadId = GetCurrentThreadId();
+            uint targetThreadId = hwnd != nint.Zero
+                ? GetWindowThreadProcessId(hwnd, out _)
+                : currentThreadId;
 
-        // Key down
-        inputs[0].type = 1; // INPUT_KEYBOARD
-        inputs[0].ki.wVk = 0x14; // VK_CAPITAL
+            // TSF compartment operations only affect the calling thread.
+            if (targetThreadId != 0 && targetThreadId != currentThreadId)
+            {
+                Logger.Log("IME", "SetTsfConversionMode: target is cross-thread, skipping TSF compartment");
+                return false;
+            }
 
-        // Key up
-        inputs[1].type = 1; // INPUT_KEYBOARD
-        inputs[1].ki.wVk = 0x14;
-        inputs[1].ki.dwFlags = 2; // KEYEVENTF_KEYUP
+            var threadMgrObj = Activator.CreateInstance(Type.GetTypeFromCLSID(CLSID_TF_ThreadMgr)!);
+            if (threadMgrObj is not ITfThreadMgr threadMgr)
+            {
+                Logger.Log("IME", "SetTsfConversionMode: failed to create ITfThreadMgr");
+                return false;
+            }
 
-        SendInput(2, inputs, Marshal.SizeOf<INPUT>());
+            // Try the focused context's compartment first; some IMEs (e.g. WeType)
+            // ignore the global compartment and only react to per-context changes.
+            ITfCompartmentMgr? compartmentMgr = null;
+            try
+            {
+                if (threadMgr.GetFocus(out var docMgr) == 0 && docMgr != null)
+                {
+                    if (docMgr.GetTop(out var context) == 0 && context != null)
+                    {
+                        compartmentMgr = context as ITfCompartmentMgr;
+                        if (compartmentMgr != null)
+                        {
+                            Logger.Log("IME", "SetTsfConversionMode: using focused context compartment");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("IME", $"SetTsfConversionMode: context compartment probe error: {ex.Message}");
+            }
+
+            // Fall back to the global compartment.
+            if (compartmentMgr == null)
+            {
+                var hr = threadMgr.GetGlobalCompartment(out compartmentMgr);
+                if (hr != 0)
+                {
+                    Logger.Log("IME", $"SetTsfConversionMode: GetGlobalCompartment failed hr=0x{hr:X8}");
+                    return false;
+                }
+                Logger.Log("IME", "SetTsfConversionMode: using global compartment");
+            }
+
+            var compartmentGuid = GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION;
+            var hr2 = compartmentMgr.GetCompartment(ref compartmentGuid, out var compartment);
+            if (hr2 != 0 || compartment == null)
+            {
+                Logger.Log("IME", $"SetTsfConversionMode: GetCompartment failed hr=0x{hr2:X8}");
+                return false;
+            }
+
+            // 0 = alphanumeric/English, 1 = native/Chinese
+            object value = englishMode ? 0 : 1;
+            hr2 = compartment.SetValue(0, ref value);
+            if (hr2 != 0)
+            {
+                Logger.Log("IME", $"SetTsfConversionMode: SetValue failed hr=0x{hr2:X8}");
+                return false;
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IME", $"SetTsfConversionMode error: {ex.Message}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Read the current TSF conversion mode compartment value.
+    /// Returns null if the value cannot be read; 0 for English/alphanumeric; 1 for Chinese/native.
+    /// When the target window lives in another process this returns null because TSF
+    /// compartments are thread-local and cannot be read across process boundaries.
+    /// </summary>
+    private static int? GetTsfConversionMode(nint hwnd)
+    {
+        try
+        {
+            uint currentThreadId = GetCurrentThreadId();
+            uint targetThreadId = hwnd != nint.Zero
+                ? GetWindowThreadProcessId(hwnd, out _)
+                : currentThreadId;
+
+            if (targetThreadId != 0 && targetThreadId != currentThreadId)
+            {
+                Logger.Log("IME", "GetTsfConversionMode: target is cross-thread, cannot read TSF compartment");
+                return null;
+            }
+
+            var threadMgrObj = Activator.CreateInstance(Type.GetTypeFromCLSID(CLSID_TF_ThreadMgr)!);
+            if (threadMgrObj is not ITfThreadMgr threadMgr)
+                return null;
+
+            // Prefer the focused context's compartment for accuracy.
+            ITfCompartmentMgr? compartmentMgr = null;
+            try
+            {
+                if (threadMgr.GetFocus(out var docMgr) == 0 && docMgr != null)
+                {
+                    if (docMgr.GetTop(out var context) == 0 && context != null)
+                    {
+                        compartmentMgr = context as ITfCompartmentMgr;
+                    }
+                }
+            }
+            catch { }
+
+            if (compartmentMgr == null)
+            {
+                if (threadMgr.GetGlobalCompartment(out compartmentMgr) != 0 || compartmentMgr == null)
+                    return null;
+            }
+
+            var compartmentGuid = GUID_COMPARTMENT_KEYBOARD_INPUTMODE_CONVERSION;
+            if (compartmentMgr.GetCompartment(ref compartmentGuid, out var compartment) != 0 || compartment == null)
+                return null;
+
+            if (compartment.GetValue(out var value) != 0 || value == null)
+                return null;
+
+            if (value is int i) return i;
+            if (value is short s) return s;
+            if (value is uint u) return (int)u;
+            if (value is ushort us) return us;
+            if (value is long l) return (int)l;
+            if (value is byte b) return b;
+            if (value is bool bl) return bl ? 1 : 0;
+            if (int.TryParse(value.ToString(), out var parsed)) return parsed;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("IME", $"GetTsfConversionMode error: {ex.Message}");
+            return null;
+        }
     }
 
     #endregion
@@ -804,18 +1121,76 @@ public class ImeService : IDisposable
 
     private static string GetKlidFromHkl(nint hkl)
     {
-        // HKL layout ID is in the low word of the HKL value
-        var klid = new char[KL_NAMELENGTH];
-        var result = GetKeyboardLayoutNameW(klid);
-        if (result > 0)
-        {
-            var s = new string(klid).TrimEnd('\0');
-            if (!string.IsNullOrEmpty(s)) return s;
-        }
-
-        // Fallback: construct from HKL low word
+        // GetKeyboardLayoutNameW only returns the current thread's layout, not the given HKL.
+        // For standard keyboard layouts the language id is in the low word of the HKL.
         var langId = (ushort)((nuint)hkl & 0xFFFF);
         return $"0000{langId:X4}";
+    }
+
+    private static nint ActivateKeyboardLayoutForWindow(nint hwnd, nint hkl)
+    {
+        var targetThreadId = GetWindowThreadProcessId(hwnd, out _);
+        var currentThreadId = GetCurrentThreadId();
+
+        bool attached = false;
+        if (targetThreadId != currentThreadId)
+        {
+            attached = AttachThreadInput(currentThreadId, targetThreadId, true);
+        }
+
+        try
+        {
+            return ActivateKeyboardLayout(hkl, 0);
+        }
+        finally
+        {
+            if (attached)
+                AttachThreadInput(currentThreadId, targetThreadId, false);
+        }
+    }
+
+    /// <summary>
+    /// Posts WM_INPUTLANGCHANGEREQUEST to the focused window in the target thread.
+    /// This is the preferred, non-blocking way to switch input language for another window.
+    /// </summary>
+    private static void PostInputLanguageChange(nint hwnd, nint hkl)
+    {
+        var targetThreadId = GetWindowThreadProcessId(hwnd, out _);
+        var currentThreadId = GetCurrentThreadId();
+
+        bool attached = false;
+        if (targetThreadId != currentThreadId)
+        {
+            attached = AttachThreadInput(currentThreadId, targetThreadId, true);
+        }
+
+        try
+        {
+            var focusHwnd = attached ? GetFocus() : hwnd;
+            if (focusHwnd == nint.Zero) focusHwnd = hwnd;
+            PostMessageW(focusHwnd, WM_INPUTLANGCHANGEREQUEST, nint.Zero, hkl);
+            Logger.Log("IME", $"PostMessage WM_INPUTLANGCHANGEREQUEST hkl=0x{(ulong)hkl:X8} focus=0x{(ulong)focusHwnd:X8}");
+        }
+        finally
+        {
+            if (attached)
+                AttachThreadInput(currentThreadId, targetThreadId, false);
+        }
+    }
+
+    private static bool IsEnglishLayout(string klid)
+    {
+        if (string.IsNullOrEmpty(klid) || klid.Length < 8) return false;
+        try
+        {
+            var langId = Convert.ToUInt16(klid[4..], 16);
+            // English language IDs in Windows use primary language 0x09.
+            return (langId & 0xFF) == 0x09;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static string GetLayoutDisplayName(string klid)
@@ -919,6 +1294,13 @@ public class ImeService : IDisposable
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
 
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetWindowTextW(nint hWnd, StringBuilder lpString, int nMaxCount);
 
@@ -942,11 +1324,262 @@ public class ImeService : IDisposable
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern nint LoadKeyboardLayoutW(string pwszKLID, uint Flags);
 
+    [DllImport("user32.dll")]
+    private static extern nint ActivateKeyboardLayout(nint hkl, uint Flags);
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetKeyboardLayoutNameW(char[] pwszKLID);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool PostMessageW(nint hWnd, uint Msg, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, nint dwExtraInfo);
+
+    /// <summary>
+    /// TSF ThreadMgr interface. Used to obtain the global compartment manager.
+    /// </summary>
+    [ComImport, Guid("AA80E801-2021-11D2-93E0-0060B067B86E"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfThreadMgr
+    {
+        [PreserveSig]
+        int Activate(out int clientId);
+
+        [PreserveSig]
+        int Deactivate();
+
+        [PreserveSig]
+        int CreateDocumentMgr([MarshalAs(UnmanagedType.Interface)] out object docMgr);
+
+        [PreserveSig]
+        int EnumDocumentMgrs([MarshalAs(UnmanagedType.Interface)] out object enumDocMgrs);
+
+        [PreserveSig]
+        int GetFocus([MarshalAs(UnmanagedType.Interface)] out ITfDocumentMgr docMgr);
+
+        [PreserveSig]
+        int SetFocus([MarshalAs(UnmanagedType.Interface)] object docMgr);
+
+        [PreserveSig]
+        int AssociateFocus(nint hwnd, [MarshalAs(UnmanagedType.Interface)] object newDocMgr,
+            [MarshalAs(UnmanagedType.Interface)] out object prevDocMgr);
+
+        [PreserveSig]
+        int IsThreadFocus([MarshalAs(UnmanagedType.Bool)] out bool isFocus);
+
+        [PreserveSig]
+        int GetFunctionProvider(ref Guid classId, [MarshalAs(UnmanagedType.Interface)] out object funcProvider);
+
+        [PreserveSig]
+        int EnumFunctionProviders([MarshalAs(UnmanagedType.Interface)] out object enumProviders);
+
+        [PreserveSig]
+        int GetGlobalCompartment([MarshalAs(UnmanagedType.Interface)] out ITfCompartmentMgr compartmentMgr);
+    }
+
+    /// <summary>
+    /// TSF DocumentMgr interface. Used to access the focused input context.
+    /// </summary>
+    [ComImport, Guid("AA80E802-2021-11D2-93E0-0060B067B86E"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfDocumentMgr
+    {
+        [PreserveSig]
+        int CreateContext(uint ecClient, uint dwFlags, [MarshalAs(UnmanagedType.IUnknown)] object punk,
+            [MarshalAs(UnmanagedType.Interface)] out object ppic, out int ecTextStore);
+
+        [PreserveSig]
+        int Push([MarshalAs(UnmanagedType.Interface)] object pic);
+
+        [PreserveSig]
+        int Pop(uint dwFlags);
+
+        [PreserveSig]
+        int GetTop([MarshalAs(UnmanagedType.Interface)] out ITfContext ppic);
+
+        [PreserveSig]
+        int GetBase([MarshalAs(UnmanagedType.Interface)] out object ppic);
+
+        [PreserveSig]
+        int EnumContexts([MarshalAs(UnmanagedType.Interface)] out object ppEnum);
+    }
+
+    /// <summary>
+    /// TSF Context interface marker. We only need it to QueryInterface for ITfCompartmentMgr.
+    /// </summary>
+    [ComImport, Guid("D978C1F0-4AEB-11D3-9C3C-00C04F7ADFB5"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfContext
+    {
+    }
+
+    /// <summary>
+    /// TSF Compartment interface. Used to read/write TSF compartment values (e.g. CN/EN mode).
+    /// </summary>
+    [ComImport, Guid("BB08F7A9-607A-4384-8623-056892B64371"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfCompartment
+    {
+        [PreserveSig]
+        int SetValue(int tid, [MarshalAs(UnmanagedType.Struct)] ref object pvarValue);
+
+        [PreserveSig]
+        int GetValue([MarshalAs(UnmanagedType.Struct)] out object pvarValue);
+    }
+
+    /// <summary>
+    /// TSF CompartmentMgr interface. Obtained from ITfThreadMgr to access compartments.
+    /// </summary>
+    [ComImport, Guid("7DCF57AC-18AD-438B-824D-979BFFB74B7C"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfCompartmentMgr
+    {
+        [PreserveSig]
+        int GetCompartment(ref Guid rguid, [MarshalAs(UnmanagedType.Interface)] out ITfCompartment ppcomp);
+
+        [PreserveSig]
+        int ClearCompartment(int tid, ref Guid rguid);
+
+        [PreserveSig]
+        int EnumCompartments([MarshalAs(UnmanagedType.Interface)] out object ppEnum);
+    }
+
+    /// <summary>
+    /// TSF InputProcessorProfileMgr interface. Used to activate profiles and query
+    /// the active profile of any thread.
+    /// </summary>
+    [ComImport, Guid("71C6E74C-0F28-11D8-A82A-00065B84435C"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfInputProcessorProfileMgr
+    {
+        [PreserveSig]
+        int ActivateProfile(
+            uint dwProfileType,
+            short langid,
+            [MarshalAs(UnmanagedType.LPStruct)] Guid clsid,
+            [MarshalAs(UnmanagedType.LPStruct)] Guid guidProfile,
+            nint hkl,
+            uint dwFlags);
+
+        [PreserveSig]
+        int DeactivateProfile(
+            uint dwProfileType,
+            short langid,
+            [MarshalAs(UnmanagedType.LPStruct)] Guid clsid,
+            [MarshalAs(UnmanagedType.LPStruct)] Guid guidProfile,
+            nint hkl,
+            uint dwFlags);
+
+        [PreserveSig]
+        int GetProfile(
+            uint dwProfileType,
+            short langid,
+            [MarshalAs(UnmanagedType.LPStruct)] Guid clsid,
+            [MarshalAs(UnmanagedType.LPStruct)] Guid guidProfile,
+            nint hkl,
+            out TF_INPUTPROCESSORPROFILE profile);
+
+        [PreserveSig]
+        int EnumProfiles(short langid, [MarshalAs(UnmanagedType.Interface)] out object enumProfiles);
+
+        [PreserveSig]
+        int ReleaseCleanup();
+
+        // Windows 8+ addition; must be 6th slot in vtable.
+        [PreserveSig]
+        int GetActiveProfile(
+            [MarshalAs(UnmanagedType.LPStruct)] Guid catid,
+            out TF_INPUTPROCESSORPROFILE profile,
+            uint dwThreadId);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TF_LANGUAGEPROFILE
+    {
+        public Guid clsid;
+        public short langid;
+        public Guid catid;
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool fActive;
+        public Guid guidProfile;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TF_INPUTPROCESSORPROFILE
+    {
+        public uint dwProfileType;
+        public short langid;
+        public Guid clsid;
+        public Guid guidProfile;
+        public Guid catid;
+        public nint hklSubstitute;
+        public uint dwCaps;
+        public nint hkl;
+        public uint dwFlags;
+    }
+
+    /// <summary>
+    /// TSF InputProcessorProfiles interface. Used to enumerate installed input methods.
+    /// </summary>
+    [ComImport, Guid("1F02B6C5-7842-4EE6-8A0B-9A24183A95CA"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface ITfInputProcessorProfiles
+    {
+        [PreserveSig] int Register(ref Guid rclsid);
+        [PreserveSig] int Unregister(ref Guid rclsid);
+        [PreserveSig] int AddLanguageProfile(ref Guid rclsid, short langid, ref Guid guidProfile,
+            [MarshalAs(UnmanagedType.LPWStr)] string pchDesc, uint cchDesc,
+            [MarshalAs(UnmanagedType.LPWStr)] string pchIconFile, uint cchFile, uint uIconIndex);
+        [PreserveSig] int RemoveLanguageProfile(ref Guid rclsid, short langid, ref Guid guidProfile);
+        [PreserveSig] int EnumInputProcessorInfo([MarshalAs(UnmanagedType.Interface)] out object enumIPP);
+        [PreserveSig] int GetDefaultLanguageProfile(short langid, ref Guid catid,
+            out Guid pclsid, out Guid pguidProfile);
+        [PreserveSig] int SetDefaultLanguageProfile(ref Guid rclsid, short langid, ref Guid guidProfile);
+        [PreserveSig] int ActivateLanguageProfile(ref Guid rclsid, short langid, ref Guid guidProfile);
+        [PreserveSig] int GetActiveLanguageProfile(ref Guid rclsid, out short plangid, out Guid pguidProfile);
+        [PreserveSig] int GetLanguageProfileDescription(ref Guid rclsid, short langid,
+            ref Guid guidProfile, out IntPtr pbstrProfile);
+        [PreserveSig] int GetCurrentLanguage(out short plangid);
+        [PreserveSig] int ChangeCurrentLanguage(short langid);
+        [PreserveSig] int GetLanguageList(out IntPtr ppLangIds, out int pulCount);
+        [PreserveSig] int EnumLanguageProfiles(short langid,
+            [MarshalAs(UnmanagedType.Interface)] out object ppenum);
+        [PreserveSig] int EnableLanguageProfile(ref Guid rclsid, short langid,
+            ref Guid guidProfile, [MarshalAs(UnmanagedType.Bool)] bool fEnable);
+        [PreserveSig] int IsEnabledLanguageProfile(ref Guid rclsid, short langid,
+            ref Guid guidProfile, [MarshalAs(UnmanagedType.Bool)] out bool pfEnabled);
+        [PreserveSig] int EnableLanguageProfileByDefault(ref Guid rclsid, short langid,
+            ref Guid guidProfile, [MarshalAs(UnmanagedType.Bool)] bool fEnable);
+        [PreserveSig] int SubstituteKeyboardLayout(ref Guid rclsid, short langid,
+            ref Guid guidProfile, nint hKL);
+    }
+
+    [ComImport, Guid("3d61bf11-ac5f-42c8-a4cb-931bcc28c744"),
+     InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IEnumTfLanguageProfiles
+    {
+        [PreserveSig]
+        int Clone([MarshalAs(UnmanagedType.Interface)] out IEnumTfLanguageProfiles enumIPP);
+        [PreserveSig]
+        int Next(int count,
+            [Out, MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] TF_LANGUAGEPROFILE[] profiles,
+            out int fetched);
+        [PreserveSig] int Reset();
+        [PreserveSig] int Skip(int count);
+    }
+
+    [DllImport("msctf.dll")]
+    private static extern int TF_CreateInputProcessorProfiles(
+        [MarshalAs(UnmanagedType.Interface)] out ITfInputProcessorProfiles profiles);
+
+    [DllImport("ole32.dll")]
+    private static extern int CoCreateInstance(
+        [In] ref Guid rclsid,
+        nint pUnkOuter,
+        uint dwClsContext,
+        [In] ref Guid riid,
+        [MarshalAs(UnmanagedType.IUnknown)] out object ppv);
 
     [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern bool QueryFullProcessImageNameW(nint hProcess, uint dwFlags,
@@ -1002,6 +1635,7 @@ public class ImeService : IDisposable
     }
 
     [DllImport("user32.dll")] static extern nint SendMessageW(nint h, uint m, nint w, nint l);
+    [DllImport("user32.dll")] static extern nint GetFocus();
     [DllImport("imm32.dll")] static extern nint ImmGetDefaultIMEWnd(nint h);
 
     #endregion

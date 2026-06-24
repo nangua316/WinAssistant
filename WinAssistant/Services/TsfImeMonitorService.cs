@@ -66,7 +66,10 @@ public class TsfImeMonitorService : IDisposable
                 var (name, icon) = t.Result;
                 Logger.Log("IME2", $"IME → {name}");
                 App.DispatcherQueue.TryEnqueue(() =>
-                    HotKeyToast.Show("输入法", name, icon));
+                {
+                    if (App.SettingsService.Load().IsImeSwitchToastEnabled)
+                        HotKeyToast.Show("输入法", name, icon);
+                });
             }
         }, TaskContinuationOptions.NotOnFaulted);
     }

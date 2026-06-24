@@ -31,6 +31,9 @@ public class MainPageViewModel : ObservableObject
     private bool _loaded;
 
     private int _themeMode;
+    private bool _isCapsLockToastEnabled;
+    private bool _isCnEnToastEnabled;
+    private bool _isImeSwitchToastEnabled;
     private AppSettings? _cachedSettings;
 
     public AppSettings Settings => _cachedSettings ??= _settingsService.Load();
@@ -181,6 +184,51 @@ public class MainPageViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// 是否启用大写锁定 Toast 提示。
+    /// </summary>
+    public bool IsCapsLockToastEnabled
+    {
+        get => _isCapsLockToastEnabled;
+        set
+        {
+            if (SetProperty(ref _isCapsLockToastEnabled, value))
+            {
+                SaveSettings();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 是否启用中英文/全半角切换 Toast 提示。
+    /// </summary>
+    public bool IsCnEnToastEnabled
+    {
+        get => _isCnEnToastEnabled;
+        set
+        {
+            if (SetProperty(ref _isCnEnToastEnabled, value))
+            {
+                SaveSettings();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 是否启用输入法切换 Toast 提示。
+    /// </summary>
+    public bool IsImeSwitchToastEnabled
+    {
+        get => _isImeSwitchToastEnabled;
+        set
+        {
+            if (SetProperty(ref _isImeSwitchToastEnabled, value))
+            {
+                SaveSettings();
+            }
+        }
+    }
+
     public Microsoft.UI.Xaml.Visibility GlobalHotKeySettingsVisibility =>
         _isKeyboardTriggerGlobalHotKey ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
 
@@ -231,6 +279,13 @@ public class MainPageViewModel : ObservableObject
         _themeMode = settings.ThemeMode;
         OnPropertyChanged(nameof(ThemeMode));
 
+        _isCapsLockToastEnabled = settings.IsCapsLockToastEnabled;
+        _isCnEnToastEnabled = settings.IsCnEnToastEnabled;
+        _isImeSwitchToastEnabled = settings.IsImeSwitchToastEnabled;
+        OnPropertyChanged(nameof(IsCapsLockToastEnabled));
+        OnPropertyChanged(nameof(IsCnEnToastEnabled));
+        OnPropertyChanged(nameof(IsImeSwitchToastEnabled));
+
         ParseLaunchpadHotKeyString(settings.LaunchpadHotKey);
         OnPropertyChanged(nameof(LaunchpadHotKeyDisplay));
 
@@ -260,6 +315,9 @@ public class MainPageViewModel : ObservableObject
         current.KeyboardTriggers = BuildKeyboardTriggersList();
         current.LaunchpadHotKey = _launchpadHotKeyDisplay;
         current.ThemeMode = _themeMode;
+        current.IsCapsLockToastEnabled = _isCapsLockToastEnabled;
+        current.IsCnEnToastEnabled = _isCnEnToastEnabled;
+        current.IsImeSwitchToastEnabled = _isImeSwitchToastEnabled;
         current.Bindings = Bindings.Select(b => b.Model).ToList();
         _settingsService.Save(current);
     }
