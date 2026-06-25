@@ -15,10 +15,12 @@ public static class WebsiteMetadataHelper
         MaxAutomaticRedirections = 5,
         AutomaticDecompression = DecompressionMethods.GZip
                                  | DecompressionMethods.Deflate
-                                 | DecompressionMethods.Brotli
+                                 | DecompressionMethods.Brotli,
+        UseCookies = true,
+        CookieContainer = new CookieContainer()
     })
     {
-        Timeout = TimeSpan.FromSeconds(15)
+        Timeout = TimeSpan.FromSeconds(10)
     };
 
     public record WebsiteInfo(string? Title, string? FaviconPath, ImageSource? FaviconSource);
@@ -30,8 +32,42 @@ public static class WebsiteMetadataHelper
         if (!Uri.TryCreate(NormalizeUrl(url), UriKind.Absolute, out var uri))
             return new WebsiteInfo(null, null, null);
 
+        // Fast path: many sites (including bilibili) serve a real icon at /favicon.ico.
+        // Try this first with a short timeout so we don't hang on slow HTML responses.
+        var directFaviconUrl = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+        Logger.Log("WebsiteMetadataHelper", $"Fast path: {directFaviconUrl}");
+        var direct = await DownloadFaviconAsync(directFaviconUrl, timeoutSeconds: 8);
+        if (direct.Path != null)
+        {
+            Logger.Log("WebsiteMetadataHelper", $"Direct favicon success");
+            var pageTitle = await FetchTitleAsync(uri);
+            return new WebsiteInfo(pageTitle, direct.Path, direct.Source);
+        }
+
+        // Slow path: fetch HTML and parse declared icons / og:image.
+        Logger.Log("WebsiteMetadataHelper", "Slow path: fetching HTML");
+        var (html, title) = await FetchHtmlAsync(uri);
+        if (!string.IsNullOrEmpty(html))
+        {
+            Logger.Log("WebsiteMetadataHelper", $"HTML fetched, length={html.Length}, title={title}");
+            var declaredUrls = ExtractFaviconUrls(html, uri);
+            Logger.Log("WebsiteMetadataHelper", $"Declared favicons={declaredUrls.Count}");
+            foreach (var u in declaredUrls)
+                Logger.Log("WebsiteMetadataHelper", $"  declared: {u}");
+
+            var (faviconPath, faviconSource) = await TryFetchFaviconAsync(html, uri, declaredUrls);
+            Logger.Log("WebsiteMetadataHelper", $"Result faviconPath={faviconPath}");
+            return new WebsiteInfo(title, faviconPath, faviconSource);
+        }
+
+        return new WebsiteInfo(null, null, null);
+    }
+
+    private static async Task<(string? Html, string? Title)> FetchHtmlAsync(Uri uri)
+    {
         try
         {
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.TryAddWithoutValidation("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
@@ -39,55 +75,49 @@ public static class WebsiteMetadataHelper
                 "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
             request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
 
-            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
-            Logger.Log("WebsiteMetadataHelper", $"FetchAsync status={response.StatusCode}, contentType={contentType}");
-            if (!response.IsSuccessStatusCode)
-                return new WebsiteInfo(null, null, null);
+            Logger.Log("WebsiteMetadataHelper", $"FetchHtml status={response.StatusCode}, contentType={contentType}");
+            if (!response.IsSuccessStatusCode) return (null, null);
+            if (!contentType.Contains("html", StringComparison.OrdinalIgnoreCase)) return (null, null);
 
-            if (!contentType.Contains("html", StringComparison.OrdinalIgnoreCase))
-                return new WebsiteInfo(null, null, null);
-
-            // Limit read size to avoid huge pages / streaming responses.
-            var html = await response.Content.ReadAsStringAsync();
+            var html = await response.Content.ReadAsStringAsync(cts.Token);
             if (html.Length > 256 * 1024)
                 html = html[..(256 * 1024)];
 
             var title = ExtractTitle(html);
-            Logger.Log("WebsiteMetadataHelper", $"FetchAsync htmlLength={html.Length}, title={title}");
-
-            var declaredUrls = ExtractFaviconUrls(html, uri);
-            Logger.Log("WebsiteMetadataHelper", $"FetchAsync declaredFavicons={declaredUrls.Count}");
-            foreach (var u in declaredUrls)
-                Logger.Log("WebsiteMetadataHelper", $"  declared: {u}");
-
-            var (faviconPath, faviconSource) = await TryFetchFaviconAsync(html, uri);
-            Logger.Log("WebsiteMetadataHelper", $"FetchAsync result faviconPath={faviconPath}");
-
-            return new WebsiteInfo(title, faviconPath, faviconSource);
+            return (html, title);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Log("WebsiteMetadataHelper", "FetchHtml canceled (timeout)");
         }
         catch (Exception ex)
         {
-            Logger.Log("WebsiteMetadataHelper", $"Fetch failed for {url}: {ex.Message}");
+            Logger.Log("WebsiteMetadataHelper", $"FetchHtml error: {ex.Message}");
         }
-
-        return new WebsiteInfo(null, null, null);
+        return (null, null);
     }
 
-    private static async Task<(string? Path, ImageSource? Source)> TryFetchFaviconAsync(string html, Uri pageUri)
+    private static async Task<string?> FetchTitleAsync(Uri uri)
+    {
+        var (_, title) = await FetchHtmlAsync(uri);
+        return title;
+    }
+
+    private static async Task<(string? Path, ImageSource? Source)> TryFetchFaviconAsync(string html, Uri pageUri, List<string> declaredUrls)
     {
         // 1. Try icons explicitly declared in the HTML (prefer non-SVG, larger touch icons).
-        var declaredUrls = ExtractFaviconUrls(html, pageUri);
         foreach (var url in declaredUrls)
         {
-            var result = await DownloadFaviconAsync(url);
+            var result = await DownloadFaviconAsync(url, timeoutSeconds: 8);
             if (result.Path != null) return result;
         }
 
         // 2. Fallback to the well-known /favicon.ico location.
         var fallbackUrl = $"{pageUri.Scheme}://{pageUri.Host}/favicon.ico";
         Logger.Log("WebsiteMetadataHelper", $"Trying fallback favicon: {fallbackUrl}");
-        var fallback = await DownloadFaviconAsync(fallbackUrl);
+        var fallback = await DownloadFaviconAsync(fallbackUrl, timeoutSeconds: 8);
         if (fallback.Path != null) return fallback;
 
         // 3. Last resort: use Open Graph or Twitter card image.
@@ -95,7 +125,7 @@ public static class WebsiteMetadataHelper
         if (!string.IsNullOrEmpty(ogImage))
         {
             Logger.Log("WebsiteMetadataHelper", $"Trying og:image: {ogImage}");
-            return await DownloadFaviconAsync(ogImage);
+            return await DownloadFaviconAsync(ogImage, timeoutSeconds: 8);
         }
 
         return (null, null);
@@ -114,23 +144,19 @@ public static class WebsiteMetadataHelper
 
     private static string? ExtractTitle(string html)
     {
-        // Match <title>...</title>, case-insensitive, allowing whitespace.
         var match = Regex.Match(html, @"<title[^>]*>(.*?)</title>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
         if (!match.Success) return null;
 
         var title = match.Groups[1].Value.Trim();
-        // Decode common HTML entities.
         title = WebUtility.HtmlDecode(title);
         return string.IsNullOrWhiteSpace(title) ? null : title;
     }
 
-    /// <summary>Extract all candidate favicon URLs from HTML, ordered by preference.</summary>
     private static List<string> ExtractFaviconUrls(string html, Uri pageUri)
     {
         var candidates = new List<(string Url, int Priority)>();
 
-        // Capture both rel-before-href and href-before-rel forms.
         var linkMatches = Regex.Matches(html,
             @"<link\s+([^>]*)>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -173,7 +199,6 @@ public static class WebsiteMetadataHelper
 
     private static string? ExtractMetaImage(string html, Uri pageUri)
     {
-        // og:image
         var match = Regex.Match(html,
             @"<meta[^>]*property=[""']og:image[""'][^>]*content=[""']([^""']+)[""'][^>]*>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -190,7 +215,6 @@ public static class WebsiteMetadataHelper
             if (Uri.TryCreate(pageUri, href, out var relative)) return relative.ToString();
         }
 
-        // twitter:image
         match = Regex.Match(html,
             @"<meta[^>]*name=[""']twitter:image[""'][^>]*content=[""']([^""']+)[""'][^>]*>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
@@ -210,13 +234,14 @@ public static class WebsiteMetadataHelper
         return null;
     }
 
-    private static async Task<(string? Path, ImageSource? Source)> DownloadFaviconAsync(string? faviconUrl)
+    private static async Task<(string? Path, ImageSource? Source)> DownloadFaviconAsync(string? faviconUrl, int timeoutSeconds = 10)
     {
         if (string.IsNullOrEmpty(faviconUrl)) return (null, null);
 
         try
         {
             Logger.Log("WebsiteMetadataHelper", $"DownloadFaviconAsync: {faviconUrl}");
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             using var request = new HttpRequestMessage(HttpMethod.Get, faviconUrl);
             request.Headers.TryAddWithoutValidation("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
@@ -224,9 +249,9 @@ public static class WebsiteMetadataHelper
                 "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
             request.Headers.TryAddWithoutValidation("Referer", new Uri(faviconUrl).GetLeftPart(UriPartial.Authority));
 
-            using var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request, cts.Token);
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
-            var bytes = await response.Content.ReadAsByteArrayAsync();
+            var bytes = await response.Content.ReadAsByteArrayAsync(cts.Token);
             Logger.Log("WebsiteMetadataHelper", $"DownloadFaviconAsync status={response.StatusCode}, contentType={contentType}, length={bytes.Length}");
             if (!response.IsSuccessStatusCode) return (null, null);
             if (bytes.Length == 0) return (null, null);
@@ -258,6 +283,10 @@ public static class WebsiteMetadataHelper
             var bitmap = new BitmapImage();
             bitmap.UriSource = new Uri(tempFile);
             return (tempFile, bitmap);
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.Log("WebsiteMetadataHelper", $"DownloadFaviconAsync canceled: {faviconUrl}");
         }
         catch (Exception ex)
         {
