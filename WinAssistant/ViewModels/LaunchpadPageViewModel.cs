@@ -594,6 +594,15 @@ public class LaunchpadPageViewModel : ObservableObject
             Url = url,
             BrowserPath = browserPath
         };
+
+        // Cache the browser icon so the URL item looks like a real app.
+        if (!string.IsNullOrEmpty(browserPath) && File.Exists(browserPath))
+        {
+            var cachedIcon = IconHelper.ExtractAppIconToAppData(browserPath, GetScaledIconSize(64));
+            if (cachedIcon != null)
+                item.IconPath = cachedIcon;
+        }
+
         var vm = new LaunchpadItemViewModel(item);
         _items.Add(vm);
         SaveItems();

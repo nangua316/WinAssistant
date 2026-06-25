@@ -1,4 +1,6 @@
 using Microsoft.Win32;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 
 namespace WinAssistant.Helpers;
 
@@ -7,11 +9,11 @@ namespace WinAssistant.Helpers;
 /// </summary>
 public static class BrowserScanner
 {
-    public record BrowserInfo(string Name, string Path);
+    public record BrowserInfo(string Name, string Path, ImageSource? IconSource);
 
     /// <summary>
     /// Returns a list of installed browsers plus a sentinel entry for the system default.
-    /// The system default entry has an empty Path.
+    /// The system default entry has an empty Path and no icon.
     /// </summary>
     public static List<BrowserInfo> ScanInstalledBrowsers()
     {
@@ -39,7 +41,7 @@ public static class BrowserScanner
                     if (string.IsNullOrWhiteSpace(name))
                         name = Path.GetFileNameWithoutExtension(path);
 
-                    browsers[path] = new BrowserInfo(NormalizeName(name), path);
+                    browsers[path] = new BrowserInfo(NormalizeName(name), path, LoadBrowserIcon(path));
                 }
                 catch { }
             }
@@ -71,7 +73,7 @@ public static class BrowserScanner
         foreach (var (name, path) in wellKnown)
         {
             if (File.Exists(path))
-                browsers[path] = new BrowserInfo(name, path);
+                browsers[path] = new BrowserInfo(name, path, LoadBrowserIcon(path));
         }
 
         // 3. Sort alphabetically by name, keeping the system-default sentinel separate.
@@ -80,6 +82,20 @@ public static class BrowserScanner
             .ToList<BrowserInfo>();
 
         return result;
+    }
+
+    /// <summary>Extract a small icon from a browser executable for display in pickers.</summary>
+    public static ImageSource? LoadBrowserIcon(string path, int size = 24)
+    {
+        try
+        {
+            var cached = IconHelper.ExtractAppIconToAppData(path, size);
+            if (cached == null) return null;
+            var bitmap = new BitmapImage();
+            bitmap.UriSource = new Uri(cached);
+            return bitmap;
+        }
+        catch { return null; }
     }
 
     /// <summary>

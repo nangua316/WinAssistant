@@ -236,17 +236,23 @@ public sealed partial class LaunchpadPage : Page
 
         // Browser picker: system default + installed browsers + manual override.
         var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
-        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", ""));
+        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", "", null));
         foreach (var browser in BrowserScanner.ScanInstalledBrowsers())
             browserOptions.Add(browser);
 
         var browserCombo = new ComboBox
         {
             Header = "浏览器",
-            DisplayMemberPath = "Name",
             ItemsSource = browserOptions,
             SelectedIndex = 0,
-            HorizontalAlignment = HorizontalAlignment.Stretch
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+                "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
+                "<StackPanel Orientation='Horizontal' Spacing='8'>" +
+                "<Image Source='{Binding IconSource}' Width='16' Height='16' VerticalAlignment='Center'/>" +
+                "<TextBlock Text='{Binding Name}' VerticalAlignment='Center'/>" +
+                "</StackPanel>" +
+                "</DataTemplate>")
         };
 
         var browseButton = new Button
@@ -266,7 +272,7 @@ public sealed partial class LaunchpadPage : Page
                 return;
             }
 
-            var custom = new BrowserScanner.BrowserInfo(Path.GetFileNameWithoutExtension(path), path);
+            var custom = new BrowserScanner.BrowserInfo(Path.GetFileNameWithoutExtension(path), path, BrowserScanner.LoadBrowserIcon(path));
             browserOptions.Insert(1, custom);
             browserCombo.SelectedItem = custom;
         };
