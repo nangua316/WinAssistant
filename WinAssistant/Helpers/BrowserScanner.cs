@@ -57,7 +57,7 @@ public static class BrowserScanner
             ("Mozilla Firefox", @"C:\Program Files (x86)\Mozilla Firefox\firefox.exe"),
             ("Brave", @"C:\Program Files\BraveSoftware\Brave-Browser\Application\brave.exe"),
             ("Brave", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"BraveSoftware\Brave-Browser\Application\brave.exe")),
-            ("Opera", @"C:\Users\AppData\Local\Programs\Opera\opera.exe"),
+            ("Opera", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Opera\opera.exe")),
             ("Opera GX", Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"Programs\Opera GX\opera.exe")),
             ("Vivaldi", @"C:\Program Files\Vivaldi\Application\vivaldi.exe"),
             ("Vivaldi", @"C:\Program Files (x86)\Vivaldi\Application\vivaldi.exe"),
