@@ -70,10 +70,20 @@ public static class WebsiteMetadataHelper
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.TryAddWithoutValidation("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
             request.Headers.TryAddWithoutValidation("Accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7");
+            request.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
             request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            request.Headers.TryAddWithoutValidation("Sec-Ch-Ua", """Not/A)Brand\";v=\"8\", \"Chromium\";v=\"126\", \"Google Chrome\";v=\"126\""");
+            request.Headers.TryAddWithoutValidation("Sec-Ch-Ua-Mobile", "?0");
+            request.Headers.TryAddWithoutValidation("Sec-Ch-Ua-Platform", """Windows\""");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "document");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "navigate");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "none");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-User", "?1");
+            request.Headers.TryAddWithoutValidation("Upgrade-Insecure-Requests", "1");
+            request.Headers.TryAddWithoutValidation("Cache-Control", "max-age=0");
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
@@ -244,9 +254,17 @@ public static class WebsiteMetadataHelper
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             using var request = new HttpRequestMessage(HttpMethod.Get, faviconUrl);
             request.Headers.TryAddWithoutValidation("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
             request.Headers.TryAddWithoutValidation("Accept",
                 "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            request.Headers.TryAddWithoutValidation("Accept-Encoding", "gzip, deflate, br");
+            request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+            request.Headers.TryAddWithoutValidation("Sec-Ch-Ua", """Not/A)Brand\";v=\"8\", \"Chromium\";v=\"126\", \"Google Chrome\";v=\"126\""");
+            request.Headers.TryAddWithoutValidation("Sec-Ch-Ua-Mobile", "?0");
+            request.Headers.TryAddWithoutValidation("Sec-Ch-Ua-Platform", """Windows\""");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Dest", "image");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Mode", "no-cors");
+            request.Headers.TryAddWithoutValidation("Sec-Fetch-Site", "same-origin");
             request.Headers.TryAddWithoutValidation("Referer", new Uri(faviconUrl).GetLeftPart(UriPartial.Authority));
 
             using var response = await _httpClient.SendAsync(request, cts.Token);
