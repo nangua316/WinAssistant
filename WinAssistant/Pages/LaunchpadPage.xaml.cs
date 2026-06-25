@@ -245,13 +245,31 @@ public sealed partial class LaunchpadPage : Page
         };
         string? fetchedFaviconPath = null;
 
+        var fetchButton = new Button
+        {
+            Content = "获取图标和标题",
+            HorizontalAlignment = HorizontalAlignment.Stretch
+        };
+
         urlBox.LostFocus += async (_, _) =>
+        {
+            // Auto-fetch only if the name is still empty, so the user can override.
+            if (string.IsNullOrEmpty(nameBox.Text))
+                await FetchWebsiteMetadataAsync();
+        };
+
+        fetchButton.Click += async (_, _) => await FetchWebsiteMetadataAsync();
+
+        async Task FetchWebsiteMetadataAsync()
         {
             var url = urlBox.Text.Trim();
             if (string.IsNullOrEmpty(url)) return;
 
             var normalized = NormalizeUrl(url);
             if (!Uri.IsWellFormedUriString(normalized, UriKind.Absolute)) return;
+
+            fetchButton.IsEnabled = false;
+            fetchButton.Content = "获取中...";
 
             var info = await WebsiteMetadataHelper.FetchAsync(normalized);
 
@@ -264,7 +282,7 @@ public sealed partial class LaunchpadPage : Page
                     info = webViewInfo;
             }
 
-            if (!string.IsNullOrEmpty(info.Title) && string.IsNullOrEmpty(nameBox.Text))
+            if (!string.IsNullOrEmpty(info.Title))
                 nameBox.Text = info.Title;
 
             if (info.FaviconSource != null)
@@ -273,7 +291,10 @@ public sealed partial class LaunchpadPage : Page
                 faviconPreview.Source = info.FaviconSource;
                 faviconPreview.Visibility = Visibility.Visible;
             }
-        };
+
+            fetchButton.IsEnabled = true;
+            fetchButton.Content = "获取图标和标题";
+        }
 
         // Browser picker: system default + installed browsers + manual override.
         var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
@@ -329,6 +350,7 @@ public sealed partial class LaunchpadPage : Page
 
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(urlBox);
+        panel.Children.Add(fetchButton);
         panel.Children.Add(nameBox);
         panel.Children.Add(faviconPreview);
         panel.Children.Add(browserCombo);
