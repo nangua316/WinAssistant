@@ -1,6 +1,8 @@
 using Microsoft.Windows.Storage.Pickers;
+using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -172,7 +174,7 @@ public sealed partial class LaunchpadPage : Page
         var urlItem = new MenuFlyoutItem
         {
             Text = "添加网址",
-            Icon = new FontIcon { Glyph = "" }
+            Icon = new FontIcon { Glyph = "" }
         };
         urlItem.Click += OnAddUrlClick;
         menu.Items.Add(urlItem);
@@ -231,11 +233,22 @@ public sealed partial class LaunchpadPage : Page
             PlaceholderText = "例如：https://github.com",
             Header = "网址"
         };
-        var browserBox = new TextBox
+
+        // Browser picker: system default + installed browsers + manual override.
+        var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
+        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", ""));
+        foreach (var browser in BrowserScanner.ScanInstalledBrowsers())
+            browserOptions.Add(browser);
+
+        var browserCombo = new ComboBox
         {
-            PlaceholderText = "留空使用系统默认浏览器",
-            Header = "指定浏览器（可选）"
+            Header = "浏览器",
+            DisplayMemberPath = "Name",
+            ItemsSource = browserOptions,
+            SelectedIndex = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch
         };
+
         var browseButton = new Button
         {
             Content = "浏览...",
@@ -244,12 +257,23 @@ public sealed partial class LaunchpadPage : Page
         browseButton.Click += async (_, _) =>
         {
             var path = await PickBrowserExecutableAsync();
-            if (!string.IsNullOrEmpty(path))
-                browserBox.Text = path;
+            if (string.IsNullOrEmpty(path)) return;
+
+            var existing = browserOptions.FirstOrDefault(b => b.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                browserCombo.SelectedItem = existing;
+                return;
+            }
+
+            var custom = new BrowserScanner.BrowserInfo(Path.GetFileNameWithoutExtension(path), path);
+            browserOptions.Insert(1, custom);
+            browserCombo.SelectedItem = custom;
         };
+
         var hint = new TextBlock
         {
-            Text = "留空浏览器将使用系统默认浏览器打开该网址。",
+            Text = "选择“使用系统默认浏览器”时，将用系统默认浏览器打开该网址。",
             FontSize = 12,
             Opacity = 0.7,
             Margin = new Thickness(0, 8, 0, 0),
@@ -259,7 +283,7 @@ public sealed partial class LaunchpadPage : Page
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(nameBox);
         panel.Children.Add(urlBox);
-        panel.Children.Add(browserBox);
+        panel.Children.Add(browserCombo);
         panel.Children.Add(browseButton);
         panel.Children.Add(hint);
 
@@ -278,7 +302,7 @@ public sealed partial class LaunchpadPage : Page
 
         var name = nameBox.Text.Trim();
         var url = urlBox.Text.Trim();
-        var browserPath = browserBox.Text.Trim();
+        var browserPath = (browserCombo.SelectedItem as BrowserScanner.BrowserInfo)?.Path ?? "";
 
         if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(url))
         {
