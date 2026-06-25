@@ -43,19 +43,15 @@ public static class WebsiteMetadataHelper
             return new WebsiteInfo(null, icon.Path, icon.Source);
         }
 
-        // Fast path: many sites (including bilibili) serve a real icon at /favicon.ico.
-        var directFaviconUrl = $"{uri.Scheme}://{uri.Host}/favicon.ico";
-        Logger.Log("WebsiteMetadataHelper", $"Fast path: {directFaviconUrl}");
-        var direct = await DownloadFaviconAsync(directFaviconUrl, timeoutSeconds: 8);
-        if (direct.Path != null)
-        {
-            Logger.Log("WebsiteMetadataHelper", $"Direct favicon success");
-            var pageTitle = await FetchTitleAsync(uri);
-            return new WebsiteInfo(pageTitle, direct.Path, direct.Source);
-        }
+        // Fast path: save /favicon.ico as fallback, but don't return yet —
+        // HTML-declared icons are more authoritative (e.g. xiaohongshu has
+        // different icons per subdomain; the HTML link points to the brand one).
+        var fastFaviconUrl = $"{uri.Scheme}://{uri.Host}/favicon.ico";
+        Logger.Log("WebsiteMetadataHelper", $"Fast path: {fastFaviconUrl}");
+        var fastIcon = await DownloadFaviconAsync(fastFaviconUrl, timeoutSeconds: 8);
 
-        // Slow path: fetch HTML and parse declared icons / og:image.
-        Logger.Log("WebsiteMetadataHelper", "Slow path: fetching HTML");
+        // HTML path: parse page for declared icons (more authoritative).
+        Logger.Log("WebsiteMetadataHelper", "Fetching HTML for declared icons");
         var (html, title) = await FetchHtmlAsync(uri);
         if (!string.IsNullOrEmpty(html))
         {
@@ -65,12 +61,37 @@ public static class WebsiteMetadataHelper
             foreach (var u in declaredUrls)
                 Logger.Log("WebsiteMetadataHelper", $"  declared: {u}");
 
-            var (faviconPath, faviconSource) = await TryFetchFaviconAsync(html, uri, declaredUrls);
-            Logger.Log("WebsiteMetadataHelper", $"Result faviconPath={faviconPath}");
-            return new WebsiteInfo(title, faviconPath, faviconSource);
+            if (declaredUrls.Count > 0)
+            {
+                var (faviconPath, faviconSource) = await TryFetchFaviconAsync(html, uri, declaredUrls);
+                if (faviconPath != null)
+                {
+                    Logger.Log("WebsiteMetadataHelper", $"Using HTML-declared icon");
+                    return new WebsiteInfo(title, faviconPath, faviconSource);
+                }
+            }
         }
 
-        return new WebsiteInfo(null, null, null);
+        // Fall back to the fast-path /favicon.ico result if we have one.
+        if (fastIcon.Path != null)
+        {
+            Logger.Log("WebsiteMetadataHelper", $"Falling back to fast-path icon");
+            return new WebsiteInfo(title, fastIcon.Path, fastIcon.Source);
+        }
+
+        // Last resort: og:image from HTML.
+        if (!string.IsNullOrEmpty(html))
+        {
+            var ogImage = ExtractMetaImage(html, uri);
+            if (!string.IsNullOrEmpty(ogImage))
+            {
+                Logger.Log("WebsiteMetadataHelper", $"Trying og:image: {ogImage}");
+                var ogResult = await DownloadFaviconAsync(ogImage, timeoutSeconds: 8);
+                if (ogResult.Path != null) return new WebsiteInfo(title, ogResult.Path, ogResult.Source);
+            }
+        }
+
+        return new WebsiteInfo(title, null, null);
     }
 
     /// <summary>Download a favicon directly from a known icon/image URL (not an HTML page).
