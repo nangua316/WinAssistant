@@ -255,6 +255,15 @@ public sealed partial class LaunchpadPage : Page
 
             var info = await WebsiteMetadataHelper.FetchAsync(normalized);
 
+            // Fallback to a real browser engine for sites that block plain HTTP requests (e.g. bilibili).
+            if (info.FaviconSource == null && XamlRoot != null)
+            {
+                Debug.WriteLine($"Falling back to WebView2 for {normalized}");
+                var webViewInfo = await WebView2FaviconHelper.FetchAsync(normalized, XamlRoot);
+                if (webViewInfo != null)
+                    info = webViewInfo;
+            }
+
             if (!string.IsNullOrEmpty(info.Title) && string.IsNullOrEmpty(nameBox.Text))
                 nameBox.Text = info.Title;
 
