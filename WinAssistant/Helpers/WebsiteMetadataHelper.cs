@@ -2,6 +2,7 @@ using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Svg;
 
 namespace WinAssistant.Helpers;
 
@@ -217,17 +218,19 @@ public static class WebsiteMetadataHelper
                 return (null, null);
             }
 
-            // WinUI BitmapImage does not support SVG out of the box.
-            if (contentType.Contains("svg", StringComparison.OrdinalIgnoreCase)
-                || faviconUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
-            {
-                Logger.Log("WebsiteMetadataHelper", $"Skipping SVG favicon {faviconUrl}");
-                return (null, null);
-            }
-
             var tempDir = System.IO.Path.Combine(Path.GetTempPath(), "WinAssistant", "website-icons");
             Directory.CreateDirectory(tempDir);
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+
+            // SVG needs conversion because WinUI BitmapImage cannot render SVG directly.
+            if (contentType.Contains("svg", StringComparison.OrdinalIgnoreCase)
+                || faviconUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            {
+                var converted = ConvertSvgToPng(bytes, tempDir, hash);
+                if (converted.HasValue) return converted.Value;
+                return (null, null);
+            }
+
             var ext = InferExtension(contentType, faviconUrl);
             var tempFile = System.IO.Path.Combine(tempDir, $"{hash}{ext}");
             await File.WriteAllBytesAsync(tempFile, bytes);
@@ -242,6 +245,31 @@ public static class WebsiteMetadataHelper
         }
 
         return (null, null);
+    }
+
+    private static (string? Path, ImageSource? Source)? ConvertSvgToPng(byte[] svgBytes, string tempDir, string hash)
+    {
+        try
+        {
+            using var stream = new MemoryStream(svgBytes);
+            var svgDocument = SvgDocument.Open<SvgDocument>(stream);
+            if (svgDocument == null) return null;
+
+            using var bitmap = svgDocument.Draw(64, 64);
+            if (bitmap == null) return null;
+
+            var pngPath = System.IO.Path.Combine(tempDir, $"{hash}.png");
+            bitmap.Save(pngPath, System.Drawing.Imaging.ImageFormat.Png);
+
+            var bitmapImage = new BitmapImage();
+            bitmapImage.UriSource = new Uri(pngPath);
+            return (pngPath, bitmapImage);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("WebsiteMetadataHelper", $"SVG conversion failed: {ex.Message}");
+        }
+        return null;
     }
 
     private static string InferExtension(string contentType, string url)
