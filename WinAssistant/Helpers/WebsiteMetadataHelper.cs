@@ -14,7 +14,7 @@ public static class WebsiteMetadataHelper
         MaxAutomaticRedirections = 5
     })
     {
-        Timeout = TimeSpan.FromSeconds(8)
+        Timeout = TimeSpan.FromSeconds(10)
     };
 
     public record WebsiteInfo(string? Title, string? FaviconPath, ImageSource? FaviconSource);
@@ -59,18 +59,29 @@ public static class WebsiteMetadataHelper
 
     private static async Task<(string? Path, ImageSource? Source)> TryFetchFaviconAsync(string html, Uri pageUri)
     {
-        // 1. Try the icon explicitly declared in the HTML.
-        var declaredUrl = ExtractFaviconUrl(html, pageUri);
-        if (!string.IsNullOrEmpty(declaredUrl))
+        // 1. Try icons explicitly declared in the HTML (prefer non-SVG, larger touch icons).
+        var declaredUrls = ExtractFaviconUrls(html, pageUri);
+        foreach (var url in declaredUrls)
         {
-            var declared = await DownloadFaviconAsync(declaredUrl);
-            if (declared.Path != null) return declared;
+            var result = await DownloadFaviconAsync(url);
+            if (result.Path != null) return result;
         }
 
         // 2. Fallback to the well-known /favicon.ico location.
         var fallbackUrl = $"{pageUri.Scheme}://{pageUri.Host}/favicon.ico";
         Logger.Log("WebsiteMetadataHelper", $"Trying fallback favicon: {fallbackUrl}");
-        return await DownloadFaviconAsync(fallbackUrl);
+        var fallback = await DownloadFaviconAsync(fallbackUrl);
+        if (fallback.Path != null) return fallback;
+
+        // 3. Last resort: use Open Graph or Twitter card image.
+        var ogImage = ExtractMetaImage(html, pageUri);
+        if (!string.IsNullOrEmpty(ogImage))
+        {
+            Logger.Log("WebsiteMetadataHelper", $"Trying og:image: {ogImage}");
+            return await DownloadFaviconAsync(ogImage);
+        }
+
+        return (null, null);
     }
 
     private static string NormalizeUrl(string url)
@@ -97,27 +108,88 @@ public static class WebsiteMetadataHelper
         return string.IsNullOrWhiteSpace(title) ? null : title;
     }
 
-    private static string? ExtractFaviconUrl(string html, Uri pageUri)
+    /// <summary>Extract all candidate favicon URLs from HTML, ordered by preference.</summary>
+    private static List<string> ExtractFaviconUrls(string html, Uri pageUri)
     {
-        // Look for <link rel="icon" href="..."> or rel="shortcut icon".
+        var candidates = new List<(string Url, int Priority)>();
+
+        // Capture both rel-before-href and href-before-rel forms.
+        var linkMatches = Regex.Matches(html,
+            @"<link\s+([^>]*)>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+
+        foreach (Match link in linkMatches)
+        {
+            var attrs = link.Groups[1].Value;
+            var relMatch = Regex.Match(attrs, @"rel=[""']([^""']+)[""']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            var hrefMatch = Regex.Match(attrs, @"href=[""']([^""']+)[""']", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            if (!relMatch.Success || !hrefMatch.Success) continue;
+
+            var rel = relMatch.Groups[1].Value;
+            var href = hrefMatch.Groups[1].Value.Trim();
+            if (string.IsNullOrEmpty(href)) continue;
+
+            var priority = rel.ToLowerInvariant() switch
+            {
+                var r when r.Contains("apple-touch-icon") => 1,
+                var r when r.Contains("fluid-icon") => 2,
+                var r when r.Contains("shortcut icon") => 3,
+                var r when r.Contains("icon") => 4,
+                var r when r.Contains("mask-icon") => 5,
+                _ => 100
+            };
+
+            if (priority >= 100) continue;
+
+            if (Uri.TryCreate(href, UriKind.Absolute, out var absolute))
+                candidates.Add((absolute.ToString(), priority));
+            else if (Uri.TryCreate(pageUri, href, out var relative))
+                candidates.Add((relative.ToString(), priority));
+        }
+
+        return candidates
+            .OrderBy(c => c.Priority)
+            .Select(c => c.Url)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
+    private static string? ExtractMetaImage(string html, Uri pageUri)
+    {
+        // og:image
         var match = Regex.Match(html,
-            @"<link[^>]*rel=[""'](?:shortcut\s+icon|icon|apple-touch-icon)[""'][^>]*href=[""']([^""']+)[""'][^>]*>",
+            @"<meta[^>]*property=[""']og:image[""'][^>]*content=[""']([^""']+)[""'][^>]*>",
             RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
         if (!match.Success)
         {
-            // Try href before rel.
             match = Regex.Match(html,
-                @"<link[^>]*href=[""']([^""']+)[""'][^>]*rel=[""'](?:shortcut\s+icon|icon|apple-touch-icon)[""'][^>]*>",
+                @"<meta[^>]*content=[""']([^""']+)[""'][^>]*property=[""']og:image[""'][^>]*>",
                 RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
         }
+        if (match.Success)
+        {
+            var href = match.Groups[1].Value.Trim();
+            if (Uri.TryCreate(href, UriKind.Absolute, out var absolute)) return absolute.ToString();
+            if (Uri.TryCreate(pageUri, href, out var relative)) return relative.ToString();
+        }
 
-        if (!match.Success) return null;
+        // twitter:image
+        match = Regex.Match(html,
+            @"<meta[^>]*name=[""']twitter:image[""'][^>]*content=[""']([^""']+)[""'][^>]*>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+        if (!match.Success)
+        {
+            match = Regex.Match(html,
+                @"<meta[^>]*content=[""']([^""']+)[""'][^>]*name=[""']twitter:image[""'][^>]*>",
+                RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
+        }
+        if (match.Success)
+        {
+            var href = match.Groups[1].Value.Trim();
+            if (Uri.TryCreate(href, UriKind.Absolute, out var absolute)) return absolute.ToString();
+            if (Uri.TryCreate(pageUri, href, out var relative)) return relative.ToString();
+        }
 
-        var href = match.Groups[1].Value.Trim();
-        if (string.IsNullOrEmpty(href)) return null;
-
-        if (Uri.TryCreate(href, UriKind.Absolute, out var absolute)) return absolute.ToString();
-        if (Uri.TryCreate(pageUri, href, out var relative)) return relative.ToString();
         return null;
     }
 
@@ -134,14 +206,29 @@ public static class WebsiteMetadataHelper
             using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return (null, null);
 
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
             var bytes = await response.Content.ReadAsByteArrayAsync();
             if (bytes.Length == 0) return (null, null);
+
+            // Reject HTML responses masquerading as favicons (e.g. SPA fallback pages).
+            if (contentType.Contains("html", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Log("WebsiteMetadataHelper", $"Skipping HTML response for {faviconUrl}");
+                return (null, null);
+            }
+
+            // WinUI BitmapImage does not support SVG out of the box.
+            if (contentType.Contains("svg", StringComparison.OrdinalIgnoreCase)
+                || faviconUrl.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            {
+                Logger.Log("WebsiteMetadataHelper", $"Skipping SVG favicon {faviconUrl}");
+                return (null, null);
+            }
 
             var tempDir = System.IO.Path.Combine(Path.GetTempPath(), "WinAssistant", "website-icons");
             Directory.CreateDirectory(tempDir);
             var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
-            var ext = Path.GetExtension(new Uri(faviconUrl).AbsolutePath);
-            if (string.IsNullOrEmpty(ext) || ext.Length > 5) ext = ".png";
+            var ext = InferExtension(contentType, faviconUrl);
             var tempFile = System.IO.Path.Combine(tempDir, $"{hash}{ext}");
             await File.WriteAllBytesAsync(tempFile, bytes);
 
@@ -155,5 +242,19 @@ public static class WebsiteMetadataHelper
         }
 
         return (null, null);
+    }
+
+    private static string InferExtension(string contentType, string url)
+    {
+        if (contentType.Contains("png", StringComparison.OrdinalIgnoreCase)) return ".png";
+        if (contentType.Contains("jpeg", StringComparison.OrdinalIgnoreCase) || contentType.Contains("jpg", StringComparison.OrdinalIgnoreCase)) return ".jpg";
+        if (contentType.Contains("gif", StringComparison.OrdinalIgnoreCase)) return ".gif";
+        if (contentType.Contains("webp", StringComparison.OrdinalIgnoreCase)) return ".webp";
+        if (contentType.Contains("x-icon", StringComparison.OrdinalIgnoreCase) || contentType.Contains("ico", StringComparison.OrdinalIgnoreCase)) return ".ico";
+
+        var ext = System.IO.Path.GetExtension(new Uri(url).AbsolutePath);
+        if (!string.IsNullOrEmpty(ext) && ext.Length <= 5) return ext;
+
+        return ".png";
     }
 }
