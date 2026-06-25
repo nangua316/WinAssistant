@@ -26,14 +26,24 @@ public static class WebsiteMetadataHelper
     public record WebsiteInfo(string? Title, string? FaviconPath, ImageSource? FaviconSource);
 
     /// <summary>Best-effort fetch of the page title and favicon.</summary>
+    /// <summary>Best-effort fetch of the page title and favicon.</summary>
     public static async Task<WebsiteInfo> FetchAsync(string url)
     {
         Logger.Log("WebsiteMetadataHelper", $"FetchAsync: {url}");
         if (!Uri.TryCreate(NormalizeUrl(url), UriKind.Absolute, out var uri))
             return new WebsiteInfo(null, null, null);
 
+        // If the URL itself looks like an image/icon file, download it directly
+        // (handles the case where WebView2 gives us the already-resolved favicon URL).
+        var ext = Path.GetExtension(uri.AbsolutePath);
+        if (ext is ".ico" or ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".svg")
+        {
+            Logger.Log("WebsiteMetadataHelper", $"Direct image URL, downloading");
+            var icon = await DownloadFaviconAsync(url, timeoutSeconds: 8);
+            return new WebsiteInfo(null, icon.Path, icon.Source);
+        }
+
         // Fast path: many sites (including bilibili) serve a real icon at /favicon.ico.
-        // Try this first with a short timeout so we don't hang on slow HTML responses.
         var directFaviconUrl = $"{uri.Scheme}://{uri.Host}/favicon.ico";
         Logger.Log("WebsiteMetadataHelper", $"Fast path: {directFaviconUrl}");
         var direct = await DownloadFaviconAsync(directFaviconUrl, timeoutSeconds: 8);
@@ -62,6 +72,11 @@ public static class WebsiteMetadataHelper
 
         return new WebsiteInfo(null, null, null);
     }
+
+    /// <summary>Download a favicon directly from a known icon/image URL (not an HTML page).
+    /// Used by WebView2 fallback and other callers that already resolved the favicon URL.</summary>
+    public static Task<WebsiteInfo> FetchFaviconDirectAsync(string iconUrl) =>
+        FetchAsync(iconUrl);
 
     private static async Task<(string? Html, string? Title)> FetchHtmlAsync(Uri uri)
     {
