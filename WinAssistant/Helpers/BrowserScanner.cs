@@ -106,11 +106,14 @@ public static class BrowserScanner
             // Windows 10/11: UserChoice points to the default handler ProgID.
             using var userChoice = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice");
             var progid = userChoice?.GetValue("Progid")?.ToString();
+            Logger.Log("BrowserScanner", $"Default browser Progid={progid}");
             if (!string.IsNullOrEmpty(progid))
             {
                 using var progKey = Registry.ClassesRoot.OpenSubKey($"{progid}\\shell\\open\\command");
                 var command = progKey?.GetValue(null)?.ToString();
+                Logger.Log("BrowserScanner", $"Default browser command={command}");
                 var path = ExtractExePath(command);
+                Logger.Log("BrowserScanner", $"Default browser extracted path={path}, exists={File.Exists(path ?? "")}");
                 if (!string.IsNullOrEmpty(path) && File.Exists(path))
                     return path;
             }
@@ -118,11 +121,16 @@ public static class BrowserScanner
             // Fallback to the generic http handler.
             using var httpKey = Registry.ClassesRoot.OpenSubKey(@"http\shell\open\command");
             var httpCommand = httpKey?.GetValue(null)?.ToString();
+            Logger.Log("BrowserScanner", $"HTTP fallback command={httpCommand}");
             var httpPath = ExtractExePath(httpCommand);
+            Logger.Log("BrowserScanner", $"HTTP fallback path={httpPath}, exists={File.Exists(httpPath ?? "")}");
             if (!string.IsNullOrEmpty(httpPath) && File.Exists(httpPath))
                 return httpPath;
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Logger.Log("BrowserScanner", $"FindDefaultBrowserPath error: {ex.Message}");
+        }
         return null;
     }
 

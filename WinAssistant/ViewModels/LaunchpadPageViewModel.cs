@@ -194,15 +194,34 @@ public class LaunchpadPageViewModel : ObservableObject
     {
         try
         {
+            // Website favicons are already image files; load them directly.
+            var iconPath = vm.Model.IconPath;
+            if (!string.IsNullOrEmpty(iconPath) && IsImageFile(iconPath))
+            {
+                var bitmap = new BitmapImage();
+                bitmap.UriSource = new Uri(iconPath);
+                vm.IconSource = bitmap;
+                return true;
+            }
+
             var cached = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
             if (cached == null) return false;
-            var bitmap = new BitmapImage();
-            bitmap.UriSource = new Uri(cached);
-            vm.IconSource = bitmap;
+            var bitmap2 = new BitmapImage();
+            bitmap2.UriSource = new Uri(cached);
+            vm.IconSource = bitmap2;
             return true;
         }
         catch { return false; }
     }
+
+    private static bool IsImageFile(string path) =>
+        path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".gif", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".webp", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Extract uncached icons in background (throttled), then batch-apply in one UI frame.</summary>
     private async Task LoadIconsBatchAsync(List<LaunchpadItemViewModel> items, int size)
@@ -581,7 +600,7 @@ public class LaunchpadPageViewModel : ObservableObject
         LoadSingleIcon(vm);
     }
 
-    internal void AddUrlItem(string name, string url, string browserPath)
+    internal void AddUrlItem(string name, string url, string browserPath, string? websiteFaviconPath = null)
     {
         var finalName = name;
         int suffix = 2;
@@ -595,16 +614,26 @@ public class LaunchpadPageViewModel : ObservableObject
             BrowserPath = browserPath
         };
 
-        // Cache the browser icon so the URL item looks like a real app.
-        // If the user chose "system default browser", fall back to the actual default browser icon.
-        var iconSourcePath = !string.IsNullOrEmpty(browserPath) && File.Exists(browserPath)
-            ? browserPath
-            : BrowserScanner.FindDefaultBrowserPath();
-        if (!string.IsNullOrEmpty(iconSourcePath) && File.Exists(iconSourcePath))
+        // Cache the icon so the URL item looks like a real app.
+        // Priority: website favicon > specific browser icon > system default browser icon.
+        if (!string.IsNullOrEmpty(websiteFaviconPath) && File.Exists(websiteFaviconPath))
         {
-            var cachedIcon = IconHelper.ExtractAppIconToAppData(iconSourcePath, GetScaledIconSize(64));
-            if (cachedIcon != null)
-                item.IconPath = cachedIcon;
+            item.IconPath = websiteFaviconPath;
+            Logger.Log("LaunchpadPageViewModel", $"AddUrlItem using website favicon={websiteFaviconPath}");
+        }
+        else
+        {
+            var iconSourcePath = !string.IsNullOrEmpty(browserPath) && File.Exists(browserPath)
+                ? browserPath
+                : BrowserScanner.FindDefaultBrowserPath();
+            Logger.Log("LaunchpadPageViewModel", $"AddUrlItem iconSourcePath={iconSourcePath}");
+            if (!string.IsNullOrEmpty(iconSourcePath) && File.Exists(iconSourcePath))
+            {
+                var cachedIcon = IconHelper.ExtractAppIconToAppData(iconSourcePath, GetScaledIconSize(64));
+                Logger.Log("LaunchpadPageViewModel", $"AddUrlItem cachedIcon={cachedIcon}");
+                if (cachedIcon != null)
+                    item.IconPath = cachedIcon;
+            }
         }
 
         var vm = new LaunchpadItemViewModel(item);

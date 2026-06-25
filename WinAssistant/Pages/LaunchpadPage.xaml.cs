@@ -223,15 +223,47 @@ public sealed partial class LaunchpadPage : Page
 
     private async void OnAddUrlClick(object? sender, RoutedEventArgs e)
     {
+        var urlBox = new TextBox
+        {
+            PlaceholderText = "例如：https://github.com",
+            Header = "网址"
+        };
         var nameBox = new TextBox
         {
             PlaceholderText = "例如：GitHub",
             Header = "显示名称"
         };
-        var urlBox = new TextBox
+
+        // Favicon preview shown after fetching website metadata.
+        var faviconPreview = new Image
         {
-            PlaceholderText = "例如：https://github.com",
-            Header = "网址"
+            Width = 32,
+            Height = 32,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Visibility = Visibility.Collapsed
+        };
+        string? fetchedFaviconPath = null;
+
+        urlBox.LostFocus += async (_, _) =>
+        {
+            var url = urlBox.Text.Trim();
+            if (string.IsNullOrEmpty(url)) return;
+
+            var normalized = NormalizeUrl(url);
+            if (!Uri.IsWellFormedUriString(normalized, UriKind.Absolute)) return;
+
+            var info = await WebsiteMetadataHelper.FetchAsync(normalized);
+
+            if (!string.IsNullOrEmpty(info.Title) && string.IsNullOrEmpty(nameBox.Text))
+                nameBox.Text = info.Title;
+
+            if (info.FaviconSource != null)
+            {
+                fetchedFaviconPath = info.FaviconPath;
+                faviconPreview.Source = info.FaviconSource;
+                faviconPreview.Visibility = Visibility.Visible;
+            }
         };
 
         // Browser picker: system default + installed browsers + manual override.
@@ -279,7 +311,7 @@ public sealed partial class LaunchpadPage : Page
 
         var hint = new TextBlock
         {
-            Text = "选择“使用系统默认浏览器”时，将用系统默认浏览器打开该网址。",
+            Text = "输入网址后会自动尝试获取网站名称和图标。选择“使用系统默认浏览器”时，将用系统默认浏览器打开该网址。",
             FontSize = 12,
             Opacity = 0.7,
             Margin = new Thickness(0, 8, 0, 0),
@@ -287,8 +319,9 @@ public sealed partial class LaunchpadPage : Page
         };
 
         var panel = new StackPanel { Spacing = 8 };
-        panel.Children.Add(nameBox);
         panel.Children.Add(urlBox);
+        panel.Children.Add(nameBox);
+        panel.Children.Add(faviconPreview);
         panel.Children.Add(browserCombo);
         panel.Children.Add(browseButton);
         panel.Children.Add(hint);
@@ -322,15 +355,19 @@ public sealed partial class LaunchpadPage : Page
             return;
         }
 
-        // Basic URL normalization: ensure a scheme prefix.
+        ViewModel.AddUrlItem(name, NormalizeUrl(url), browserPath, fetchedFaviconPath);
+    }
+
+    private static string NormalizeUrl(string url)
+    {
+        url = url.Trim();
         if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
             && !url.Contains("://", StringComparison.OrdinalIgnoreCase))
         {
             url = "https://" + url;
         }
-
-        ViewModel.AddUrlItem(name, url, browserPath);
+        return url;
     }
 
     private async Task<string?> PickBrowserExecutableAsync()
