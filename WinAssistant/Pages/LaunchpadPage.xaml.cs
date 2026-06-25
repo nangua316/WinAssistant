@@ -236,7 +236,7 @@ public sealed partial class LaunchpadPage : Page
 
         // Browser picker: system default + installed browsers + manual override.
         var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
-        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", "", null));
+        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", "", BrowserScanner.GetDefaultBrowserIcon()));
         foreach (var browser in BrowserScanner.ScanInstalledBrowsers())
             browserOptions.Add(browser);
 

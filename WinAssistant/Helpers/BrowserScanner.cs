@@ -98,6 +98,38 @@ public static class BrowserScanner
         catch { return null; }
     }
 
+    /// <summary>Find the executable path of the user's default browser.</summary>
+    public static string? FindDefaultBrowserPath()
+    {
+        try
+        {
+            // Windows 10/11: UserChoice points to the default handler ProgID.
+            using var userChoice = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice");
+            var progid = userChoice?.GetValue("Progid")?.ToString();
+            if (!string.IsNullOrEmpty(progid))
+            {
+                using var progKey = Registry.ClassesRoot.OpenSubKey($"{progid}\\shell\\open\\command");
+                var command = progKey?.GetValue(null)?.ToString();
+                var path = ExtractExePath(command);
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    return path;
+            }
+
+            // Fallback to the generic http handler.
+            using var httpKey = Registry.ClassesRoot.OpenSubKey(@"http\shell\open\command");
+            var httpCommand = httpKey?.GetValue(null)?.ToString();
+            var httpPath = ExtractExePath(httpCommand);
+            if (!string.IsNullOrEmpty(httpPath) && File.Exists(httpPath))
+                return httpPath;
+        }
+        catch { }
+        return null;
+    }
+
+    /// <summary>Get the icon of the user's default browser, if one can be determined.</summary>
+    public static ImageSource? GetDefaultBrowserIcon() =>
+        LoadBrowserIcon(FindDefaultBrowserPath() ?? "");
+
     /// <summary>
     /// Extracts the executable path from a command string, stripping quotes and arguments.
     /// </summary>

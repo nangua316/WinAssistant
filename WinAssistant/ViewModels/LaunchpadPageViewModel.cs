@@ -596,9 +596,13 @@ public class LaunchpadPageViewModel : ObservableObject
         };
 
         // Cache the browser icon so the URL item looks like a real app.
-        if (!string.IsNullOrEmpty(browserPath) && File.Exists(browserPath))
+        // If the user chose "system default browser", fall back to the actual default browser icon.
+        var iconSourcePath = !string.IsNullOrEmpty(browserPath) && File.Exists(browserPath)
+            ? browserPath
+            : BrowserScanner.FindDefaultBrowserPath();
+        if (!string.IsNullOrEmpty(iconSourcePath) && File.Exists(iconSourcePath))
         {
-            var cachedIcon = IconHelper.ExtractAppIconToAppData(browserPath, GetScaledIconSize(64));
+            var cachedIcon = IconHelper.ExtractAppIconToAppData(iconSourcePath, GetScaledIconSize(64));
             if (cachedIcon != null)
                 item.IconPath = cachedIcon;
         }
