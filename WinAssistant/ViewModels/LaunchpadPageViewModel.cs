@@ -188,7 +188,7 @@ public class LaunchpadPageViewModel : ObservableObject
 
     /// <summary>If a cached icon exists on disk, set it synchronously. Returns true if set.</summary>
     private static string IconExtractPath(LaunchpadItem m) =>
-        m.IconPath ?? m.AppPath;
+        m.IconPath ?? (!string.IsNullOrWhiteSpace(m.BrowserPath) ? m.BrowserPath : m.AppPath);
 
     private bool TrySetCachedIcon(LaunchpadItemViewModel vm, int size)
     {
@@ -581,6 +581,25 @@ public class LaunchpadPageViewModel : ObservableObject
         LoadSingleIcon(vm);
     }
 
+    internal void AddUrlItem(string name, string url, string browserPath)
+    {
+        var finalName = name;
+        int suffix = 2;
+        while (_items.Any(i => i.Name.Equals(finalName, StringComparison.OrdinalIgnoreCase)))
+            finalName = $"{name} ({suffix++})";
+
+        var item = new LaunchpadItem
+        {
+            Name = finalName,
+            Url = url,
+            BrowserPath = browserPath
+        };
+        var vm = new LaunchpadItemViewModel(item);
+        _items.Add(vm);
+        SaveItems();
+        LoadSingleIcon(vm);
+    }
+
     private static readonly SemaphoreSlim _iconLoadThrottle = new(3, 3);
 
     /// <summary>Load a single item's icon: try cache first, fall back to async extraction.</summary>
@@ -681,6 +700,7 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
     public string Name => _tool?.Name ?? Model.Name;
     public string AppPath => Model.AppPath;
     public bool IsTool => _tool != null;
+    public bool IsUrl => !string.IsNullOrWhiteSpace(Model.Url);
     public string ToolIconGlyph => _tool?.IconGlyph ?? "";
     public IAssistantTool? Tool => _tool;
     public string FallbackChar => _tool != null ? "" : (Name.Length > 0 ? Name[..1] : "?");
@@ -749,6 +769,7 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
 
     private static bool CheckUninstalled(LaunchpadItem model)
     {
+        if (!string.IsNullOrWhiteSpace(model.Url)) return false;
         if (model.ToolId != null) return false;
         var path = model.AppPath;
         if (string.IsNullOrEmpty(path)) return false;

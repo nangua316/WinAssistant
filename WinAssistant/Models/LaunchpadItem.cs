@@ -13,4 +13,10 @@ public class LaunchpadItem
     /// (e.g. Electron apps where the shortcut icon points to a branded .ico).
     /// </summary>
     public string? IconPath { get; set; }
+
+    /// <summary>Web URL shortcut. When set, this item opens the URL instead of an executable.</summary>
+    public string Url { get; set; } = "";
+
+    /// <summary>Optional browser executable to open the URL. Empty means use the system default browser.</summary>
+    public string BrowserPath { get; set; } = "";
 }

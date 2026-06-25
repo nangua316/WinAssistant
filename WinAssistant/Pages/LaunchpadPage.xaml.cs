@@ -169,6 +169,13 @@ public sealed partial class LaunchpadPage : Page
         };
         folderItem.Click += OnAddFolderClick;
         menu.Items.Add(folderItem);
+        var urlItem = new MenuFlyoutItem
+        {
+            Text = "添加网址",
+            Icon = new FontIcon { Glyph = "" }
+        };
+        urlItem.Click += OnAddUrlClick;
+        menu.Items.Add(urlItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         var settingsItem = new MenuFlyoutItem
         {
@@ -204,6 +211,116 @@ public sealed partial class LaunchpadPage : Page
             var result = await folderPicker.PickSingleFolderAsync();
             if (result != null)
                 ViewModel.AddFolderItem(result.Path, System.IO.Path.GetFileName(result.Path));
+        }
+        finally
+        {
+            SearchBox.IsEnabled = true;
+            PinChanged?.Invoke(this, IsPinned);
+        }
+    }
+
+    private async void OnAddUrlClick(object? sender, RoutedEventArgs e)
+    {
+        var nameBox = new TextBox
+        {
+            PlaceholderText = "例如：GitHub",
+            Header = "显示名称"
+        };
+        var urlBox = new TextBox
+        {
+            PlaceholderText = "例如：https://github.com",
+            Header = "网址"
+        };
+        var browserBox = new TextBox
+        {
+            PlaceholderText = "留空使用系统默认浏览器",
+            Header = "指定浏览器（可选）"
+        };
+        var browseButton = new Button
+        {
+            Content = "浏览...",
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        browseButton.Click += async (_, _) =>
+        {
+            var path = await PickBrowserExecutableAsync();
+            if (!string.IsNullOrEmpty(path))
+                browserBox.Text = path;
+        };
+        var hint = new TextBlock
+        {
+            Text = "留空浏览器将使用系统默认浏览器打开该网址。",
+            FontSize = 12,
+            Opacity = 0.7,
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = TextWrapping.Wrap
+        };
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(nameBox);
+        panel.Children.Add(urlBox);
+        panel.Children.Add(browserBox);
+        panel.Children.Add(browseButton);
+        panel.Children.Add(hint);
+
+        var dialog = new ContentDialog
+        {
+            Title = "添加网址",
+            Content = panel,
+            PrimaryButtonText = "添加",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        var name = nameBox.Text.Trim();
+        var url = urlBox.Text.Trim();
+        var browserPath = browserBox.Text.Trim();
+
+        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(url))
+        {
+            await new ContentDialog
+            {
+                Title = "信息不完整",
+                Content = "显示名称和网址不能为空。",
+                CloseButtonText = "确定",
+                XamlRoot = this.XamlRoot
+            }.ShowAsync();
+            return;
+        }
+
+        // Basic URL normalization: ensure a scheme prefix.
+        if (!url.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !url.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            && !url.Contains("://", StringComparison.OrdinalIgnoreCase))
+        {
+            url = "https://" + url;
+        }
+
+        ViewModel.AddUrlItem(name, url, browserPath);
+    }
+
+    private async Task<string?> PickBrowserExecutableAsync()
+    {
+        PinChanged?.Invoke(this, true);
+        SearchBox.IsEnabled = false;
+        try
+        {
+            var picker = new Windows.Storage.Pickers.FileOpenPicker
+            {
+                SuggestedStartLocation = Windows.Storage.Pickers.PickerLocationId.Desktop,
+                ViewMode = Windows.Storage.Pickers.PickerViewMode.List
+            };
+            picker.FileTypeFilter.Add(".exe");
+
+            var hwnd = OwnerHwnd ?? WinRT.Interop.WindowNative.GetWindowHandle(App.Window);
+            WinRT.Interop.InitializeWithWindow.Initialize(picker, hwnd);
+
+            var file = await picker.PickSingleFileAsync();
+            return file?.Path;
         }
         finally
         {
@@ -309,16 +426,61 @@ public sealed partial class LaunchpadPage : Page
         if (vm.IsUninstalled) { await ShowUninstalledDialog(vm); return; }
 
         Close(clearSearch: true);
+        var itemName = vm.Name;
+
+        if (vm.IsUrl)
+        {
+            var url = vm.Model.Url;
+            var browserPath = vm.Model.BrowserPath;
+            _ = Task.Run(() =>
+            {
+                var action = LaunchUrl(url, browserPath);
+                App.DispatcherQueue.TryEnqueue(() =>
+                    ShowLaunchToast(action, itemName, url));
+            });
+            return;
+        }
+
         var path = vm.AppPath;
         var args = vm.Model.Arguments;
         var aumid = vm.Model.Aumid;
-        var name = vm.Name;
         _ = Task.Run(() =>
         {
             var action = AppLauncher.LaunchOrActivate(path, args, aumid);
             App.DispatcherQueue.TryEnqueue(() =>
-                ShowLaunchToast(action, name, path));
+                ShowLaunchToast(action, itemName, path));
         });
+    }
+
+    /// <summary>Launch a URL using the specified browser, or the system default browser.</summary>
+    private static string LaunchUrl(string url, string browserPath)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(browserPath) && File.Exists(browserPath))
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = browserPath,
+                    Arguments = url,
+                    UseShellExecute = true
+                });
+            }
+            else
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = url,
+                    UseShellExecute = true
+                });
+            }
+            return "launch";
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Failed to launch URL: {ex.Message}");
+        }
+        return "";
     }
 
     /// <summary>Show dialog for uninstalled app, offer to remove the item.</summary>
