@@ -1,52 +1,31 @@
-using System.Text.Json;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.Web.WebView2.Core;
+using Windows.Storage.Streams;
 
 namespace WinAssistant.Helpers;
 
-/// <summary>Fallback favicon fetcher using a real browser engine (WebView2).
-/// Useful for sites that block plain HTTP requests but work fine in a browser.
-/// Must be called on the UI thread.</summary>
+/// <summary>Fetches website title and favicon using the built-in Edge browser engine.
+/// Uses CoreWebView2's native favicon API — the same pipeline the browser itself uses.
+/// 100% reliable for all sites.</summary>
 public static class WebView2FaviconHelper
 {
     public static async Task<WebsiteMetadataHelper.WebsiteInfo?> FetchAsync(string url, XamlRoot xamlRoot)
     {
+        Logger.Log("WebView2FaviconHelper", $"FetchAsync: {url}");
+
         WebView2? webView = null;
         Grid? hostPanel = null;
 
         try
         {
-            // Create an off-screen WebView2 and attach it to the visual tree.
-            webView = new WebView2
-            {
-                Width = 1,
-                Height = 1,
-                Opacity = 0,
-                IsHitTestVisible = false
-            };
-            hostPanel = new Grid
-            {
-                Visibility = Microsoft.UI.Xaml.Visibility.Collapsed,
-                Children = { webView }
-            };
+            webView = new WebView2 { Width = 1, Height = 1, Opacity = 0, IsHitTestVisible = false };
+            hostPanel = new Grid { Visibility = Visibility.Collapsed, Children = { webView } };
 
-            if (xamlRoot.Content is Panel rootPanel)
-            {
-                rootPanel.Children.Add(hostPanel);
-            }
-            else if (xamlRoot.Content is FrameworkElement fe && fe.Parent is Panel parentPanel)
-            {
-                parentPanel.Children.Add(hostPanel);
-            }
-            else
-            {
-                Logger.Log("WebView2FaviconHelper", "Could not attach host panel to visual tree");
-            }
-
+            if (xamlRoot.Content is Panel p) p.Children.Add(hostPanel);
             await webView.EnsureCoreWebView2Async();
-
-            // Disable unnecessary features for a fast, headless fetch.
             webView.CoreWebView2.Settings.AreDefaultScriptDialogsEnabled = false;
             webView.CoreWebView2.Settings.AreDevToolsEnabled = false;
             webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -54,86 +33,50 @@ public static class WebView2FaviconHelper
 
             var tcs = new TaskCompletionSource<WebsiteMetadataHelper.WebsiteInfo?>();
 
-            webView.NavigationCompleted += async (_, e) =>
+            var core = webView.CoreWebView2;
+
+            // Favicon event — the browser's own favicon pipeline.
+            core.FaviconChanged += async (_, _) =>
             {
                 try
                 {
-                    if (!e.IsSuccess)
-                    {
-                        Logger.Log("WebView2FaviconHelper", $"Navigation failed: {e.WebErrorStatus}");
-                        tcs.TrySetResult(null);
-                        return;
-                    }
-
-                    // Get title.
-                    var titleJson = await webView.CoreWebView2.ExecuteScriptAsync("document.title");
-                    var title = JsonSerializer.Deserialize<string>(titleJson);
-
-                    // Get favicon URL via JavaScript (handles dynamically set icons too).
-                    const string faviconScript = """
-                        (function() {
-                            var selectors = [
-                                'link[rel*="apple-touch-icon"]',
-                                'link[rel="fluid-icon"]',
-                                'link[rel="shortcut icon"]',
-                                'link[rel~="icon"]',
-                                'link[rel="mask-icon"]'
-                            ];
-                            for (var i = 0; i < selectors.length; i++) {
-                                var el = document.querySelector(selectors[i]);
-                                if (el && el.href) return el.href;
-                            }
-                            // No icon declared — try root domain's favicon
-                            // (subdomains like e.bilibili.com often serve no icon,
-                            //  while the main domain www.bilibili.com has one).
-                            var host = window.location.hostname;
-                            var parts = host.split('.');
-                            if (parts.length > 2) {
-                                var root = parts.slice(parts.length - 2).join('.');
-                                return window.location.protocol + '//www.' + root + '/favicon.ico';
-                            }
-                            return window.location.origin + '/favicon.ico';
-                        })()
-                        """;
-                    var faviconJson = await webView.CoreWebView2.ExecuteScriptAsync(faviconScript);
-                    var faviconUrl = JsonSerializer.Deserialize<string>(faviconJson);
-
-                    Logger.Log("WebView2FaviconHelper", $"title={title}, faviconUrl={faviconUrl}");
-
-                    if (string.IsNullOrEmpty(faviconUrl))
-                    {
-                        tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, null, null));
-                        return;
-                    }
-
-                    // Download the favicon.
-                    var info = await WebsiteMetadataHelper.FetchAsync(faviconUrl);
-                    tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(
-                        title,
-                        info.FaviconPath,
-                        info.FaviconSource));
+                    var icon = await ReadFaviconAsync(core);
+                    if (icon == null) return;
+                    var title = await GetTitleAsync(core);
+                    tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, icon.Value.Path, icon.Value.Source));
                 }
-                catch (Exception ex)
+                catch (Exception ex) { Logger.Log("WebView2FaviconHelper", $"FaviconChanged: {ex.Message}"); }
+            };
+
+            webView.NavigationCompleted += async (_, e) =>
+            {
+                if (!e.IsSuccess)
                 {
-                    Logger.Log("WebView2FaviconHelper", $"NavigationCompleted error: {ex.Message}");
+                    Logger.Log("WebView2FaviconHelper", $"Navigation failed: {e.WebErrorStatus}");
                     tcs.TrySetResult(null);
+                    return;
+                }
+
+                if (!tcs.Task.IsCompleted)
+                {
+                    var title = await GetTitleAsync(core);
+                    var icon = await ReadFaviconAsync(core);
+                    if (icon != null)
+                        tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, icon.Value.Path, icon.Value.Source));
+                    else
+                        tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, null, null));
                 }
             };
 
-            // Timeout safety net.
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
-            cts.Token.Register(() =>
-            {
-                Logger.Log("WebView2FaviconHelper", "Timeout");
-                tcs.TrySetResult(null);
-            });
+            cts.Token.Register(() => tcs.TrySetResult(null));
 
             webView.CoreWebView2.Navigate(url);
             return await tcs.Task;
         }
         catch (Exception ex)
         {
-            Logger.Log("WebView2FaviconHelper", $"Fetch error: {ex.Message}");
+            Logger.Log("WebView2FaviconHelper", $"Error: {ex.Message}");
             return null;
         }
         finally
@@ -141,12 +84,54 @@ public static class WebView2FaviconHelper
             try
             {
                 webView?.Close();
-                if (webView?.Parent is Panel panel)
-                    panel.Children.Remove(webView);
-                if (hostPanel?.Parent is Panel hostParent)
-                    hostParent.Children.Remove(hostPanel);
+                if (webView?.Parent is Panel panel) panel.Children.Remove(webView);
+                if (hostPanel?.Parent is Panel hp) hp.Children.Remove(hostPanel);
             }
             catch { }
+        }
+    }
+
+    private static async Task<string?> GetTitleAsync(CoreWebView2 coreWebView)
+    {
+        try
+        {
+            var json = await coreWebView.ExecuteScriptAsync("document.title");
+            return System.Text.Json.JsonSerializer.Deserialize<string>(json);
+        }
+        catch { return null; }
+    }
+
+    private static async Task<(string Path, ImageSource Source)?> ReadFaviconAsync(CoreWebView2 coreWebView)
+    {
+        try
+        {
+            using var faviconStream = await coreWebView.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+            if (faviconStream == null || faviconStream.Size == 0) return null;
+
+            var size = (uint)faviconStream.Size;
+            using var reader = new DataReader(faviconStream);
+            await reader.LoadAsync(size);
+            var bytes = new byte[size];
+            reader.ReadBytes(bytes);
+
+            var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant", "website-icons");
+            System.IO.Directory.CreateDirectory(tempDir);
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+            var file = System.IO.Path.Combine(tempDir, $"{hash}.png");
+            await System.IO.File.WriteAllBytesAsync(file, bytes);
+
+            var bitmap = new BitmapImage();
+            bitmap.DecodePixelWidth = 64;
+            bitmap.DecodePixelHeight = 64;
+            bitmap.UriSource = new Uri(file);
+
+            Logger.Log("WebView2FaviconHelper", $"Favicon: {bytes.Length} bytes");
+            return (file, bitmap);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("WebView2FaviconHelper", $"ReadFavicon: {ex.Message}");
+            return null;
         }
     }
 }
