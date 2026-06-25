@@ -26,6 +26,7 @@ public static class WebsiteMetadataHelper
     /// <summary>Best-effort fetch of the page title and favicon.</summary>
     public static async Task<WebsiteInfo> FetchAsync(string url)
     {
+        Logger.Log("WebsiteMetadataHelper", $"FetchAsync: {url}");
         if (!Uri.TryCreate(NormalizeUrl(url), UriKind.Absolute, out var uri))
             return new WebsiteInfo(null, null, null);
 
@@ -39,10 +40,11 @@ public static class WebsiteMetadataHelper
             request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+            var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
+            Logger.Log("WebsiteMetadataHelper", $"FetchAsync status={response.StatusCode}, contentType={contentType}");
             if (!response.IsSuccessStatusCode)
                 return new WebsiteInfo(null, null, null);
 
-            var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
             if (!contentType.Contains("html", StringComparison.OrdinalIgnoreCase))
                 return new WebsiteInfo(null, null, null);
 
@@ -52,7 +54,15 @@ public static class WebsiteMetadataHelper
                 html = html[..(256 * 1024)];
 
             var title = ExtractTitle(html);
+            Logger.Log("WebsiteMetadataHelper", $"FetchAsync htmlLength={html.Length}, title={title}");
+
+            var declaredUrls = ExtractFaviconUrls(html, uri);
+            Logger.Log("WebsiteMetadataHelper", $"FetchAsync declaredFavicons={declaredUrls.Count}");
+            foreach (var u in declaredUrls)
+                Logger.Log("WebsiteMetadataHelper", $"  declared: {u}");
+
             var (faviconPath, faviconSource) = await TryFetchFaviconAsync(html, uri);
+            Logger.Log("WebsiteMetadataHelper", $"FetchAsync result faviconPath={faviconPath}");
 
             return new WebsiteInfo(title, faviconPath, faviconSource);
         }
@@ -206,6 +216,7 @@ public static class WebsiteMetadataHelper
 
         try
         {
+            Logger.Log("WebsiteMetadataHelper", $"DownloadFaviconAsync: {faviconUrl}");
             using var request = new HttpRequestMessage(HttpMethod.Get, faviconUrl);
             request.Headers.TryAddWithoutValidation("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
@@ -214,10 +225,10 @@ public static class WebsiteMetadataHelper
             request.Headers.TryAddWithoutValidation("Referer", new Uri(faviconUrl).GetLeftPart(UriPartial.Authority));
 
             using var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return (null, null);
-
             var contentType = response.Content.Headers.ContentType?.MediaType ?? "";
             var bytes = await response.Content.ReadAsByteArrayAsync();
+            Logger.Log("WebsiteMetadataHelper", $"DownloadFaviconAsync status={response.StatusCode}, contentType={contentType}, length={bytes.Length}");
+            if (!response.IsSuccessStatusCode) return (null, null);
             if (bytes.Length == 0) return (null, null);
 
             // Reject HTML responses masquerading as favicons (e.g. SPA fallback pages).
