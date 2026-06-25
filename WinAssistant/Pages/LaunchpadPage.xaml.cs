@@ -228,22 +228,36 @@ public sealed partial class LaunchpadPage : Page
             PlaceholderText = "例如：https://github.com",
             Header = "网址"
         };
+
+        // Icon preview: shows the browser icon by default, replaced by the website favicon when fetched.
+        var iconPreview = new Image
+        {
+            Width = 40,
+            Height = 40,
+            Stretch = Stretch.Uniform,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        string? websiteFaviconPath = null;
+        ImageSource? currentIconSource = null;
+
         var nameBox = new TextBox
         {
             PlaceholderText = "例如：GitHub",
-            Header = "显示名称"
+            Header = "显示名称",
+            VerticalAlignment = VerticalAlignment.Center
         };
 
-        // Favicon preview shown after fetching website metadata.
-        var faviconPreview = new Image
+        var iconNamePanel = new Grid
         {
-            Width = 32,
-            Height = 32,
-            Stretch = Stretch.Uniform,
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Visibility = Visibility.Collapsed
+            ColumnSpacing = 12
         };
-        string? fetchedFaviconPath = null;
+        iconNamePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        iconNamePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(iconPreview, 0);
+        Grid.SetColumn(nameBox, 1);
+        iconNamePanel.Children.Add(iconPreview);
+        iconNamePanel.Children.Add(nameBox);
 
         var fetchButton = new Button
         {
@@ -251,9 +265,68 @@ public sealed partial class LaunchpadPage : Page
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
+        // Browser picker: system default + installed browsers + manual override.
+        var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
+        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", "", BrowserScanner.GetDefaultBrowserIcon()));
+        foreach (var browser in BrowserScanner.ScanInstalledBrowsers())
+            browserOptions.Add(browser);
+
+        var browserCombo = new ComboBox
+        {
+            Header = "浏览器",
+            ItemsSource = browserOptions,
+            SelectedIndex = 0,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
+                "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
+                "<StackPanel Orientation='Horizontal' Spacing='8'>" +
+                "<Image Source='{Binding IconSource}' Width='16' Height='16' VerticalAlignment='Center'/>" +
+                "<TextBlock Text='{Binding Name}' VerticalAlignment='Center'/>" +
+                "</StackPanel>" +
+                "</DataTemplate>")
+        };
+
+        void UpdateIconPreview()
+        {
+            // Prefer website favicon if already fetched.
+            if (currentIconSource != null)
+            {
+                iconPreview.Source = currentIconSource;
+                return;
+            }
+
+            // Otherwise show the selected browser icon (or default browser icon).
+            var selectedBrowser = browserCombo.SelectedItem as BrowserScanner.BrowserInfo;
+            if (selectedBrowser?.IconSource != null)
+                iconPreview.Source = selectedBrowser.IconSource;
+        }
+
+        browserCombo.SelectionChanged += (_, _) => UpdateIconPreview();
+
+        var browseButton = new Button
+        {
+            Content = "浏览...",
+            Margin = new Thickness(0, 4, 0, 0)
+        };
+        browseButton.Click += async (_, _) =>
+        {
+            var path = await PickBrowserExecutableAsync();
+            if (string.IsNullOrEmpty(path)) return;
+
+            var existing = browserOptions.FirstOrDefault(b => b.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
+            if (existing != null)
+            {
+                browserCombo.SelectedItem = existing;
+                return;
+            }
+
+            var custom = new BrowserScanner.BrowserInfo(Path.GetFileNameWithoutExtension(path), path, BrowserScanner.LoadBrowserIcon(path));
+            browserOptions.Insert(1, custom);
+            browserCombo.SelectedItem = custom;
+        };
+
         urlBox.LostFocus += async (_, _) =>
         {
-            // Auto-fetch only if the name is still empty, so the user can override.
             if (string.IsNullOrEmpty(nameBox.Text))
                 await FetchWebsiteMetadataAsync();
         };
@@ -287,61 +360,24 @@ public sealed partial class LaunchpadPage : Page
 
             if (info.FaviconSource != null)
             {
-                fetchedFaviconPath = info.FaviconPath;
-                faviconPreview.Source = info.FaviconSource;
-                faviconPreview.Visibility = Visibility.Visible;
+                websiteFaviconPath = info.FaviconPath;
+                currentIconSource = info.FaviconSource;
             }
+            else
+            {
+                websiteFaviconPath = null;
+                currentIconSource = null;
+            }
+
+            UpdateIconPreview();
 
             fetchButton.IsEnabled = true;
             fetchButton.Content = "获取图标和标题";
         }
 
-        // Browser picker: system default + installed browsers + manual override.
-        var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
-        browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", "", BrowserScanner.GetDefaultBrowserIcon()));
-        foreach (var browser in BrowserScanner.ScanInstalledBrowsers())
-            browserOptions.Add(browser);
-
-        var browserCombo = new ComboBox
-        {
-            Header = "浏览器",
-            ItemsSource = browserOptions,
-            SelectedIndex = 0,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            ItemTemplate = (DataTemplate)Microsoft.UI.Xaml.Markup.XamlReader.Load(
-                "<DataTemplate xmlns='http://schemas.microsoft.com/winfx/2006/xaml/presentation' xmlns:x='http://schemas.microsoft.com/winfx/2006/xaml'>" +
-                "<StackPanel Orientation='Horizontal' Spacing='8'>" +
-                "<Image Source='{Binding IconSource}' Width='16' Height='16' VerticalAlignment='Center'/>" +
-                "<TextBlock Text='{Binding Name}' VerticalAlignment='Center'/>" +
-                "</StackPanel>" +
-                "</DataTemplate>")
-        };
-
-        var browseButton = new Button
-        {
-            Content = "浏览...",
-            Margin = new Thickness(0, 4, 0, 0)
-        };
-        browseButton.Click += async (_, _) =>
-        {
-            var path = await PickBrowserExecutableAsync();
-            if (string.IsNullOrEmpty(path)) return;
-
-            var existing = browserOptions.FirstOrDefault(b => b.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
-            if (existing != null)
-            {
-                browserCombo.SelectedItem = existing;
-                return;
-            }
-
-            var custom = new BrowserScanner.BrowserInfo(Path.GetFileNameWithoutExtension(path), path, BrowserScanner.LoadBrowserIcon(path));
-            browserOptions.Insert(1, custom);
-            browserCombo.SelectedItem = custom;
-        };
-
         var hint = new TextBlock
         {
-            Text = "输入网址后会自动尝试获取网站名称和图标。选择“使用系统默认浏览器”时，将用系统默认浏览器打开该网址。",
+            Text = "输入网址后点击“获取图标和标题”。如果网站图标获取失败，将使用浏览器图标。",
             FontSize = 12,
             Opacity = 0.7,
             Margin = new Thickness(0, 8, 0, 0),
@@ -351,8 +387,7 @@ public sealed partial class LaunchpadPage : Page
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(urlBox);
         panel.Children.Add(fetchButton);
-        panel.Children.Add(nameBox);
-        panel.Children.Add(faviconPreview);
+        panel.Children.Add(iconNamePanel);
         panel.Children.Add(browserCombo);
         panel.Children.Add(browseButton);
         panel.Children.Add(hint);
@@ -366,6 +401,9 @@ public sealed partial class LaunchpadPage : Page
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = this.XamlRoot
         };
+
+        // Initialize preview with the default browser icon.
+        UpdateIconPreview();
 
         var result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary) return;
@@ -386,8 +424,9 @@ public sealed partial class LaunchpadPage : Page
             return;
         }
 
-        ViewModel.AddUrlItem(name, NormalizeUrl(url), browserPath, fetchedFaviconPath);
+        ViewModel.AddUrlItem(name, NormalizeUrl(url), browserPath, websiteFaviconPath);
     }
+
 
     private static string NormalizeUrl(string url)
     {
