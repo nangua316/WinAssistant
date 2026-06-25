@@ -45,8 +45,7 @@ public static class WebsiteMetadataHelper
                 html = html[..(256 * 1024)];
 
             var title = ExtractTitle(html);
-            var faviconUrl = ExtractFaviconUrl(html, uri);
-            var (faviconPath, faviconSource) = await DownloadFaviconAsync(faviconUrl);
+            var (faviconPath, faviconSource) = await TryFetchFaviconAsync(html, uri);
 
             return new WebsiteInfo(title, faviconPath, faviconSource);
         }
@@ -56,6 +55,22 @@ public static class WebsiteMetadataHelper
         }
 
         return new WebsiteInfo(null, null, null);
+    }
+
+    private static async Task<(string? Path, ImageSource? Source)> TryFetchFaviconAsync(string html, Uri pageUri)
+    {
+        // 1. Try the icon explicitly declared in the HTML.
+        var declaredUrl = ExtractFaviconUrl(html, pageUri);
+        if (!string.IsNullOrEmpty(declaredUrl))
+        {
+            var declared = await DownloadFaviconAsync(declaredUrl);
+            if (declared.Path != null) return declared;
+        }
+
+        // 2. Fallback to the well-known /favicon.ico location.
+        var fallbackUrl = $"{pageUri.Scheme}://{pageUri.Host}/favicon.ico";
+        Logger.Log("WebsiteMetadataHelper", $"Trying fallback favicon: {fallbackUrl}");
+        return await DownloadFaviconAsync(fallbackUrl);
     }
 
     private static string NormalizeUrl(string url)
