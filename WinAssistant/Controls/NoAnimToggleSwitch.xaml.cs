@@ -91,6 +91,8 @@ public sealed partial class NoAnimToggleSwitch : UserControl
         _thumbOff.Opacity = isOn ? 0 : 1;
         _thumbOn.Opacity = isOn ? 1 : 0;
         _thumbTranslate.X = isOn ? 20 : 0;
+        if (_stateLabel != null)
+            _stateLabel.Text = isOn ? "开" : "关";
     }
 
     private static void AddAnim(Storyboard sb, DependencyObject target, string property,

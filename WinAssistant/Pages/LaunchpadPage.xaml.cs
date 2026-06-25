@@ -374,8 +374,8 @@ public sealed partial class LaunchpadPage : Page
         {
             if (vm.IsUnadded)
             {
-                // Just remove from the filter results; not a real item.
-                ViewModel.FilteredItems.Remove(vm);
+                // Add the unadded app to the user's launchpad.
+                ViewModel.AddUnaddedItem(vm);
                 return;
             }
             var dialog = new ContentDialog

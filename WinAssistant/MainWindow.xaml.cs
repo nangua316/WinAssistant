@@ -147,20 +147,6 @@ public sealed partial class MainWindow : Window
 
         var curSize = AppWindow.Size;
 
-        // 保存当前位置（等解除 Cloak 后还原，用户拖动的位置不会丢失）
-        int restoreX = 0, restoreY = 0;
-        bool hasPosition = GetWindowRect(_hwnd, out var currentRect);
-        if (hasPosition)
-        {
-            restoreX = currentRect.left;
-            restoreY = currentRect.top;
-        }
-
-        // DWM Cloak: 临时遮蔽窗口渲染，所有构图（Mica / ToggleSwitch 动画）在后台完成，
-        // 解除遮蔽后直接展示完成状态，用户不会看到任何中间态闪烁。
-        var cloak = 1;
-        DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
-
         // 只在首次打开时导航到 MainPage；后续复用已有的页面实例
         if (RootFrame.Content == null)
         {
@@ -168,37 +154,32 @@ public sealed partial class MainWindow : Window
                 new Microsoft.UI.Xaml.Media.Animation.SuppressNavigationTransitionInfo());
         }
 
-        ShowWindow(_hwnd, SW_SHOW);
-        SetForegroundWindow(_hwnd);
-        try { Activate(); } catch { }
-
         if (Content is FrameworkElement root)
         {
             root.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
                 ? ElementTheme.Light : ElementTheme.Dark;
         }
 
-        // 延迟解除遮蔽 + 还原位置（等后台构图完成）
-        var uncloakTimer = new Microsoft.UI.Xaml.DispatcherTimer();
-        uncloakTimer.Interval = TimeSpan.FromMilliseconds(300);
-        uncloakTimer.Tick += (s, e) =>
+        // 还原到上次位置（首次打开则居中）
+        int x = 0, y = 0;
+        bool hasPosition = GetWindowRect(_hwnd, out var currentRect);
+        if (hasPosition)
         {
-            uncloakTimer.Stop();
-
-            // 解除 DWM Cloak — 窗口直接展示完成状态
-            cloak = 0;
-            DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloak, sizeof(int));
-
-            // 还原到保存的位置（首次打开则居中）
+            x = currentRect.left;
+            y = currentRect.top;
+        }
+        else
+        {
             var physW = GetSystemMetrics(SM_CXSCREEN);
             var physH = GetSystemMetrics(SM_CYSCREEN);
-            var cx = (physW - curSize.Width) / 2;
-            var cy = (physH - curSize.Height) / 2;
-            SetWindowPos(_hwnd, nint.Zero, hasPosition ? restoreX : cx, hasPosition ? restoreY : cy,
-                0, 0, SWP_NOSIZE | SWP_NOZORDER);
-            SetForegroundWindow(_hwnd);
-        };
-        uncloakTimer.Start();
+            x = (physW - curSize.Width) / 2;
+            y = (physH - curSize.Height) / 2;
+        }
+
+        ShowWindow(_hwnd, SW_SHOW);
+        SetWindowPos(_hwnd, nint.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+        SetForegroundWindow(_hwnd);
+        try { Activate(); } catch { }
     }
 
     private void MakeToolWindow()
