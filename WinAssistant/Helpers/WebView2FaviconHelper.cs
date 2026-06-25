@@ -83,6 +83,15 @@ public static class WebView2FaviconHelper
                                 var el = document.querySelector(selectors[i]);
                                 if (el && el.href) return el.href;
                             }
+                            // No icon declared — try root domain's favicon
+                            // (subdomains like e.bilibili.com often serve no icon,
+                            //  while the main domain www.bilibili.com has one).
+                            var host = window.location.hostname;
+                            var parts = host.split('.');
+                            if (parts.length > 2) {
+                                var root = parts.slice(parts.length - 2).join('.');
+                                return window.location.protocol + '//www.' + root + '/favicon.ico';
+                            }
                             return window.location.origin + '/favicon.ico';
                         })()
                         """;
