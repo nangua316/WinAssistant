@@ -12,10 +12,13 @@ public static class WebsiteMetadataHelper
     private static readonly HttpClient _httpClient = new(new HttpClientHandler
     {
         AllowAutoRedirect = true,
-        MaxAutomaticRedirections = 5
+        MaxAutomaticRedirections = 5,
+        AutomaticDecompression = DecompressionMethods.GZip
+                                 | DecompressionMethods.Deflate
+                                 | DecompressionMethods.Brotli
     })
     {
-        Timeout = TimeSpan.FromSeconds(10)
+        Timeout = TimeSpan.FromSeconds(15)
     };
 
     public record WebsiteInfo(string? Title, string? FaviconPath, ImageSource? FaviconSource);
@@ -31,6 +34,9 @@ public static class WebsiteMetadataHelper
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             request.Headers.TryAddWithoutValidation("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36");
+            request.Headers.TryAddWithoutValidation("Accept",
+                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8");
+            request.Headers.TryAddWithoutValidation("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
 
             using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
             if (!response.IsSuccessStatusCode)
@@ -203,6 +209,9 @@ public static class WebsiteMetadataHelper
             using var request = new HttpRequestMessage(HttpMethod.Get, faviconUrl);
             request.Headers.TryAddWithoutValidation("User-Agent",
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            request.Headers.TryAddWithoutValidation("Accept",
+                "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8");
+            request.Headers.TryAddWithoutValidation("Referer", new Uri(faviconUrl).GetLeftPart(UriPartial.Authority));
 
             using var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return (null, null);
