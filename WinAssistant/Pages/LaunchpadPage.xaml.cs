@@ -344,15 +344,50 @@ public sealed partial class LaunchpadPage : Page
             fetchButton.IsEnabled = false;
             fetchButton.Content = "获取中...";
 
-            var info = await WebsiteMetadataHelper.FetchAsync(normalized);
+            // 1. Quick HTTP /favicon.ico check (3s) — works for most sites instantly.
+            var httpInfo = await WebsiteMetadataHelper.FetchAsync(normalized);
 
-            // Fallback to a real browser engine for sites that block plain HTTP requests (e.g. bilibili).
-            if (info.FaviconSource == null && XamlRoot != null)
+            // 2. Always run WebView2 in background — universal solution, handles all sites.
+            //    Runs in parallel with the quick HTTP title fetch below.
+            Task<WebsiteMetadataHelper.WebsiteInfo?> wv2Task = null!;
+            if (XamlRoot != null)
+                wv2Task = WebView2FaviconHelper.FetchAsync(normalized, XamlRoot);
+
+            // 3. If HTTP gave us a title, try to get it too (3s timeout).
+            //    HTTP title is faster but WebView2 title is more accurate.
+            if (string.IsNullOrEmpty(httpInfo.Title))
             {
-                Debug.WriteLine($"Falling back to WebView2 for {normalized}");
-                var webViewInfo = await WebView2FaviconHelper.FetchAsync(normalized, XamlRoot);
-                if (webViewInfo != null)
-                    info = webViewInfo;
+                try
+                {
+                    using var titleReq = new HttpRequestMessage(HttpMethod.Get, new Uri(normalized));
+                    titleReq.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
+                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    using var titleResp = await new HttpClient().SendAsync(titleReq, timeoutCts.Token);
+                    var html = await titleResp.Content.ReadAsStringAsync(timeoutCts.Token);
+                    var m = System.Text.RegularExpressions.Regex.Match(html,
+                        @"<title[^>]*>(.*?)</title>",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
+                    if (m.Success)
+                        httpInfo = new WebsiteMetadataHelper.WebsiteInfo(System.Net.WebUtility.HtmlDecode(m.Groups[1].Value.Trim()),
+                            httpInfo.FaviconPath, httpInfo.FaviconSource);
+                }
+                catch { }
+            }
+
+            // 4. Pick the best result: WebView2 is authoritative if it got data.
+            var info = httpInfo;
+            if (wv2Task != null)
+            {
+                var wv2Info = await wv2Task;
+                if (wv2Info != null)
+                {
+                    // WebView2 title is always accurate (from real browser).
+                    // WebView2 icon is the JS-resolved favicon URL.
+                    info = new WebsiteMetadataHelper.WebsiteInfo(
+                        wv2Info.Title ?? info.Title,
+                        wv2Info.FaviconPath ?? info.FaviconPath,
+                        wv2Info.FaviconSource ?? info.FaviconSource);
+                }
             }
 
             if (!string.IsNullOrEmpty(info.Title))

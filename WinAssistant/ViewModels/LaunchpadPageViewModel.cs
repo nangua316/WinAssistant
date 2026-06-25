@@ -199,6 +199,8 @@ public class LaunchpadPageViewModel : ObservableObject
             if (!string.IsNullOrEmpty(iconPath) && IsImageFile(iconPath))
             {
                 var bitmap = new BitmapImage();
+                bitmap.DecodePixelWidth = size;
+                bitmap.DecodePixelHeight = size;
                 bitmap.UriSource = new Uri(iconPath);
                 vm.IconSource = bitmap;
                 return true;
