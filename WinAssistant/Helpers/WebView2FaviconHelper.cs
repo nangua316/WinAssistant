@@ -8,10 +8,10 @@ using Windows.Storage.Streams;
 
 namespace WinAssistant.Helpers;
 
-/// <summary>Fetches website title + favicon using Edge's own network stack.
-/// Two-phase approach: (1) load page -> get title + find favicon URL,
-/// (2) load favicon URL -> intercept raw response bytes via WebResourceResponseReceived.
-/// Edge handles all TLS / CDN / anti-bot issues that HttpClient can't.</summary>
+/// <summary>Fetches website title + favicon using Edge's own browser engine.
+/// Approach: let the page fully load + JS settle, then read title from DOM
+/// and get the favicon via Edge's native favicon API (same as what shows in the tab).
+/// For pages that set icons dynamically, we wait and retry automatically.</summary>
 public static class WebView2FaviconHelper
 {
     public static async Task<WebsiteMetadataHelper.WebsiteInfo?> FetchAsync(string url, XamlRoot xamlRoot)
@@ -29,75 +29,120 @@ public static class WebView2FaviconHelper
             wv.CoreWebView2.Settings.IsStatusBarEnabled = false;
 
             var tcs = new TaskCompletionSource<WebsiteMetadataHelper.WebsiteInfo?>();
-            string? pageTitle = null;
-            string? targetFaviconUrl = null;
 
-            // Phase 2: capture the favicon bytes when Edge downloads the target URL.
-            wv.CoreWebView2.WebResourceResponseReceived += async (_, args) =>
-            {
-                try
-                {
-                    if (targetFaviconUrl == null) return;
-                    if (!args.Request.Uri.Equals(targetFaviconUrl, StringComparison.OrdinalIgnoreCase)) return;
-                    if (args.Response.StatusCode != 200) return;
-
-                    using var stream = await args.Response.GetContentAsync();
-                    if (stream == null || stream.Size == 0) return;
-
-                    var size = (uint)stream.Size;
-                    using var reader = new DataReader(stream);
-                    await reader.LoadAsync(size);
-                    var bytes = new byte[size];
-                    reader.ReadBytes(bytes);
-
-                    var dir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "WinAssistant", "website-icons");
-                    System.IO.Directory.CreateDirectory(dir);
-                    var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
-                    var file = System.IO.Path.Combine(dir, $"{hash}.ico");
-                    await System.IO.File.WriteAllBytesAsync(file, bytes);
-
-                    var bmp = new BitmapImage();
-                    bmp.DecodePixelWidth = 64; bmp.DecodePixelHeight = 64;
-                    bmp.UriSource = new Uri(file);
-                    tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(pageTitle, file, bmp));
-                }
-                catch { }
-            };
-
-            // Phase 1: load page, get title, find favicon URL.
             wv.NavigationCompleted += async (_, e) =>
             {
-                try
+                if (!e.IsSuccess) { tcs.TrySetResult(null); return; }
+
+                // Wait for JS to settle (SPAs set title+favicon dynamically).
+                await Task.Delay(2000);
+
+                // Get the final title (after JS executes).
+                var tJson = await wv.CoreWebView2.ExecuteScriptAsync("document.title");
+                var title = JsonSerializer.Deserialize<string>(tJson);
+                Logger.Log("WebView2FaviconHelper", $"title='{title}'");
+
+                // Get favicon via Edge's own API — this is what the tab uses.
+                string? favFile = null;
+                BitmapImage? favBmp = null;
+
+                for (int retry = 0; retry < 3; retry++)
                 {
-                    if (!e.IsSuccess) { tcs.TrySetResult(null); return; }
+                    try
+                    {
+                        using var s = await wv.CoreWebView2.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);
+                        if (s != null && s.Size > 100) // >100 bytes = real icon
+                        {
+                            var size = (uint)s.Size;
+                            using var r = new DataReader(s);
+                            await r.LoadAsync(size);
+                            var bytes = new byte[size];
+                            r.ReadBytes(bytes);
 
-                    var tJson = await wv.CoreWebView2.ExecuteScriptAsync("document.title");
-                    pageTitle = JsonSerializer.Deserialize<string>(tJson);
+                            var dir = Path.Combine(Path.GetTempPath(), "WinAssistant", "website-icons");
+                            Directory.CreateDirectory(dir);
+                            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+                            var file = Path.Combine(dir, $"{hash}.png");
+                            await File.WriteAllBytesAsync(file, bytes);
 
-                    if (tcs.Task.IsCompleted) return; // already got favicon from phase 2
-                    if (targetFaviconUrl != null) { tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(pageTitle, null, null)); return; } // phase 2 nav completed but no favicon captured
+                            var bmp = new BitmapImage();
+                            bmp.DecodePixelWidth = 64; bmp.DecodePixelHeight = 64;
+                            bmp.UriSource = new Uri(file);
+                            favFile = file; favBmp = bmp;
+                            Logger.Log("WebView2FaviconHelper", $"favicon via API: {bytes.Length}B");
+                            break;
+                        }
+                    }
+                    catch { }
 
-                    // Phase 1: find the favicon URL.
+                    // Not ready yet — wait and retry (dynamic favicon).
+                    await Task.Delay(1500);
+                }
+
+                // If native API failed, try manual download via JS + WebResourceResponseReceived.
+                if (favFile == null)
+                {
+                    Logger.Log("WebView2FaviconHelper", "favicon API failed, trying manual fetch");
                     var fJson = await wv.CoreWebView2.ExecuteScriptAsync("""
                         (function(){
                             var s=['link[rel*="apple-touch-icon"]','link[rel="fluid-icon"]','link[rel="shortcut icon"]','link[rel~="icon"]','link[rel="mask-icon"]'];
                             for(var i=0;i<s.length;i++){var e=document.querySelector(s[i]);if(e&&e.href)return e.href;}
                             var h=window.location.hostname.split('.');
-                            if(h.length>2) return window.location.protocol+'//www.'+h.slice(-2).join('.')+'/favicon.ico';
+                            if(h.length>2)return window.location.protocol+'//www.'+h.slice(-2).join('.')+'/favicon.ico';
                             return window.location.origin+'/favicon.ico';
                         })()
                         """);
                     var faviconUrl = JsonSerializer.Deserialize<string>(fJson);
-                    if (string.IsNullOrEmpty(faviconUrl)) { tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(pageTitle, null, null)); return; }
+                    if (!string.IsNullOrEmpty(faviconUrl))
+                    {
+                        Logger.Log("WebView2FaviconHelper", $"manual favicon URL: {faviconUrl}");
 
-                    // Navigate to the favicon URL so Edge downloads it -> WebResourceResponseReceived fires.
-                    targetFaviconUrl = faviconUrl;
-                    wv.CoreWebView2.Navigate(faviconUrl);
+                        // Register response capture before navigating.
+                        TaskCompletionSource<WebsiteMetadataHelper.WebsiteInfo?> manual = new();
+                        wv.CoreWebView2.WebResourceResponseReceived += async (_, args) =>
+                        {
+                            try
+                            {
+                                if (!args.Request.Uri.Equals(faviconUrl, StringComparison.OrdinalIgnoreCase)) return;
+                                if (args.Response.StatusCode != 200) return;
+                                using var stream = await args.Response.GetContentAsync();
+                                if (stream == null || stream.Size == 0) return;
+                                var sz = (uint)stream.Size;
+                                using var reader = new DataReader(stream);
+                                await reader.LoadAsync(sz);
+                                var bytes = new byte[sz];
+                                reader.ReadBytes(bytes);
+                                var dir = Path.Combine(Path.GetTempPath(), "WinAssistant", "website-icons");
+                                Directory.CreateDirectory(dir);
+                                var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..16];
+                                var file = Path.Combine(dir, $"{hash}.ico");
+                                await File.WriteAllBytesAsync(file, bytes);
+                                var bmp = new BitmapImage();
+                                bmp.DecodePixelWidth = 64; bmp.DecodePixelHeight = 64;
+                                bmp.UriSource = new Uri(file);
+                                manual.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, file, bmp));
+                            }
+                            catch { }
+                        };
+
+                        wv.CoreWebView2.Navigate(faviconUrl);
+
+                        // Wait for the manual download (6s timeout).
+                        using var cts2 = new CancellationTokenSource(6000);
+                        cts2.Token.Register(() => manual.TrySetResult(null));
+                        var m = await manual.Task;
+                        if (m != null && m.FaviconSource != null)
+                        {
+                            tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, m.FaviconPath, m.FaviconSource));
+                            return;
+                        }
+                    }
                 }
-                catch (Exception ex) { tcs.TrySetResult(null); }
+
+                tcs.TrySetResult(new WebsiteMetadataHelper.WebsiteInfo(title, favFile, favBmp));
             };
 
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
             cts.Token.Register(() => tcs.TrySetResult(null));
 
             wv.CoreWebView2.Navigate(url);
