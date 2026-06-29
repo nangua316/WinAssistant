@@ -177,6 +177,13 @@ public sealed partial class LaunchpadPage : Page
         };
         folderItem.Click += OnAddFolderClick;
         menu.Items.Add(folderItem);
+        var fileItem = new MenuFlyoutItem
+        {
+            Text = "添加文件",
+            Icon = new FontIcon { Glyph = "" }
+        };
+        fileItem.Click += OnAddFileClick;
+        menu.Items.Add(fileItem);
         var urlItem = new MenuFlyoutItem
         {
             Text = "添加网址",
@@ -226,6 +233,31 @@ public sealed partial class LaunchpadPage : Page
             var result = await folderPicker.PickSingleFolderAsync();
             if (result != null)
                 ViewModel.AddFolderItem(result.Path, System.IO.Path.GetFileName(result.Path));
+        }
+        finally
+        {
+            SearchBox.IsEnabled = true;
+            PinChanged?.Invoke(this, IsPinned);
+        }
+    }
+
+    private async void OnAddFileClick(object? sender, RoutedEventArgs e)
+    {
+        PinChanged?.Invoke(this, true);
+        SearchBox.IsEnabled = false;
+        try
+        {
+            var hwnd = OwnerHwnd ?? WinRT.Interop.WindowNative.GetWindowHandle(App.Window);
+            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+            var picker = new FileOpenPicker(windowId)
+            {
+                SuggestedStartLocation = PickerLocationId.Desktop,
+                ViewMode = PickerViewMode.List
+            };
+            // No type filter — show all files
+            var file = await picker.PickSingleFileAsync();
+            if (file != null)
+                ViewModel.AddFileItem(file.Path, System.IO.Path.GetFileNameWithoutExtension(file.Path));
         }
         finally
         {

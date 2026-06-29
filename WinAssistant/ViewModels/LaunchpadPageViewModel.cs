@@ -622,6 +622,24 @@ public class LaunchpadPageViewModel : ObservableObject
         LoadSingleIcon(vm);
     }
 
+    internal void AddFileItem(string filePath, string fileName)
+    {
+        var finalName = fileName;
+        int suffix = 2;
+        while (_items.Any(i => i.Name.Equals(finalName, StringComparison.OrdinalIgnoreCase)))
+            finalName = $"{fileName} ({suffix++})";
+
+        var item = new LaunchpadItem
+        {
+            Name = finalName,
+            AppPath = filePath
+        };
+        var vm = new LaunchpadItemViewModel(item);
+        _items.Add(vm);
+        SaveItems();
+        LoadSingleIcon(vm);
+    }
+
     internal void AddUrlItem(string name, string url, string browserPath, string? websiteFaviconPath = null)
     {
         var finalName = name;
