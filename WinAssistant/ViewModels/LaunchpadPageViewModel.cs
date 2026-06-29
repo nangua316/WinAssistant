@@ -88,7 +88,7 @@ public class LaunchpadPageViewModel : ObservableObject
         var pendingIcons = new List<LaunchpadItemViewModel>();
         foreach (var vm in viewModels)
         {
-            if (!TrySetCachedIcon(vm, size))
+            if (!TrySetCachedIcon(vm, size) && !vm.ShowFontIconGlyph)
                 pendingIcons.Add(vm);
         }
 
@@ -192,6 +192,7 @@ public class LaunchpadPageViewModel : ObservableObject
         "WinAssistant", "terminal-icon.png");
 
     private static string IconExtractPath(LaunchpadItem m) =>
+        !string.IsNullOrWhiteSpace(m.FontIconGlyph) ? "" : // glyph icon — no extraction needed
         m.IconPath ?? (!string.IsNullOrWhiteSpace(m.BrowserPath) ? m.BrowserPath :
             !string.IsNullOrWhiteSpace(m.AppPath) ? m.AppPath :
             !string.IsNullOrWhiteSpace(m.Script) && File.Exists(GetTerminalIconPath()) ? GetTerminalIconPath() :
@@ -765,6 +766,10 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
     public bool IsTool => _tool != null;
     public bool IsUrl => !string.IsNullOrWhiteSpace(Model.Url);
     public string ToolIconGlyph => _tool?.IconGlyph ?? "";
+    public string FontIconGlyph => Model.FontIconGlyph ?? "";
+    public bool ShowFontIconGlyph => !string.IsNullOrEmpty(Model.FontIconGlyph) && !IsTool;
+    /// <summary>Only show fallback circle+letter when there's no icon at all.</summary>
+    public bool ShowFallback => !HasIcon && !ShowFontIconGlyph;
     public IAssistantTool? Tool => _tool;
     public string FallbackChar => _tool != null ? "" : (Name.Length > 0 ? Name[..1] : "?");
 
@@ -860,5 +865,32 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
     {
         get => _isDragOverTarget;
         set => SetProperty(ref _isDragOverTarget, value);
+    }
+
+    /// <summary>Call after Model.FontIconGlyph/IconPath changes to refresh the bound display properties.</summary>
+    public void RefreshIconDisplay()
+    {
+        if (!string.IsNullOrEmpty(Model.FontIconGlyph))
+        {
+            // Switching to glyph — clear any file-based icon
+            if (_iconSource != null)
+                IconSource = null;
+        }
+        else if (!string.IsNullOrEmpty(Model.IconPath) && File.Exists(Model.IconPath))
+        {
+            // Switching back to file icon (e.g. "无图标" → terminal icon)
+            try
+            {
+                var bitmap = new BitmapImage { UriSource = new Uri(Model.IconPath) };
+                IconSource = bitmap;
+            }
+            catch { IconSource = null; }
+        }
+        else
+            IconSource = null;
+
+        OnPropertyChanged(nameof(FontIconGlyph));
+        OnPropertyChanged(nameof(ShowFontIconGlyph));
+        OnPropertyChanged(nameof(ShowFallback));
     }
 }

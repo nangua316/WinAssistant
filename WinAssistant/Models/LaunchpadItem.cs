@@ -22,4 +22,7 @@ public class LaunchpadItem
 
     /// <summary>PowerShell script content. When set, this item runs the script instead of an executable.</summary>
     public string Script { get; set; } = "";
+
+    /// <summary>Optional Segoe MDL2 Assets glyph character for script/tool icon display.</summary>
+    public string? FontIconGlyph { get; set; }
 }

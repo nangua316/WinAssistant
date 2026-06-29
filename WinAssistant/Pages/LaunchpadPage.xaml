@@ -250,25 +250,46 @@
                                     </MenuFlyout>
                                 </Border.ContextFlyout>
                                 <Grid>
-                                    <!-- Fallback: circle + letter (non-tools only) -->
-                                    <Ellipse Width="52" Height="52"
-                                             Fill="{ThemeResource ItemIconCircleBrush}"
-                                             VerticalAlignment="Center"
-                                             HorizontalAlignment="Center"
-                                             Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
+                                    <!-- Fallback: square + letter -->
+                                    <Border Width="52" Height="52"
+                                            CornerRadius="8"
+                                            Background="{ThemeResource ItemIconCircleBrush}"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Visibility="{x:Bind ShowFallback, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                                     <TextBlock Text="{x:Bind FallbackChar}"
                                                FontSize="22"
                                                Foreground="{ThemeResource ItemFallbackBrush}"
                                                VerticalAlignment="Center"
                                                HorizontalAlignment="Center"
-                                               Visibility="{x:Bind IconSource, Converter={StaticResource NullToCollapsedConverter}, Mode=OneWay}" />
-                                    <!-- Tool icon glyph inside circle (only when no extracted icon) -->
-                                    <TextBlock Text="{x:Bind ToolIconGlyph, Mode=OneWay}"
-                                               FontSize="32"
-                                               Foreground="{x:Bind ToolIconBrush, Mode=OneWay}"
-                                               VerticalAlignment="Center"
-                                               HorizontalAlignment="Center"
-                                               Visibility="{x:Bind ShowToolGlyph, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                               Visibility="{x:Bind ShowFallback, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
+                                    <!-- Tool icon glyph with square background -->
+                                    <Border Width="52" Height="52"
+                                            CornerRadius="8"
+                                            Background="{ThemeResource ItemIconCircleBrush}"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Visibility="{x:Bind ShowToolGlyph, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="{x:Bind ToolIconGlyph, Mode=OneWay}"
+                                                   FontSize="28"
+                                                   Foreground="{x:Bind ToolIconBrush, Mode=OneWay}"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center" />
+                                    </Border>
+                                    <!-- Custom font icon glyph (scripts with user-selected glyph) -->
+                                    <Border Width="52" Height="52"
+                                            CornerRadius="8"
+                                            Background="{ThemeResource ItemIconCircleBrush}"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Center"
+                                            Visibility="{x:Bind ShowFontIconGlyph, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}">
+                                        <TextBlock Text="{x:Bind FontIconGlyph, Mode=OneWay}"
+                                                   FontFamily="Segoe MDL2 Assets"
+                                                   FontSize="24"
+                                                   Foreground="{ThemeResource TextPrimaryBrush}"
+                                                   VerticalAlignment="Center"
+                                                   HorizontalAlignment="Center" />
+                                    </Border>
                                     <!-- Extracted app icon (for both tools and regular apps) -->
                                     <Image Source="{x:Bind IconSource, Mode=OneWay}"
                                            Width="52" Height="52"
@@ -278,7 +299,7 @@
                                     <!-- Uninstalled dim overlay -->
                                     <Border Background="#88000000"
                                             Width="52" Height="52"
-                                            CornerRadius="26"
+                                            CornerRadius="8"
                                             VerticalAlignment="Center"
                                             HorizontalAlignment="Center"
                                             Visibility="{x:Bind IsUninstalled, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />

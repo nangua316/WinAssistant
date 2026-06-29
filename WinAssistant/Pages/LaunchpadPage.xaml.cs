@@ -241,12 +241,45 @@ public sealed partial class LaunchpadPage : Page
 
     private async void OnAddScriptClick(object? sender, RoutedEventArgs e)
     {
+        Logger.Log("ShowScriptDialog", "OnAddScriptClick called");
         await ShowScriptDialog(null, null);
+        Logger.Log("ShowScriptDialog", "OnAddScriptClick completed");
     }
+
+    /// <summary>Preset Segoe MDL2 Assets glyphs for script icon picker.</summary>
+    private static readonly string[] PresetScriptIcons =
+    [
+        "", // Tools
+        "", // Settings
+        "", // Lightning bolt
+        "", // Refresh
+        "", // Link
+        "", // Folder
+        "", // Launch
+        "", // Package
+        "", // Lock
+        "", // Unlock
+        "", // Desktop
+        "", // Search
+        "", // Delete
+        "", // Edit
+        "", // Save
+        "", // Power
+        "", // Repeat
+        "", // Globe
+        "", // Download
+        "", // Upload
+        "", // Code
+        "", // Clipboard
+    ];
 
     /// <summary>Show the add/edit script dialog.</summary>
     private async Task ShowScriptDialog(string? existingName, string? existingScript)
     {
+        Logger.Log("ShowScriptDialog", $"ShowScriptDialog called, isEdit={existingName != null}");
+        Logger.Log("ScriptDebug", $"ShowScriptDialog: existingName='{existingName}', existingScript.Length={existingScript?.Length ?? -1}");
+        if (existingScript != null)
+            Logger.Log("ScriptDebug", $"  first 50 chars: [{existingScript[..Math.Min(50, existingScript.Length)]}]");
         var isEdit = existingName != null;
 
         var nameBox = new TextBox
@@ -260,73 +293,236 @@ public sealed partial class LaunchpadPage : Page
         {
             PlaceholderText = "PowerShell 命令，例如：ipconfig /flushdns",
             Header = "脚本内容",
-            Text = existingScript ?? "",
+            // AcceptsReturn先于Text设置，否则多行内容初始化时会被截断
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
             MinHeight = 100,
-            MaxHeight = 300
+            MaxHeight = 500
         };
+        scriptBox.Text = NormalizeScriptForDisplay(existingScript);
+
+        // ── Icon picker (monochrome, centered rows) ──
+        string? selectedGlyph = null;
+        var allBorders = new List<Border>();
+
+        var iconHeader = new TextBlock
+        {
+            Text = "图标",
+            FontSize = 12,
+            Opacity = 0.7
+        };
+
+        var iconGrid = new StackPanel { Spacing = 6 };
+
+        var allIcons = new List<string?> { null }; // null = 无图标
+        allIcons.AddRange(PresetScriptIcons);
+        const int cols = 8;
+
+        for (int r = 0; r < (allIcons.Count + cols - 1) / cols; r++)
+        {
+            var row = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                Spacing = 8
+            };
+            int start = r * cols;
+            int end = Math.Min(start + cols, allIcons.Count);
+            for (int i = start; i < end; i++)
+            {
+                var btn = MakeIconButton(allIcons[i]);
+                row.Children.Add(btn);
+                allBorders.Add(btn);
+            }
+            iconGrid.Children.Add(row);
+        }
+
+        // Pre-select existing glyph when editing
+        if (isEdit)
+        {
+            var existingItem = ViewModel.Items.FirstOrDefault(vm =>
+                vm.Name == existingName && vm.Model.Script == existingScript);
+            if (existingItem?.Model.FontIconGlyph is string g && !string.IsNullOrEmpty(g))
+                SelectIcon(g);
+        }
+
+        var iconSection = new StackPanel { Spacing = 4, Margin = new Thickness(0, 6, 0, 0) };
+        iconSection.Children.Add(iconHeader);
+        iconSection.Children.Add(iconGrid);
+
+        Border MakeIconButton(string? glyph)
+        {
+            var inner = new Border
+            {
+                Width = 36, Height = 36,
+                CornerRadius = new CornerRadius(8),
+                Background = new SolidColorBrush(Color.FromArgb(0x12, 0x00, 0x00, 0x00)),
+            };
+
+            if (glyph != null)
+            {
+                inner.Child = new TextBlock
+                {
+                    Text = glyph,
+                    FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                    FontSize = 20,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x3A, 0x3A, 0x3A)),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+            }
+            else
+            {
+                inner.Background = new SolidColorBrush(Color.FromArgb(0x08, 0x00, 0x00, 0x00));
+                inner.Child = new TextBlock
+                {
+                    Text = "✕",
+                    FontSize = 14,
+                    Foreground = new SolidColorBrush(Color.FromArgb(0x88, 0x3A, 0x3A, 0x3A)),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    HorizontalAlignment = HorizontalAlignment.Center
+                };
+                ToolTipService.SetToolTip(inner, "无图标（使用默认终端图标）");
+            }
+
+            var border = new Border
+            {
+                Width = 46, Height = 46,
+                CornerRadius = new CornerRadius(10),
+                BorderThickness = new Thickness(2),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0, 0, 0, 0)),
+                Padding = new Thickness(3),
+                Tag = glyph,
+                Child = inner
+            };
+
+            var captured = glyph;
+            border.Tapped += (_, _) => SelectIcon(captured);
+            return border;
+        }
+
+        void SelectIcon(string? glyph)
+        {
+            selectedGlyph = glyph;
+            var accent = Color.FromArgb(0xFF, 0x1E, 0x90, 0xFF);
+            var transparent = Color.FromArgb(0, 0, 0, 0);
+            foreach (var b in allBorders)
+            {
+                var isSel = (string?)b.Tag == glyph;
+                b.BorderBrush = new SolidColorBrush(isSel ? accent : transparent);
+            }
+        }
 
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(nameBox);
         panel.Children.Add(scriptBox);
+        panel.Children.Add(iconSection);
+
+        var scrollView = new ScrollViewer
+        {
+            Content = panel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        };
 
         var dialog = new ContentDialog
         {
             Title = isEdit ? "编辑脚本" : "添加脚本",
-            Content = panel,
+            Content = scrollView,
             PrimaryButtonText = isEdit ? "保存" : "添加",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary,
+            MinWidth = 450,
             XamlRoot = this.XamlRoot
+        };
+
+        // Pre-size the script box when editing existing content
+        if (!string.IsNullOrEmpty(existingScript))
+        {
+            var lineCount = existingScript.Count(c => c == '\n') + 1;
+            scriptBox.MinHeight = Math.Min(20 * lineCount + 20, scriptBox.MaxHeight);
+        }
+
+        string? capturedName = null;
+        string? capturedScript = null;
+        dialog.PrimaryButtonClick += (_, args) =>
+        {
+            capturedName = nameBox.Text.Trim();
+            capturedScript = scriptBox.Text.Trim();
+            Logger.Log("ShowScriptDialog", $"PrimaryButtonClick: name='{capturedName}', script.Length={capturedScript?.Length ?? -1}");
+
+            if (string.IsNullOrEmpty(capturedName) || string.IsNullOrEmpty(capturedScript))
+            {
+                args.Cancel = true; // prevent closing
+                Logger.Log("ShowScriptDialog", "Validation failed, dialog stays open");
+            }
         };
 
         var result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary) return;
 
-        var finalName = nameBox.Text.Trim();
-        var finalScript = scriptBox.Text.Trim();
-        if (string.IsNullOrEmpty(finalName) || string.IsNullOrEmpty(finalScript))
+        // Values captured in PrimaryButtonClick handler
+        var finalName = capturedName!;
+        var finalScript = capturedScript!.Replace("\r\n", "\r"); // ponytail: normalize to \r-only
+        Logger.Log("ShowScriptDialog", $"After ShowAsync: finalName='{finalName}', finalScript.Length={finalScript?.Length ?? -1}");
+
+        try
         {
+            if (isEdit)
+            {
+                // Find and update the existing script item
+                var item = ViewModel.Items.FirstOrDefault(vm =>
+                    vm.Name == existingName && vm.Model.Script == existingScript);
+                if (item != null)
+                {
+                    item.Model.Name = finalName;
+                    item.Model.Script = finalScript;
+                    item.Model.FontIconGlyph = selectedGlyph;
+                    // Clear IconPath when user chose a glyph, fall back to terminal icon otherwise
+                    if (!string.IsNullOrEmpty(selectedGlyph))
+                        item.Model.IconPath = null;
+                    else if (string.IsNullOrEmpty(item.Model.IconPath))
+                        item.Model.IconPath = ExtractTerminalIcon();
+                    ViewModel.SaveItems();
+                    item.RefreshIconDisplay();
+                    Logger.Log("ShowScriptDialog", "Edit saved OK");
+                }
+                else
+                {
+                    Logger.Log("ShowScriptDialog", "Edit: item not found in lookup");
+                }
+            }
+            else
+            {
+                var iconPath = !string.IsNullOrEmpty(selectedGlyph) ? null : ExtractTerminalIcon();
+                var launchpadItem = new LaunchpadItem
+                {
+                    Name = finalName,
+                    Script = finalScript,
+                    IconPath = iconPath,
+                    FontIconGlyph = selectedGlyph
+                };
+                var vm = new LaunchpadItemViewModel(launchpadItem);
+                ViewModel.Items.Add(vm);
+                ViewModel.SaveItems();
+                ViewModel.LoadItemIcon(vm);
+                Logger.Log("ShowScriptDialog", "New item saved OK");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("ShowScriptDialog", $"Save error: {ex}");
             await new ContentDialog
             {
-                Title = "信息不完整",
-                Content = "名称和脚本内容不能为空。",
+                Title = "保存失败",
+                Content = $"保存时出错:\n{ex.Message}",
                 CloseButtonText = "确定",
                 XamlRoot = this.XamlRoot
             }.ShowAsync();
-            return;
-        }
-
-        if (isEdit)
-        {
-            // Find and update the existing script item
-            var item = ViewModel.Items.FirstOrDefault(vm =>
-                vm.Name == existingName && vm.Model.Script == existingScript);
-            if (item != null)
-            {
-                item.Model.Name = finalName;
-                item.Model.Script = finalScript;
-                if (string.IsNullOrEmpty(item.Model.IconPath))
-                    item.Model.IconPath = ExtractTerminalIcon();
-                ViewModel.SaveItems();
-            }
-        }
-        else
-        {
-            var iconPath = ExtractTerminalIcon();
-            var launchpadItem = new LaunchpadItem
-            {
-                Name = finalName,
-                Script = finalScript,
-                IconPath = iconPath
-            };
-            var vm = new LaunchpadItemViewModel(launchpadItem);
-            ViewModel.Items.Add(vm);
-            ViewModel.SaveItems();
-            ViewModel.LoadItemIcon(vm);
         }
     }
+
+    /// <summary>Normalize line endings for TextBox display: \r\n→\r, trim trailing whitespace per line.</summary>
+    private static string NormalizeScriptForDisplay(string? script) =>
+        script?.Replace("\r\n", "\r") ?? "";
 
     private static string? ExtractTerminalIcon()
     {
@@ -886,7 +1082,7 @@ public sealed partial class LaunchpadPage : Page
                     Directory.CreateDirectory(Path.GetDirectoryName(tempScript)!);
                     File.WriteAllText(tempScript, script, new UTF8Encoding(true));
 
-                    var psArgs = $"-NoExit -ExecutionPolicy Bypass -NoProfile -File \"{tempScript}\"";
+                    var psArgs = $"-ExecutionPolicy Bypass -NoProfile -File \"{tempScript}\"";
                     try
                     {
                         Process.Start(new ProcessStartInfo
@@ -1010,6 +1206,8 @@ public sealed partial class LaunchpadPage : Page
 
         if (!string.IsNullOrEmpty(vm.Model.Script))
         {
+            Logger.Log("ScriptDebug", $"OnEditUrlItem: Name='{vm.Model.Name}', Script.Length={vm.Model.Script.Length}");
+            Logger.Log("ScriptDebug", $"Script starts: [{vm.Model.Script[..Math.Min(50, vm.Model.Script.Length)]}]");
             await ShowScriptDialog(vm.Model.Name, vm.Model.Script);
             return;
         }
