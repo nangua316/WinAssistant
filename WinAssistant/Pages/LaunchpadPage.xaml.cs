@@ -383,11 +383,25 @@ public sealed partial class LaunchpadPage : Page
 
         Border MakeIconButton(string? glyph)
         {
+            var isDark = App.CurrentTheme == ApplicationTheme.Dark;
+            var bgTint = isDark
+                ? Color.FromArgb(0x18, 0xFF, 0xFF, 0xFF)
+                : Color.FromArgb(0x12, 0x00, 0x00, 0x00);
+            var fgColor = isDark
+                ? Color.FromArgb(0xCC, 0xDD, 0xDD, 0xDD)
+                : Color.FromArgb(0xCC, 0x3A, 0x3A, 0x3A);
+            var noIconBg = isDark
+                ? Color.FromArgb(0x10, 0xFF, 0xFF, 0xFF)
+                : Color.FromArgb(0x08, 0x00, 0x00, 0x00);
+            var noIconFg = isDark
+                ? Color.FromArgb(0x88, 0xBB, 0xBB, 0xBB)
+                : Color.FromArgb(0x88, 0x3A, 0x3A, 0x3A);
+
             var inner = new Border
             {
                 Width = 36, Height = 36,
                 CornerRadius = new CornerRadius(8),
-                Background = new SolidColorBrush(Color.FromArgb(0x12, 0x00, 0x00, 0x00)),
+                Background = new SolidColorBrush(bgTint),
             };
 
             if (glyph != null)
@@ -397,19 +411,19 @@ public sealed partial class LaunchpadPage : Page
                     Text = glyph,
                     FontFamily = new FontFamily("Segoe MDL2 Assets"),
                     FontSize = 20,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0xCC, 0x3A, 0x3A, 0x3A)),
+                    Foreground = new SolidColorBrush(fgColor),
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
             }
             else
             {
-                inner.Background = new SolidColorBrush(Color.FromArgb(0x08, 0x00, 0x00, 0x00));
+                inner.Background = new SolidColorBrush(noIconBg);
                 inner.Child = new TextBlock
                 {
                     Text = "✕",
                     FontSize = 14,
-                    Foreground = new SolidColorBrush(Color.FromArgb(0x88, 0x3A, 0x3A, 0x3A)),
+                    Foreground = new SolidColorBrush(noIconFg),
                     VerticalAlignment = VerticalAlignment.Center,
                     HorizontalAlignment = HorizontalAlignment.Center
                 };
