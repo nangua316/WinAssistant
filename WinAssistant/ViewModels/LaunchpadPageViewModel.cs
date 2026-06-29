@@ -698,10 +698,10 @@ public class LaunchpadPageViewModel : ObservableObject
         try
         {
             var xamlRoot = _xamlRootGetter?.Invoke() ?? _xamlRoot;
-            var scale = xamlRoot?.RasterizationScale ?? 1.0;
-            return (int)(baseSize * scale);
+            var scale = xamlRoot?.RasterizationScale ?? 2.0;
+            return Math.Max(baseSize, (int)(baseSize * scale));
         }
-        catch { return baseSize; }
+        catch { return baseSize * 2; }
     }
 }
 

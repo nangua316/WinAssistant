@@ -31,6 +31,8 @@ public static class WebsiteMetadataHelper
     /// Fast (3-5s), no duplicate HTTP requests.</summary>
     public static async Task<List<IconOption>> FetchAllIconsAsync(string url)
     {
+        Logger.Log("WebMeta", $"FetchIcons start: {url}");
+        
         if (!Uri.TryCreate(NormalizeUrl(url), UriKind.Absolute, out var uri))
             return [];
 
@@ -65,11 +67,14 @@ public static class WebsiteMetadataHelper
         var tasks = allUrls.Select(u => DownloadAndLabelAsync(u.Url, u.Label, u.Order));
         var results = await Task.WhenAll(tasks);
 
-        return results
+        var icons = results
             .Where(r => r.Path != null && r.Source != null)
             .Select(r => new IconOption(r.Label, r.Path, r.Source, r.Order))
             .OrderBy(i => i.SortOrder)
             .ToList();
+
+        Logger.Log("WebMeta", $"FetchIcons done: {icons.Count} icons, {allUrls.Count} candidates");
+        return icons;
     }
 
     private static async Task<(string? Path, ImageSource? Source, string Label, int Order)>
@@ -251,6 +256,7 @@ public static class WebsiteMetadataHelper
         if (string.IsNullOrEmpty(url)) return (null, null);
         try
         {
+            Logger.Log("WebMeta", $"Download: {url}");
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
             using var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.TryAddWithoutValidation("User-Agent",
