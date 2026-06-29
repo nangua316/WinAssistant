@@ -186,9 +186,19 @@ public class LaunchpadPageViewModel : ObservableObject
         }
     }
 
-    /// <summary>If a cached icon exists on disk, set it synchronously. Returns true if set.</summary>
+    /// <summary>Fixed path for the terminal icon, shared by all script items.</summary>
+    private static string GetTerminalIconPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "WinAssistant", "terminal-icon.png");
+
     private static string IconExtractPath(LaunchpadItem m) =>
-        m.IconPath ?? (!string.IsNullOrWhiteSpace(m.BrowserPath) ? m.BrowserPath : m.AppPath);
+        m.IconPath ?? (!string.IsNullOrWhiteSpace(m.BrowserPath) ? m.BrowserPath :
+            !string.IsNullOrWhiteSpace(m.AppPath) ? m.AppPath :
+            !string.IsNullOrWhiteSpace(m.Script) && File.Exists(GetTerminalIconPath()) ? GetTerminalIconPath() :
+            !string.IsNullOrWhiteSpace(m.Script) ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.System),
+                @"WindowsPowerShell\v1.0\powershell.exe") :
+            "");
 
     private bool TrySetCachedIcon(LaunchpadItemViewModel vm, int size)
     {
@@ -198,15 +208,18 @@ public class LaunchpadPageViewModel : ObservableObject
             var iconPath = vm.Model.IconPath;
             if (!string.IsNullOrEmpty(iconPath) && IsImageFile(iconPath))
             {
+                Logger.Log("TrySetCachedIcon", $"{vm.Name}: direct icon={iconPath}");
                 var bitmap = new BitmapImage();
-                bitmap.DecodePixelWidth = size;
-                bitmap.DecodePixelHeight = size;
                 bitmap.UriSource = new Uri(iconPath);
                 vm.IconSource = bitmap;
                 return true;
             }
 
-            var cached = IconHelper.ExtractAppIconToAppData(IconExtractPath(vm.Model), size, aumid: vm.Model.Aumid);
+            var extractPath = IconExtractPath(vm.Model);
+            Logger.Log("TrySetCachedIcon", $"{vm.Name}: extract from={extractPath ?? "null"}");
+            if (string.IsNullOrEmpty(extractPath)) return false;
+
+            var cached = IconHelper.ExtractAppIconToAppData(extractPath, size, aumid: vm.Model.Aumid);
             if (cached == null) return false;
             var bitmap2 = new BitmapImage();
             bitmap2.UriSource = new Uri(cached);
@@ -265,8 +278,14 @@ public class LaunchpadPageViewModel : ObservableObject
     public void SaveItems()
     {
         var settings = _settingsService.Load();
-        settings.LaunchpadItems = _items.Select(i => i.Model).ToList();
+        settings.LaunchpadItems = _items.Select(vm => vm.Model).ToList();
         _settingsService.Save(settings);
+    }
+
+    /// <summary>Load icon for a newly added item immediately (not waiting for restart).</summary>
+    public void LoadItemIcon(LaunchpadItemViewModel vm)
+    {
+        TrySetCachedIcon(vm, GetScaledIconSize(64));
     }
 
     public void RemoveItem(LaunchpadItemViewModel item)
@@ -762,6 +781,15 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
     }
 
     public string ContextMenuText => IsUnadded ? "添加" : "移除";
+
+    /// <summary>Whether this item is a URL shortcut (only URL items show the edit button).</summary>
+    public bool IsUrlItem => !string.IsNullOrEmpty(Model.Url);
+
+    /// <summary>Whether this item is a PowerShell script.</summary>
+    public bool IsScriptItem => !string.IsNullOrEmpty(Model.Script);
+
+    /// <summary>Whether this item is editable (URLs and scripts).</summary>
+    public bool IsEditable => IsUrlItem || IsScriptItem;
 
     /// <summary>Tool icon foreground brush. Falls back to accent blue.</summary>
     public Brush ToolIconBrush

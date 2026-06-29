@@ -3,14 +3,19 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.UI;
 using WinAssistant.Controls.AiChat;
 using WinAssistant.Controls.Tools;
 using WinAssistant.Helpers;
+using WinAssistant.Models;
 using WinAssistant.ViewModels;
 
 namespace WinAssistant.Pages;
@@ -18,6 +23,7 @@ namespace WinAssistant.Pages;
 public sealed partial class LaunchpadPage : Page
 {
     private LaunchpadDragHandler? _dragHandler;
+    private CancellationTokenSource? _fetchCts;
 
     public LaunchpadPageViewModel ViewModel { get; }
 
@@ -178,6 +184,13 @@ public sealed partial class LaunchpadPage : Page
         };
         urlItem.Click += OnAddUrlClick;
         menu.Items.Add(urlItem);
+        var scriptItem = new MenuFlyoutItem
+        {
+            Text = "添加脚本",
+            Icon = new FontIcon { Glyph = "" }
+        };
+        scriptItem.Click += OnAddScriptClick;
+        menu.Items.Add(scriptItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         var settingsItem = new MenuFlyoutItem
         {
@@ -223,35 +236,203 @@ public sealed partial class LaunchpadPage : Page
 
     private async void OnAddUrlClick(object? sender, RoutedEventArgs e)
     {
+        await ShowUrlDialog(null, null, null, null);
+    }
+
+    private async void OnAddScriptClick(object? sender, RoutedEventArgs e)
+    {
+        await ShowScriptDialog(null, null);
+    }
+
+    /// <summary>Show the add/edit script dialog.</summary>
+    private async Task ShowScriptDialog(string? existingName, string? existingScript)
+    {
+        var isEdit = existingName != null;
+
+        var nameBox = new TextBox
+        {
+            PlaceholderText = "例如：重启网络",
+            Header = "脚本名称",
+            Text = existingName ?? ""
+        };
+
+        var scriptBox = new TextBox
+        {
+            PlaceholderText = "PowerShell 命令，例如：ipconfig /flushdns",
+            Header = "脚本内容",
+            Text = existingScript ?? "",
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            MinHeight = 100,
+            MaxHeight = 300
+        };
+
+        var panel = new StackPanel { Spacing = 12 };
+        panel.Children.Add(nameBox);
+        panel.Children.Add(scriptBox);
+
+        var dialog = new ContentDialog
+        {
+            Title = isEdit ? "编辑脚本" : "添加脚本",
+            Content = panel,
+            PrimaryButtonText = isEdit ? "保存" : "添加",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = this.XamlRoot
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        var finalName = nameBox.Text.Trim();
+        var finalScript = scriptBox.Text.Trim();
+        if (string.IsNullOrEmpty(finalName) || string.IsNullOrEmpty(finalScript))
+        {
+            await new ContentDialog
+            {
+                Title = "信息不完整",
+                Content = "名称和脚本内容不能为空。",
+                CloseButtonText = "确定",
+                XamlRoot = this.XamlRoot
+            }.ShowAsync();
+            return;
+        }
+
+        if (isEdit)
+        {
+            // Find and update the existing script item
+            var item = ViewModel.Items.FirstOrDefault(vm =>
+                vm.Name == existingName && vm.Model.Script == existingScript);
+            if (item != null)
+            {
+                item.Model.Name = finalName;
+                item.Model.Script = finalScript;
+                if (string.IsNullOrEmpty(item.Model.IconPath))
+                    item.Model.IconPath = ExtractTerminalIcon();
+                ViewModel.SaveItems();
+            }
+        }
+        else
+        {
+            var iconPath = ExtractTerminalIcon();
+            var launchpadItem = new LaunchpadItem
+            {
+                Name = finalName,
+                Script = finalScript,
+                IconPath = iconPath
+            };
+            var vm = new LaunchpadItemViewModel(launchpadItem);
+            ViewModel.Items.Add(vm);
+            ViewModel.SaveItems();
+            ViewModel.LoadItemIcon(vm);
+        }
+    }
+
+    private static string? ExtractTerminalIcon()
+    {
+        var iconPath = GetTerminalIconPath();
+        if (File.Exists(iconPath)) return iconPath; // already cached
+
+        // Extract from the real WindowsTerminal.exe or powershell.exe
+        try
+        {
+            var exePath = FindRealTerminalExe();
+            if (!string.IsNullOrEmpty(exePath))
+            {
+                var extracted = IconHelper.ExtractAppIconToAppData(exePath, 64);
+                if (extracted != null)
+                {
+                    // Copy to fixed location
+                    Directory.CreateDirectory(Path.GetDirectoryName(iconPath)!);
+                    File.Copy(extracted, iconPath, overwrite: true);
+                    Logger.Log("LaunchpadPage", $"Terminal icon saved to {iconPath}");
+                    return iconPath;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("LaunchpadPage", $"ExtractTerminalIcon error: {ex.Message}");
+        }
+        return null;
+    }
+
+    /// <summary>Fixed path for the terminal icon, shared by all script items.</summary>
+    private static string GetTerminalIconPath() => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "WinAssistant", "terminal-icon.png");
+
+    /// <summary>Find the real WindowsTerminal.exe or fall back to powershell.exe.</summary>
+    private static string FindRealTerminalExe()
+    {
+        try
+        {
+            var appsDir = @"C:\Program Files\WindowsApps";
+            if (Directory.Exists(appsDir))
+            {
+                var dirs = Directory.GetDirectories(appsDir, "Microsoft.WindowsTerminal_*");
+                if (dirs.Length > 0)
+                {
+                    Array.Sort(dirs);
+                    var exe = Path.Combine(dirs[^1], "WindowsTerminal.exe");
+                    if (File.Exists(exe)) return exe;
+                }
+            }
+        }
+        catch { }
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System),
+            @"WindowsPowerShell\v1.0\powershell.exe");
+    }
+
+    /// <summary>Show the add/edit URL dialog. Pass existing values to edit an existing item.</summary>
+    private async Task ShowUrlDialog(string? existingName, string? existingUrl,
+        string? existingBrowserPath, LaunchpadItem? existingItem)
+    {
+        var isEdit = existingItem != null;
+
         var urlBox = new TextBox
         {
             PlaceholderText = "例如：https://github.com",
-            Header = "网址"
+            Header = "网址",
+            Text = existingUrl ?? ""
         };
 
-        // Icon preview: shows the browser icon by default, replaced by the website favicon when fetched.
+        // ── Icon selection area ──
+        var iconSelector = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        var iconSelectorLabel = new TextBlock
+        {
+            Text = "选择图标：",
+            FontSize = 12,
+            Opacity = 0.7,
+            Visibility = Visibility.Collapsed
+        };
+        var iconSelectorContainer = new StackPanel { Spacing = 4, Visibility = Visibility.Collapsed };
+        iconSelectorContainer.Children.Add(iconSelectorLabel);
+        iconSelectorContainer.Children.Add(iconSelector);
+
+        string? selectedIconPath = existingItem?.IconPath;
+        // If the old icon file was deleted (e.g. temp cleaned), start fresh
+        if (!string.IsNullOrEmpty(selectedIconPath) && !File.Exists(selectedIconPath))
+            selectedIconPath = null;
+
+        // ── Name & preview row ──
         var iconPreview = new Image
         {
-            Width = 40,
-            Height = 40,
+            Width = 40, Height = 40,
             Stretch = Stretch.Uniform,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center
         };
-        string? websiteFaviconPath = null;
-        ImageSource? currentIconSource = null;
-
         var nameBox = new TextBox
         {
             PlaceholderText = "例如：GitHub",
             Header = "显示名称",
+            Text = existingName ?? "",
             VerticalAlignment = VerticalAlignment.Center
         };
-
-        var iconNamePanel = new Grid
-        {
-            ColumnSpacing = 12
-        };
+        bool _nameManuallyEdited = false;
+        nameBox.TextChanged += (_, _) => _nameManuallyEdited = true;
+        var iconNamePanel = new Grid { ColumnSpacing = 12 };
         iconNamePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         iconNamePanel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetColumn(iconPreview, 0);
@@ -259,17 +440,18 @@ public sealed partial class LaunchpadPage : Page
         iconNamePanel.Children.Add(iconPreview);
         iconNamePanel.Children.Add(nameBox);
 
+        // ── Fetch button ──
         var fetchButton = new Button
         {
             Content = "获取图标和标题",
             HorizontalAlignment = HorizontalAlignment.Stretch
         };
 
-        // Browser picker: system default + installed browsers + manual override.
+        // ── Browser picker ──
         var browserOptions = new ObservableCollection<BrowserScanner.BrowserInfo>();
         browserOptions.Add(new BrowserScanner.BrowserInfo("使用系统默认浏览器", "", BrowserScanner.GetDefaultBrowserIcon()));
-        foreach (var browser in BrowserScanner.ScanInstalledBrowsers())
-            browserOptions.Add(browser);
+        foreach (var b in BrowserScanner.ScanInstalledBrowsers())
+            browserOptions.Add(b);
 
         var browserCombo = new ComboBox
         {
@@ -282,55 +464,41 @@ public sealed partial class LaunchpadPage : Page
                 "<StackPanel Orientation='Horizontal' Spacing='8'>" +
                 "<Image Source='{Binding IconSource}' Width='16' Height='16' VerticalAlignment='Center'/>" +
                 "<TextBlock Text='{Binding Name}' VerticalAlignment='Center'/>" +
-                "</StackPanel>" +
-                "</DataTemplate>")
+                "</StackPanel></DataTemplate>")
         };
 
-        void UpdateIconPreview()
+        // Pre-select existing browser when editing
+        if (isEdit && !string.IsNullOrEmpty(existingBrowserPath))
         {
-            // Prefer website favicon if already fetched.
-            if (currentIconSource != null)
+            var match = browserOptions.FirstOrDefault(b =>
+                b.Path.Equals(existingBrowserPath, StringComparison.OrdinalIgnoreCase));
+            if (match != null)
+                browserCombo.SelectedItem = match;
+            else if (File.Exists(existingBrowserPath))
             {
-                iconPreview.Source = currentIconSource;
-                return;
+                var custom = new BrowserScanner.BrowserInfo(
+                    Path.GetFileNameWithoutExtension(existingBrowserPath),
+                    existingBrowserPath, BrowserScanner.LoadBrowserIcon(existingBrowserPath));
+                browserOptions.Insert(1, custom);
+                browserCombo.SelectedItem = custom;
             }
-
-            // Otherwise show the selected browser icon (or default browser icon).
-            var selectedBrowser = browserCombo.SelectedItem as BrowserScanner.BrowserInfo;
-            if (selectedBrowser?.IconSource != null)
-                iconPreview.Source = selectedBrowser.IconSource;
         }
 
-        browserCombo.SelectionChanged += (_, _) => UpdateIconPreview();
-
-        var browseButton = new Button
+        void UpdatePreview()
         {
-            Content = "浏览...",
-            Margin = new Thickness(0, 4, 0, 0)
-        };
-        browseButton.Click += async (_, _) =>
-        {
-            var path = await PickBrowserExecutableAsync();
-            if (string.IsNullOrEmpty(path)) return;
+            iconPreview.Source = !string.IsNullOrEmpty(selectedIconPath) && File.Exists(selectedIconPath)
+                ? new BitmapImage { UriSource = new Uri(selectedIconPath) }
+                : (browserCombo.SelectedItem as BrowserScanner.BrowserInfo)?.IconSource;
+        }
 
-            var existing = browserOptions.FirstOrDefault(b => b.Path.Equals(path, StringComparison.OrdinalIgnoreCase));
-            if (existing != null)
-            {
-                browserCombo.SelectedItem = existing;
-                return;
-            }
+        browserCombo.SelectionChanged += (_, _) => UpdatePreview();
 
-            var custom = new BrowserScanner.BrowserInfo(Path.GetFileNameWithoutExtension(path), path, BrowserScanner.LoadBrowserIcon(path));
-            browserOptions.Insert(1, custom);
-            browserCombo.SelectedItem = custom;
-        };
-
+        // ── Auto-fetch on URL input ──
         urlBox.LostFocus += async (_, _) =>
         {
             if (string.IsNullOrEmpty(nameBox.Text))
                 await FetchWebsiteMetadataAsync();
         };
-
         fetchButton.Click += async (_, _) => await FetchWebsiteMetadataAsync();
 
         async Task FetchWebsiteMetadataAsync()
@@ -341,113 +509,192 @@ public sealed partial class LaunchpadPage : Page
             var normalized = NormalizeUrl(url);
             if (!Uri.IsWellFormedUriString(normalized, UriKind.Absolute)) return;
 
+            // Cancel any previous fetch (avoids concurrent WebView2/HTTP requests)
+            _fetchCts?.Cancel();
+            _fetchCts?.Dispose();
+            _fetchCts = new CancellationTokenSource();
+            var ct = _fetchCts.Token;
+
             fetchButton.IsEnabled = false;
             fetchButton.Content = "获取中...";
 
-            // 1. Quick HTTP /favicon.ico check (3s) — works for most sites instantly.
-            var httpInfo = await WebsiteMetadataHelper.FetchAsync(normalized);
+            // Clear previous results
+            iconSelector.Children.Clear();
+            iconSelectorContainer.Visibility = Visibility.Collapsed;
+            selectedIconPath = null;
 
-            // 2. Always run WebView2 in background — universal solution, handles all sites.
-            //    Runs in parallel with the quick HTTP title fetch below.
-            Task<WebsiteMetadataHelper.WebsiteInfo?> wv2Task = null!;
-            if (XamlRoot != null)
-                wv2Task = WebView2FaviconHelper.FetchAsync(normalized, XamlRoot);
+            string? title = null;
+            List<WebsiteMetadataHelper.IconOption> icons = [];
 
-            // 3. If HTTP gave us a title, try to get it too (3s timeout).
-            //    HTTP title is faster but WebView2 title is more accurate.
-            if (string.IsNullOrEmpty(httpInfo.Title))
+            // ── Phase 1: HTTP (fast, works for 95% of sites) ──
+            if (!ct.IsCancellationRequested)
             {
-                try
-                {
-                    using var titleReq = new HttpRequestMessage(HttpMethod.Get, new Uri(normalized));
-                    titleReq.Headers.TryAddWithoutValidation("User-Agent", "Mozilla/5.0");
-                    using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                    using var titleResp = await new HttpClient().SendAsync(titleReq, timeoutCts.Token);
-                    var html = await titleResp.Content.ReadAsStringAsync(timeoutCts.Token);
-                    var m = System.Text.RegularExpressions.Regex.Match(html,
-                        @"<title[^>]*>(.*?)</title>",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline);
-                    if (m.Success)
-                        httpInfo = new WebsiteMetadataHelper.WebsiteInfo(System.Net.WebUtility.HtmlDecode(m.Groups[1].Value.Trim()),
-                            httpInfo.FaviconPath, httpInfo.FaviconSource);
-                }
-                catch { }
-            }
+                var httpTitleTask = WebsiteMetadataHelper.FetchTitleAsync(normalized);
+                var httpIconsTask = WebsiteMetadataHelper.FetchAllIconsAsync(normalized);
+                await Task.WhenAll(httpTitleTask, httpIconsTask);
 
-            // 4. Pick the best result: WebView2 is authoritative if it got data.
-            var info = httpInfo;
-            if (wv2Task != null)
-            {
-                var wv2Info = await wv2Task;
-                if (wv2Info != null)
+                if (!ct.IsCancellationRequested)
                 {
-                    // WebView2 title is always accurate (from real browser).
-                    // WebView2 icon is the JS-resolved favicon URL.
-                    info = new WebsiteMetadataHelper.WebsiteInfo(
-                        wv2Info.Title ?? info.Title,
-                        wv2Info.FaviconPath ?? info.FaviconPath,
-                        wv2Info.FaviconSource ?? info.FaviconSource);
+                    title = httpTitleTask.Result;
+                    icons = httpIconsTask.Result;
+                    ShowIconResults(title, icons);
                 }
             }
 
-            if (!string.IsNullOrEmpty(info.Title))
-                nameBox.Text = info.Title;
-
-            if (info.FaviconSource != null)
+            // ── After HTTP: if we have results, we're done ──
+            if (!ct.IsCancellationRequested)
             {
-                websiteFaviconPath = info.FaviconPath;
-                currentIconSource = info.FaviconSource;
+                if (icons.Count > 0)
+                {
+                    fetchButton.IsEnabled = true;
+                    fetchButton.Content = "重新获取";
+                    return; // done, no WebView2 needed
+                }
+
+                // HTTP found nothing — keep "获取中..." (disabled), fire WebView2
+                fetchButton.Content = "获取中...";
             }
-            else
+
+            // ── Phase 2: WebView2 fallback ──
+            if (XamlRoot != null && !ct.IsCancellationRequested && icons.Count == 0)
             {
-                websiteFaviconPath = null;
-                currentIconSource = null;
+                var capturedTitle = title;
+                var capturedIcons = icons;
+                _ = App.DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low,
+                    async () =>
+                {
+                    try
+                    {
+                        var wv2Info = await WebView2FaviconHelper.FetchAsync(normalized, XamlRoot);
+                        if (!ct.IsCancellationRequested)
+                        {
+                            if (wv2Info?.FaviconSource != null)
+                            {
+                                var wv2Option = new WebsiteMetadataHelper.IconOption(
+                                    "最佳", wv2Info.FaviconPath, wv2Info.FaviconSource, -1);
+                                capturedIcons.Insert(0, wv2Option);
+                            }
+                            if (!string.IsNullOrEmpty(wv2Info?.Title))
+                                capturedTitle = wv2Info.Title;
+                            ShowIconResults(capturedTitle, capturedIcons);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.Log("LaunchpadPage", $"WebView2 fallback error: {ex.Message}");
+                    }
+                    finally
+                    {
+                        // WebView2 done — show result or failure
+                        if (!ct.IsCancellationRequested)
+                        {
+                            fetchButton.IsEnabled = true;
+                            if (capturedIcons.Count > 0 || !string.IsNullOrEmpty(capturedTitle))
+                                fetchButton.Content = "重新获取";
+                            else
+                                fetchButton.Content = "获取失败";
+                        }
+                    }
+                });
+            }
+        }
+        void ShowIconResults(string? title, List<WebsiteMetadataHelper.IconOption> icons)
+        {
+            if (!string.IsNullOrEmpty(title) && !_nameManuallyEdited)
+                nameBox.Text = title;
+
+            iconSelector.Children.Clear();
+
+            if (icons.Count > 0)
+            {
+                WebsiteMetadataHelper.IconOption? selectedOption = null;
+                foreach (var icon in icons)
+                {
+                    var border = new Border
+                    {
+                        Width = 44, Height = 44,
+                        BorderBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0x80, 0x80, 0x80)),
+                        BorderThickness = new Thickness(2),
+                        CornerRadius = new CornerRadius(4),
+                        Padding = new Thickness(2),
+                        Background = new SolidColorBrush(Color.FromArgb(0x00, 0x00, 0x00, 0x00)),
+                        Tag = icon
+                    };
+
+                    var img = new Image
+                    {
+                        Source = icon.Source,
+                        Width = 32, Height = 32,
+                        Stretch = Stretch.Uniform
+                    };
+                    border.Child = img;
+
+                    // Click to select
+                    border.Tapped += (_, _) =>
+                    {
+                        foreach (var child in iconSelector.Children)
+                        {
+                            if (child is Border b)
+                            {
+                                b.BorderBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0x80, 0x80, 0x80));
+                                b.BorderThickness = new Thickness(2);
+                            }
+                        }
+                        border.BorderBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x90, 0xFF));
+                        border.BorderThickness = new Thickness(3);
+                        selectedIconPath = icon.Path;
+                        selectedOption = icon;
+                        UpdatePreview();
+                    };
+
+                    ToolTipService.SetToolTip(border, icon.Label);
+                    iconSelector.Children.Add(border);
+                }
+
+                // Default: select first
+                if (iconSelector.Children.FirstOrDefault() is Border firstBorder)
+                {
+                    firstBorder.BorderBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0x1E, 0x90, 0xFF));
+                    firstBorder.BorderThickness = new Thickness(3);
+                    selectedIconPath = icons[0].Path;
+                    selectedOption = icons[0];
+                }
+
+                iconSelectorLabel.Visibility = Visibility.Visible;
+                iconSelectorContainer.Visibility = Visibility.Visible;
             }
 
-            UpdateIconPreview();
-
-            fetchButton.IsEnabled = true;
-            fetchButton.Content = "获取图标和标题";
+            UpdatePreview();
         }
 
-        var hint = new TextBlock
-        {
-            Text = "输入网址后点击“获取图标和标题”。如果网站图标获取失败，将使用浏览器图标。",
-            FontSize = 12,
-            Opacity = 0.7,
-            Margin = new Thickness(0, 8, 0, 0),
-            TextWrapping = TextWrapping.Wrap
-        };
-
+        // ── Dialog layout ──
         var panel = new StackPanel { Spacing = 8 };
         panel.Children.Add(urlBox);
         panel.Children.Add(fetchButton);
         panel.Children.Add(iconNamePanel);
+        panel.Children.Add(iconSelectorContainer);
         panel.Children.Add(browserCombo);
-        panel.Children.Add(browseButton);
-        panel.Children.Add(hint);
 
         var dialog = new ContentDialog
         {
-            Title = "添加网址",
+            Title = isEdit ? "编辑网址" : "添加网址",
             Content = panel,
-            PrimaryButtonText = "添加",
+            PrimaryButtonText = isEdit ? "保存" : "添加",
             CloseButtonText = "取消",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = this.XamlRoot
         };
 
-        // Initialize preview with the default browser icon.
-        UpdateIconPreview();
+        UpdatePreview();
 
         var result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary) return;
 
-        var name = nameBox.Text.Trim();
-        var url = urlBox.Text.Trim();
+        var finalName = nameBox.Text.Trim();
+        var finalUrl = urlBox.Text.Trim();
         var browserPath = (browserCombo.SelectedItem as BrowserScanner.BrowserInfo)?.Path ?? "";
 
-        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(url))
+        if (string.IsNullOrEmpty(finalName) || string.IsNullOrEmpty(finalUrl))
         {
             await new ContentDialog
             {
@@ -459,7 +706,21 @@ public sealed partial class LaunchpadPage : Page
             return;
         }
 
-        ViewModel.AddUrlItem(name, NormalizeUrl(url), browserPath, websiteFaviconPath);
+        if (isEdit)
+        {
+            // Update existing item
+            existingItem.Name = finalName;
+            existingItem.Url = NormalizeUrl(finalUrl);
+            existingItem.BrowserPath = browserPath;
+            if (!string.IsNullOrEmpty(selectedIconPath))
+                existingItem.IconPath = selectedIconPath;
+            ViewModel.SaveItems();
+        }
+        else
+        {
+            ViewModel.AddUrlItem(finalName, NormalizeUrl(finalUrl), browserPath,
+                !string.IsNullOrEmpty(selectedIconPath) ? selectedIconPath : null);
+        }
     }
 
 
@@ -613,6 +874,46 @@ public sealed partial class LaunchpadPage : Page
             return;
         }
 
+        if (!string.IsNullOrEmpty(vm.Model.Script))
+        {
+            var script = vm.Model.Script;
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    var tempScript = Path.Combine(Path.GetTempPath(), "WinAssistant", "scripts",
+                        $"{Guid.NewGuid():N}.ps1");
+                    Directory.CreateDirectory(Path.GetDirectoryName(tempScript)!);
+                    File.WriteAllText(tempScript, script, new UTF8Encoding(true));
+
+                    var psArgs = $"-NoExit -ExecutionPolicy Bypass -NoProfile -File \"{tempScript}\"";
+                    try
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = "wt.exe",
+                            Arguments = $"powershell {psArgs}",
+                            UseShellExecute = true
+                        });
+                    }
+                    catch
+                    {
+                        Process.Start(new ProcessStartInfo
+                        {
+                            FileName = "powershell.exe",
+                            Arguments = psArgs,
+                            UseShellExecute = true
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.Log("LaunchpadPage", $"Script execution error: {ex.Message}");
+                }
+            });
+            return;
+        }
+
         var path = vm.AppPath;
         var args = vm.Model.Arguments;
         var aumid = vm.Model.Aumid;
@@ -699,6 +1000,24 @@ public sealed partial class LaunchpadPage : Page
         }
         ToolHostWindow.OpenOrActivate(vm.Tool);
         return true;
+    }
+
+    private async void OnEditUrlItem(object sender, RoutedEventArgs e)
+    {
+        if (sender is not MenuFlyoutItem item ||
+            item.DataContext is not LaunchpadItemViewModel vm)
+            return;
+
+        if (!string.IsNullOrEmpty(vm.Model.Script))
+        {
+            await ShowScriptDialog(vm.Model.Name, vm.Model.Script);
+            return;
+        }
+        if (!string.IsNullOrEmpty(vm.Model.Url))
+        {
+            await ShowUrlDialog(vm.Model.Name, vm.Model.Url, vm.Model.BrowserPath, vm.Model);
+            return;
+        }
     }
 
     private async void OnRemoveItem(object sender, RoutedEventArgs e)

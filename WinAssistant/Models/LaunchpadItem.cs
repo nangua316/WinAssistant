@@ -19,4 +19,7 @@ public class LaunchpadItem
 
     /// <summary>Optional browser executable to open the URL. Empty means use the system default browser.</summary>
     public string BrowserPath { get; set; } = "";
+
+    /// <summary>PowerShell script content. When set, this item runs the script instead of an executable.</summary>
+    public string Script { get; set; } = "";
 }

@@ -289,7 +289,6 @@ public static class AppLauncher
 
             if (isChrome)
             {
-                // 读取 Local State 获取上次使用的配置文件，避免硬编码 Default
                 var profileArg = DetectBrowserProfileArg(exeName.ToString()) ?? "--profile-directory=\"Default\"";
                 Logger.Log("AppLauncher",$"Launch Chrome with profile arg: {profileArg}");
                 Process.Start(new ProcessStartInfo

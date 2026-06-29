@@ -244,6 +244,8 @@
                                     VerticalAlignment="Center">
                                 <Border.ContextFlyout>
                                     <MenuFlyout>
+                                        <MenuFlyoutItem Text="编辑" Click="OnEditUrlItem"
+                                                          Visibility="{x:Bind IsEditable, Mode=OneWay, Converter={StaticResource BoolToVisibilityConverter}}" />
                                         <MenuFlyoutItem Text="{x:Bind ContextMenuText, Mode=OneWay}" Click="OnRemoveItem" />
                                     </MenuFlyout>
                                 </Border.ContextFlyout>

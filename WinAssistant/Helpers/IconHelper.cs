@@ -20,7 +20,8 @@ public static class IconHelper
             using var ms = PreferFileExtraction(filePath, aumid, targetSize);
             if (ms == null) return null;
 
-            var tempDir = System.IO.Path.Combine(Path.GetTempPath(), "WinAssistant", "icons");
+            var tempDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinAssistant", "icons");
             Directory.CreateDirectory(tempDir);
 
             // Use a stable hash of the app path/AUMID as filename so the same app
@@ -145,7 +146,7 @@ public static class IconHelper
                 try
                 {
                     var tempIco = System.IO.Path.Combine(
-                        System.IO.Path.GetTempPath(), "WinAssistant", "icocache",
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "WinAssistant", "icocache",
                         $"_{System.IO.Path.GetFileName(filePath)}.ico");
                     Directory.CreateDirectory(System.IO.Path.GetDirectoryName(tempIco)!);
                     if (!File.Exists(tempIco))
