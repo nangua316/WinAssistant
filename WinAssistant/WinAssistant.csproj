@@ -11,7 +11,7 @@
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
     <WindowsAppSdkBootstrapInitialize>true</WindowsAppSdkBootstrapInitialize>
-    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <WindowsAppSdkDeploymentManagerInitialize>true</WindowsAppSdkDeploymentManagerInitialize>
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -80,6 +80,7 @@
 
   <!-- Publish Properties -->
   <PropertyGroup>
+    <SelfContained Condition="'$(Configuration)' != 'Debug'">true</SelfContained>
     <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
     <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
