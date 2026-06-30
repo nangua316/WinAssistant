@@ -5,20 +5,21 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Animation;
 using Microsoft.UI.Xaml.Media.Imaging;
 using WinAssistant.ViewModels;
 
 namespace WinAssistant.Pages;
 
 /// <summary>
-/// Handles custom pointer-based drag reordering for the Launchpad GridView.
+/// Handles custom pointer-based drag-to-swap reordering for the Launchpad GridView.
+/// Dragging an icon over another icon highlights the target; on drop the two icons swap positions.
 /// Extracted from LaunchpadPage.xaml.cs to keep page lifecycle separate from drag state.
 /// </summary>
 internal sealed class LaunchpadDragHandler : IDisposable
 {
     public void Dispose()
     {
-        _dwellTimer.Stop();
         _gridView.RemoveHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed));
         _gridView.RemoveHandler(UIElement.PointerMovedEvent, new PointerEventHandler(OnPointerMoved));
         _gridView.RemoveHandler(UIElement.PointerReleasedEvent, new PointerEventHandler(OnPointerReleased));
@@ -32,24 +33,18 @@ internal sealed class LaunchpadDragHandler : IDisposable
     private readonly ObservableCollection<LaunchpadItemViewModel> _items;
     private readonly Func<ObservableCollection<LaunchpadItemViewModel>> _filteredItemsGetter;
     private readonly Func<bool> _isSearchActive;
-    private readonly Action _saveItems;
+    private readonly Action<LaunchpadItemViewModel, LaunchpadItemViewModel> _swapItems;
+    private readonly Action<LaunchpadItemViewModel> _moveItemToEnd;
     private Brush _itemNameBrush;
     private Brush _accentBrush;
 
     private LaunchpadItemViewModel? _pressedItem;
     private Point _pressedPoint;
     private bool _isDragging;
-    private int _dragStartIndex = -1;
-    private int _dragTargetIndex = -1;
     private Border? _dragGhost;
 
-    // Placeholder item: replaces the pressed item in the collection during drag,
-    // creating a visual gap that items animate around via RepositionThemeTransition.
-    private LaunchpadItemViewModel? _placeholderItem;
-    private int _originalDragIndex = -1;
-    private int _pendingTargetIndex = -1;
+    private LaunchpadItemViewModel? _currentTargetItem;
     private readonly List<GridViewItem> _disabledContainers = new();
-    private readonly DispatcherTimer _dwellTimer;
 
     internal LaunchpadDragHandler(
         GridView gridView,
@@ -57,7 +52,8 @@ internal sealed class LaunchpadDragHandler : IDisposable
         ObservableCollection<LaunchpadItemViewModel> items,
         Func<ObservableCollection<LaunchpadItemViewModel>> filteredItemsGetter,
         Func<bool> isSearchActive,
-        Action saveItems,
+        Action<LaunchpadItemViewModel, LaunchpadItemViewModel> swapItems,
+        Action<LaunchpadItemViewModel> moveItemToEnd,
         Brush itemNameBrush,
         Brush accentBrush)
     {
@@ -66,23 +62,10 @@ internal sealed class LaunchpadDragHandler : IDisposable
         _items = items;
         _filteredItemsGetter = filteredItemsGetter;
         _isSearchActive = isSearchActive;
-        _saveItems = saveItems;
+        _swapItems = swapItems;
+        _moveItemToEnd = moveItemToEnd;
         _itemNameBrush = itemNameBrush;
         _accentBrush = accentBrush;
-
-        _dwellTimer = new DispatcherTimer();
-        _dwellTimer.Interval = TimeSpan.FromMilliseconds(300);
-        _dwellTimer.Tick += (_, _) =>
-        {
-            _dwellTimer.Stop();
-            if (_pendingTargetIndex >= 0 && _placeholderItem != null)
-            {
-                var pIdx = _items.IndexOf(_placeholderItem);
-                if (pIdx >= 0 && pIdx != _pendingTargetIndex)
-                    _items.Move(pIdx, _pendingTargetIndex);
-                _dragTargetIndex = _pendingTargetIndex;
-            }
-        };
 
         // handledEventsToo:true so we get events even if GridViewItem handles them
         gridView.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed), true);
@@ -118,8 +101,6 @@ internal sealed class LaunchpadDragHandler : IDisposable
         _pressedItem = vm;
         _pressedPoint = pt.Position;
         _isDragging = false;
-        _dragStartIndex = _items.IndexOf(vm);
-        _dragTargetIndex = -1;
     }
 
     private void OnPointerMoved(object sender, PointerRoutedEventArgs e)
@@ -138,20 +119,10 @@ internal sealed class LaunchpadDragHandler : IDisposable
             Canvas.SetLeft(_dragGhost!, pt.Position.X - 45);
             Canvas.SetTop(_dragGhost!, pt.Position.Y - 55);
 
-            // Calculate insertion index from pointer coordinates (grid math),
-            // independent of collection state → no ping-pong shifts.
-            var newTarget = CalcInsertIndex(pt.Position);
-            // Clamp to 0..Count-1 for Move() safety.
-            if (newTarget >= _items.Count) newTarget = _items.Count - 1;
-            if (newTarget < 0) newTarget = 0;
-            _pendingTargetIndex = newTarget;
-
-            if (newTarget != _dragTargetIndex)
-            {
-                _dwellTimer.Stop();
-                _dwellTimer.Start();
-                _dragTargetIndex = newTarget;
-            }
+            // Highlight the item currently under the pointer as the swap target.
+            var target = FindItemAt(pt.Position);
+            if (target == _pressedItem) target = null;
+            UpdateDragTarget(target);
 
             e.Handled = true;
             return;
@@ -172,25 +143,18 @@ internal sealed class LaunchpadDragHandler : IDisposable
 
         if (_isDragging)
         {
-            _dwellTimer.Stop();
+            var pt = e.GetCurrentPoint(_gridView).Position;
+            var target = FindItemAt(pt);
+            if (target != null && target != _pressedItem)
+            {
+                AnimateSwap(_pressedItem, target);
+            }
+            else if (CalcInsertIndex(pt) >= _items.Count)
+            {
+                // Dropped in trailing empty space: move to end with a controlled slide animation.
+                AnimateMoveToEnd(_pressedItem);
+            }
 
-            // Calculate drop position from pointer coordinates (not placeholder position)
-            var dropIdx = CalcInsertIndex(e.GetCurrentPoint(_gridView).Position);
-            if (dropIdx > _items.Count) dropIdx = _items.Count;
-            if (dropIdx < 0) dropIdx = 0;
-
-            var pIdx = _items.IndexOf(_placeholderItem!);
-            if (pIdx >= 0)
-                _items.RemoveAt(pIdx);
-
-            // Adjust drop index if placeholder was before it
-            var insertIdx = dropIdx;
-            if (pIdx >= 0 && pIdx < dropIdx) insertIdx--;
-
-            _items.Insert(insertIdx, _pressedItem!);
-            _saveItems();
-
-            _placeholderItem = null; // prevent CleanupDrag from restoring original position
             CleanupDrag();
             e.Handled = true;
             return;
@@ -217,20 +181,6 @@ internal sealed class LaunchpadDragHandler : IDisposable
                 _disabledContainers.Add(c);
             }
         }
-
-        // Replace pressed item with a placeholder so items "part" to show the gap.
-        // The placeholder has Name="" and IconSource=null → renders as empty tile.
-        _originalDragIndex = _dragStartIndex;
-        _placeholderItem = new LaunchpadItemViewModel(new LaunchpadItem { Name = "" })
-        {
-            // Non-null IconSource keeps the fallback circle+letter hidden via NullToCollapsedConverter.
-            IconSource = new BitmapImage()
-        };
-        // Remove the pressed item first so the grid has a real gap (count decreases by 1),
-        // triggering RepositionThemeTransition to animate items into the empty slot.
-        _items.RemoveAt(_originalDragIndex);
-        _items.Insert(_originalDragIndex, _placeholderItem);
-        _dragTargetIndex = _originalDragIndex;
 
         if (_dragGhost == null)
         {
@@ -287,28 +237,200 @@ internal sealed class LaunchpadDragHandler : IDisposable
             c.IsHitTestVisible = true;
         _disabledContainers.Clear();
 
-        // Cancel: if placeholder still exists (drag was canceled mid-flight),
-        // restore the pressed item at its original position.
-        if (_placeholderItem != null && _pressedItem != null)
-        {
-            var pIdx = _items.IndexOf(_placeholderItem);
-            if (pIdx >= 0)
-                _items.RemoveAt(pIdx);
-            _items.Insert(_originalDragIndex, _pressedItem);
-        }
+        UpdateDragTarget(null);
 
         if (_pressedItem != null)
             _pressedItem.IsBeingDragged = false;
 
-        _dwellTimer.Stop();
-        _placeholderItem = null;
-        _originalDragIndex = -1;
-        _pendingTargetIndex = -1;
-        _dragStartIndex = -1;
-        _dragTargetIndex = -1;
+        _currentTargetItem = null;
         _pressedItem = null;
         _pressedPoint = default;
         _isDragging = false;
+    }
+
+    /// <summary>Animates a swap between two items by translating their containers
+    /// across each other, avoiding the intermediate shifts that come from
+    /// ObservableCollection.Move-based swap animations.</summary>
+    private void AnimateSwap(LaunchpadItemViewModel a, LaunchpadItemViewModel b)
+    {
+        var aIdx = _items.IndexOf(a);
+        var bIdx = _items.IndexOf(b);
+        if (aIdx < 0 || bIdx < 0 || aIdx == bIdx)
+        {
+            _swapItems(a, b);
+            return;
+        }
+
+        // Hide ghost early so it doesn't overlap the animated icons.
+        if (_dragGhost != null)
+            _dragGhost.Visibility = Visibility.Collapsed;
+
+        var containerA = _gridView.ContainerFromIndex(aIdx) as GridViewItem;
+        var containerB = _gridView.ContainerFromIndex(bIdx) as GridViewItem;
+        if (containerA == null || containerB == null)
+        {
+            _swapItems(a, b);
+            return;
+        }
+
+        var posA = containerA.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+        var posB = containerB.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+
+        // Disable default transitions so the collection swap applies instantly.
+        var originalTransitions = _gridView.ItemContainerTransitions;
+        try
+        {
+            _gridView.ItemContainerTransitions = null;
+            _swapItems(a, b);
+            _gridView.UpdateLayout();
+        }
+        finally
+        {
+            _gridView.ItemContainerTransitions = originalTransitions;
+        }
+
+        var newContainerA = _gridView.ContainerFromIndex(aIdx) as GridViewItem;
+        var newContainerB = _gridView.ContainerFromIndex(bIdx) as GridViewItem;
+        if (newContainerA == null || newContainerB == null) return;
+
+        var newPosA = newContainerA.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+        var newPosB = newContainerB.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+
+        var translateA = new TranslateTransform
+        {
+            X = posB.X - newPosA.X,
+            Y = posB.Y - newPosA.Y
+        };
+        var translateB = new TranslateTransform
+        {
+            X = posA.X - newPosB.X,
+            Y = posA.Y - newPosB.Y
+        };
+
+        newContainerA.RenderTransform = translateA;
+        newContainerB.RenderTransform = translateB;
+
+        const double durationMs = 200;
+        var easing = new CubicEase { EasingMode = EasingMode.EaseInOut };
+
+        var storyboard = new Storyboard();
+        void AddAnim(TranslateTransform target, string property)
+        {
+            var anim = new DoubleAnimation
+            {
+                To = 0,
+                Duration = new Duration(TimeSpan.FromMilliseconds(durationMs)),
+                EasingFunction = easing
+            };
+            Storyboard.SetTarget(anim, target);
+            Storyboard.SetTargetProperty(anim, property);
+            storyboard.Children.Add(anim);
+        }
+
+        AddAnim(translateA, "X");
+        AddAnim(translateA, "Y");
+        AddAnim(translateB, "X");
+        AddAnim(translateB, "Y");
+
+        storyboard.Completed += (_, _) =>
+        {
+            newContainerA.RenderTransform = null;
+            newContainerB.RenderTransform = null;
+        };
+
+        storyboard.Begin();
+    }
+
+    /// <summary>Animates moving an item to the end of the grid. Every affected
+    /// container is translated from its old visual position to its new one,
+    /// replacing the default RepositionThemeTransition with a controlled
+    /// 200ms ease-in-out slide.</summary>
+    private void AnimateMoveToEnd(LaunchpadItemViewModel item)
+    {
+        var fromIdx = _items.IndexOf(item);
+        if (fromIdx < 0 || fromIdx == _items.Count - 1) return;
+
+        // Hide ghost early so it doesn't overlap the animated icons.
+        if (_dragGhost != null)
+            _dragGhost.Visibility = Visibility.Collapsed;
+
+        var toIdx = _items.Count - 1;
+
+        // Capture old visual positions of the affected range.
+        var oldPositions = new Dictionary<int, Point>();
+        for (int i = fromIdx; i <= toIdx; i++)
+        {
+            if (_gridView.ContainerFromIndex(i) is GridViewItem c)
+                oldPositions[i] = c.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+        }
+
+        if (oldPositions.Count == 0)
+        {
+            _moveItemToEnd(item);
+            return;
+        }
+
+        // Disable default transitions so the collection change applies instantly.
+        var originalTransitions = _gridView.ItemContainerTransitions;
+        try
+        {
+            _gridView.ItemContainerTransitions = null;
+            _moveItemToEnd(item);
+            _gridView.UpdateLayout();
+        }
+        finally
+        {
+            _gridView.ItemContainerTransitions = originalTransitions;
+        }
+
+        const double durationMs = 200;
+        var easing = new CubicEase { EasingMode = EasingMode.EaseInOut };
+        var storyboard = new Storyboard();
+        var animatedContainers = new List<GridViewItem>();
+
+        for (int i = fromIdx; i <= toIdx; i++)
+        {
+            if (_gridView.ContainerFromIndex(i) is not GridViewItem newContainer) continue;
+
+            // The item now at index i came from index i+1, except the last slot
+            // which received the moved item from fromIdx.
+            var oldItemIndex = (i == toIdx) ? fromIdx : i + 1;
+            if (!oldPositions.TryGetValue(oldItemIndex, out var oldPos)) continue;
+
+            var newPos = newContainer.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+            var translate = new TranslateTransform
+            {
+                X = oldPos.X - newPos.X,
+                Y = oldPos.Y - newPos.Y
+            };
+            newContainer.RenderTransform = translate;
+            animatedContainers.Add(newContainer);
+
+            void AddAnim(string property)
+            {
+                var anim = new DoubleAnimation
+                {
+                    To = 0,
+                    Duration = new Duration(TimeSpan.FromMilliseconds(durationMs)),
+                    EasingFunction = easing
+                };
+                Storyboard.SetTarget(anim, translate);
+                Storyboard.SetTargetProperty(anim, property);
+                storyboard.Children.Add(anim);
+            }
+            AddAnim("X");
+            AddAnim("Y");
+        }
+
+        if (storyboard.Children.Count == 0) return;
+
+        storyboard.Completed += (_, _) =>
+        {
+            foreach (var c in animatedContainers)
+                c.RenderTransform = null;
+        };
+
+        storyboard.Begin();
     }
 
     /// <summary>Finds the item at the given point using grid layout calculation.
@@ -369,6 +491,19 @@ internal sealed class LaunchpadDragHandler : IDisposable
                 return items.Count;
         }
         return index;
+    }
+
+    private void UpdateDragTarget(LaunchpadItemViewModel? target)
+    {
+        if (ReferenceEquals(_currentTargetItem, target)) return;
+
+        if (_currentTargetItem != null)
+            _currentTargetItem.IsDragOverTarget = false;
+
+        _currentTargetItem = target;
+
+        if (_currentTargetItem != null)
+            _currentTargetItem.IsDragOverTarget = true;
     }
 
     private double GetScrollOffset()

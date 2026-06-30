@@ -64,7 +64,8 @@ public sealed partial class LaunchpadPage : Page
             ViewModel.Items,
             () => ViewModel.FilteredItems,
             () => !string.IsNullOrWhiteSpace(ViewModel.SearchText),
-            () => ViewModel.SaveItems(),
+            (a, b) => ViewModel.SwapItems(a, b),
+            item => ViewModel.MoveItemToEnd(item),
             (Brush)Resources["ItemNameBrush"],
             (Brush)Resources["AccentBrush"]);
         UpdateReorderState();

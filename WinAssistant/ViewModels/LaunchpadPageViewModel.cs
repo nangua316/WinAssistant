@@ -20,6 +20,7 @@ public class LaunchpadPageViewModel : ObservableObject
     private readonly SettingsService _settingsService;
     private readonly ObservableCollection<LaunchpadItemViewModel> _items = [];
     private ObservableCollection<LaunchpadItemViewModel> _filteredItems = [];
+    private bool _suppressCollectionChanged;
     private string _searchText = "";
     private CancellationTokenSource? _searchCts;
     private List<(LaunchpadItem Item, string Pinyin)>? _allAppsCache;
@@ -298,8 +299,68 @@ public class LaunchpadPageViewModel : ObservableObject
 
     private void OnItemsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (IsLoading) return;
+        if (IsLoading || _suppressCollectionChanged) return;
         ApplyFilter();
+        OnPropertyChanged(nameof(HasItems));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    /// <summary>Swap the positions of two items in the launchpad. Used by drag-to-swap reordering.</summary>
+    public void SwapItems(LaunchpadItemViewModel a, LaunchpadItemViewModel b)
+    {
+        var aIdx = _items.IndexOf(a);
+        var bIdx = _items.IndexOf(b);
+        if (aIdx < 0 || bIdx < 0 || aIdx == bIdx) return;
+
+        var faIdx = _filteredItems.IndexOf(a);
+        var fbIdx = _filteredItems.IndexOf(b);
+        if (faIdx < 0 || fbIdx < 0) return;
+
+        _suppressCollectionChanged = true;
+        if (aIdx < bIdx)
+        {
+            _items.Move(aIdx, bIdx);
+            _items.Move(bIdx - 1, aIdx);
+        }
+        else
+        {
+            _items.Move(aIdx, bIdx);
+            _items.Move(bIdx + 1, aIdx);
+        }
+        _suppressCollectionChanged = false;
+
+        if (faIdx < fbIdx)
+        {
+            _filteredItems.Move(faIdx, fbIdx);
+            _filteredItems.Move(fbIdx - 1, faIdx);
+        }
+        else
+        {
+            _filteredItems.Move(faIdx, fbIdx);
+            _filteredItems.Move(fbIdx + 1, faIdx);
+        }
+
+        SaveItems();
+        OnPropertyChanged(nameof(HasItems));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    /// <summary>Move an item to the end of the launchpad. Used when dropping an icon in trailing empty space.</summary>
+    public void MoveItemToEnd(LaunchpadItemViewModel item)
+    {
+        var idx = _items.IndexOf(item);
+        if (idx < 0 || idx == _items.Count - 1) return;
+
+        var fIdx = _filteredItems.IndexOf(item);
+        if (fIdx < 0) return;
+
+        _suppressCollectionChanged = true;
+        _items.Move(idx, _items.Count - 1);
+        _suppressCollectionChanged = false;
+
+        _filteredItems.Move(fIdx, _filteredItems.Count - 1);
+
+        SaveItems();
         OnPropertyChanged(nameof(HasItems));
         OnPropertyChanged(nameof(StatusText));
     }
