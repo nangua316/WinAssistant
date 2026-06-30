@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using Windows.Foundation;
 using WinAssistant.Models;
 using Microsoft.UI.Xaml;
@@ -37,11 +38,15 @@ internal sealed class LaunchpadDragHandler : IDisposable
     private readonly Action<LaunchpadItemViewModel> _moveItemToEnd;
     private Brush _itemNameBrush;
     private Brush _accentBrush;
+    private Brush _dragGhostBackgroundBrush;
+    private Brush _textPrimaryBrush;
+    private Brush _itemFallbackBrush;
 
     private LaunchpadItemViewModel? _pressedItem;
     private Point _pressedPoint;
     private bool _isDragging;
     private Border? _dragGhost;
+    private Grid? _dragGhostIconContainer;
 
     private LaunchpadItemViewModel? _currentTargetItem;
     private readonly List<GridViewItem> _disabledContainers = new();
@@ -55,7 +60,10 @@ internal sealed class LaunchpadDragHandler : IDisposable
         Action<LaunchpadItemViewModel, LaunchpadItemViewModel> swapItems,
         Action<LaunchpadItemViewModel> moveItemToEnd,
         Brush itemNameBrush,
-        Brush accentBrush)
+        Brush accentBrush,
+        Brush dragGhostBackgroundBrush,
+        Brush textPrimaryBrush,
+        Brush itemFallbackBrush)
     {
         _gridView = gridView;
         _dragCanvas = dragCanvas;
@@ -66,6 +74,9 @@ internal sealed class LaunchpadDragHandler : IDisposable
         _moveItemToEnd = moveItemToEnd;
         _itemNameBrush = itemNameBrush;
         _accentBrush = accentBrush;
+        _dragGhostBackgroundBrush = dragGhostBackgroundBrush;
+        _textPrimaryBrush = textPrimaryBrush;
+        _itemFallbackBrush = itemFallbackBrush;
 
         // handledEventsToo:true so we get events even if GridViewItem handles them
         gridView.AddHandler(UIElement.PointerPressedEvent, new PointerEventHandler(OnPointerPressed), true);
@@ -81,11 +92,37 @@ internal sealed class LaunchpadDragHandler : IDisposable
         };
     }
 
-    /// <summary>主题切换时更新缓存的 Brush 引用。</summary>
-    public void UpdateBrushes(Brush itemNameBrush, Brush accentBrush)
+    /// <summary>主题切换时更新缓存的 Brush 引用，并同步刷新已创建的 ghost 外观。</summary>
+    public void UpdateBrushes(
+        Brush itemNameBrush,
+        Brush accentBrush,
+        Brush dragGhostBackgroundBrush,
+        Brush textPrimaryBrush,
+        Brush itemFallbackBrush)
     {
         _itemNameBrush = itemNameBrush;
         _accentBrush = accentBrush;
+        _dragGhostBackgroundBrush = dragGhostBackgroundBrush;
+        _textPrimaryBrush = textPrimaryBrush;
+        _itemFallbackBrush = itemFallbackBrush;
+        if (_dragGhost == null) return;
+
+        _dragGhost.Background = _dragGhostBackgroundBrush;
+        _dragGhost.BorderBrush = _accentBrush;
+
+        if (_dragGhost.Child is StackPanel stack && stack.Children.Count > 1
+            && stack.Children[1] is TextBlock label)
+        {
+            label.Foreground = _itemNameBrush;
+        }
+
+        // 同步刷新 glyph/fallback 文字图标颜色（工具图标颜色固定，不更新）
+        if (_dragGhostIconContainer?.Children.FirstOrDefault() is TextBlock tb
+            && tb.Tag is string iconKind
+            && iconKind is "font" or "fallback")
+        {
+            tb.Foreground = iconKind == "font" ? _textPrimaryBrush : _itemFallbackBrush;
+        }
     }
 
     private void OnPointerPressed(object sender, PointerRoutedEventArgs e)
@@ -144,15 +181,18 @@ internal sealed class LaunchpadDragHandler : IDisposable
         if (_isDragging)
         {
             var pt = e.GetCurrentPoint(_gridView).Position;
-            var target = FindItemAt(pt);
-            if (target != null && target != _pressedItem)
+            var insertIndex = CalcInsertIndex(pt);
+            if (insertIndex >= _items.Count)
             {
-                AnimateSwap(_pressedItem, target);
-            }
-            else if (CalcInsertIndex(pt) >= _items.Count)
-            {
-                // Dropped in trailing empty space: move to end with a controlled slide animation.
+                // Dropped in trailing empty space (or right half of the last item):
+                // move to end with a controlled slide animation.
                 AnimateMoveToEnd(_pressedItem);
+            }
+            else
+            {
+                var target = FindItemAt(pt);
+                if (target != null && target != _pressedItem)
+                    AnimateSwap(_pressedItem, target);
             }
 
             CleanupDrag();
@@ -184,12 +224,12 @@ internal sealed class LaunchpadDragHandler : IDisposable
 
         if (_dragGhost == null)
         {
-            var icon = new Image
+            _dragGhostIconContainer = new Grid
             {
                 Width = 48,
                 Height = 48,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                Stretch = Stretch.Uniform
+                VerticalAlignment = VerticalAlignment.Center
             };
             var label = new TextBlock
             {
@@ -200,14 +240,14 @@ internal sealed class LaunchpadDragHandler : IDisposable
                 MaxWidth = 80
             };
             var stack = new StackPanel { Spacing = 4, Margin = new Thickness(8) };
-            stack.Children.Add(icon);
+            stack.Children.Add(_dragGhostIconContainer);
             stack.Children.Add(label);
 
             _dragGhost = new Border
             {
                 Width = 90,
                 Height = 100,
-                Background = new SolidColorBrush(Windows.UI.Color.FromArgb(0xDD, 0x1A, 0x1E, 0x30)),
+                Background = _dragGhostBackgroundBrush,
                 CornerRadius = new CornerRadius(10),
                 BorderBrush = _accentBrush,
                 BorderThickness = new Thickness(1),
@@ -218,13 +258,78 @@ internal sealed class LaunchpadDragHandler : IDisposable
         }
 
         var stack2 = (StackPanel)_dragGhost.Child;
-        ((Image)stack2.Children[0]).Source = _pressedItem.IconSource;
         ((TextBlock)stack2.Children[1]).Text = _pressedItem.Name;
+        BuildGhostIcon(_pressedItem);
 
         var pt = e.GetCurrentPoint(_gridView);
         Canvas.SetLeft(_dragGhost, pt.Position.X - 45);
         Canvas.SetTop(_dragGhost, pt.Position.Y - 55);
         _dragGhost.Visibility = Visibility.Visible;
+    }
+
+    /// <summary>Builds the icon area of the drag ghost, handling app icons,
+    /// tool/script glyphs, and fallback letters.</summary>
+    private void BuildGhostIcon(LaunchpadItemViewModel item)
+    {
+        if (_dragGhostIconContainer == null) return;
+        _dragGhostIconContainer.Children.Clear();
+
+        if (item.HasIcon && item.IconSource != null)
+        {
+            _dragGhostIconContainer.Children.Add(new Image
+            {
+                Width = 48,
+                Height = 48,
+                Stretch = Stretch.Uniform,
+                Source = item.IconSource
+            });
+            return;
+        }
+
+        if (item.IsTool && !string.IsNullOrEmpty(item.ToolIconGlyph))
+        {
+            // 小工具图标通常是 Unicode 表情/符号（如 ☀ / ☽），使用默认字体即可，
+            // 不要设成 Segoe MDL2 Assets，否则会显示成小方框。
+            _dragGhostIconContainer.Children.Add(new TextBlock
+            {
+                Text = item.ToolIconGlyph,
+                FontSize = 32,
+                Foreground = item.ToolIconBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tag = "tool"
+            });
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(item.FontIconGlyph))
+        {
+            _dragGhostIconContainer.Children.Add(new TextBlock
+            {
+                Text = item.FontIconGlyph,
+                FontFamily = new FontFamily("Segoe MDL2 Assets"),
+                FontSize = 28,
+                Foreground = _textPrimaryBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tag = "font"
+            });
+            return;
+        }
+
+        // Fallback: first letter of the name
+        if (!string.IsNullOrEmpty(item.FallbackChar))
+        {
+            _dragGhostIconContainer.Children.Add(new TextBlock
+            {
+                Text = item.FallbackChar,
+                FontSize = 22,
+                Foreground = _itemFallbackBrush,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                Tag = "fallback"
+            });
+        }
     }
 
     private void CleanupDrag()
@@ -253,9 +358,7 @@ internal sealed class LaunchpadDragHandler : IDisposable
     /// ObservableCollection.Move-based swap animations.</summary>
     private void AnimateSwap(LaunchpadItemViewModel a, LaunchpadItemViewModel b)
     {
-        var aIdx = _items.IndexOf(a);
-        var bIdx = _items.IndexOf(b);
-        if (aIdx < 0 || bIdx < 0 || aIdx == bIdx)
+        if (ReferenceEquals(a, b))
         {
             _swapItems(a, b);
             return;
@@ -265,8 +368,10 @@ internal sealed class LaunchpadDragHandler : IDisposable
         if (_dragGhost != null)
             _dragGhost.Visibility = Visibility.Collapsed;
 
-        var containerA = _gridView.ContainerFromIndex(aIdx) as GridViewItem;
-        var containerB = _gridView.ContainerFromIndex(bIdx) as GridViewItem;
+        // Capture the containers by item so the animation tracks the actual
+        // view models regardless of whether GridView recycles containers.
+        var containerA = _gridView.ContainerFromItem(a) as GridViewItem;
+        var containerB = _gridView.ContainerFromItem(b) as GridViewItem;
         if (containerA == null || containerB == null)
         {
             _swapItems(a, b);
@@ -289,22 +394,23 @@ internal sealed class LaunchpadDragHandler : IDisposable
             _gridView.ItemContainerTransitions = originalTransitions;
         }
 
-        var newContainerA = _gridView.ContainerFromIndex(aIdx) as GridViewItem;
-        var newContainerB = _gridView.ContainerFromIndex(bIdx) as GridViewItem;
+        var newContainerA = _gridView.ContainerFromItem(a) as GridViewItem;
+        var newContainerB = _gridView.ContainerFromItem(b) as GridViewItem;
         if (newContainerA == null || newContainerB == null) return;
 
         var newPosA = newContainerA.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
         var newPosB = newContainerB.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
 
+        // Animate each item from where it was to where it is now.
         var translateA = new TranslateTransform
         {
-            X = posB.X - newPosA.X,
-            Y = posB.Y - newPosA.Y
+            X = posA.X - newPosA.X,
+            Y = posA.Y - newPosA.Y
         };
         var translateB = new TranslateTransform
         {
-            X = posA.X - newPosB.X,
-            Y = posA.Y - newPosB.Y
+            X = posB.X - newPosB.X,
+            Y = posB.Y - newPosB.Y
         };
 
         newContainerA.RenderTransform = translateA;
@@ -356,12 +462,13 @@ internal sealed class LaunchpadDragHandler : IDisposable
 
         var toIdx = _items.Count - 1;
 
-        // Capture old visual positions of the affected range.
-        var oldPositions = new Dictionary<int, Point>();
+        // Capture old visual positions by item so the animation is correct
+        // regardless of whether GridView recycles containers.
+        var oldPositions = new Dictionary<LaunchpadItemViewModel, Point>();
         for (int i = fromIdx; i <= toIdx; i++)
         {
-            if (_gridView.ContainerFromIndex(i) is GridViewItem c)
-                oldPositions[i] = c.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
+            if (_gridView.ContainerFromIndex(i) is GridViewItem c && c.Content is LaunchpadItemViewModel vm)
+                oldPositions[vm] = c.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
         }
 
         if (oldPositions.Count == 0)
@@ -388,14 +495,10 @@ internal sealed class LaunchpadDragHandler : IDisposable
         var storyboard = new Storyboard();
         var animatedContainers = new List<GridViewItem>();
 
-        for (int i = fromIdx; i <= toIdx; i++)
+        foreach (var (vm, oldPos) in oldPositions)
         {
-            if (_gridView.ContainerFromIndex(i) is not GridViewItem newContainer) continue;
-
-            // The item now at index i came from index i+1, except the last slot
-            // which received the moved item from fromIdx.
-            var oldItemIndex = (i == toIdx) ? fromIdx : i + 1;
-            if (!oldPositions.TryGetValue(oldItemIndex, out var oldPos)) continue;
+            var newContainer = _gridView.ContainerFromItem(vm) as GridViewItem;
+            if (newContainer == null) continue;
 
             var newPos = newContainer.TransformToVisual(_gridView).TransformPoint(new Point(0, 0));
             var translate = new TranslateTransform

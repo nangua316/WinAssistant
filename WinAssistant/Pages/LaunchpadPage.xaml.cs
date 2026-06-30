@@ -66,8 +66,11 @@ public sealed partial class LaunchpadPage : Page
             () => !string.IsNullOrWhiteSpace(ViewModel.SearchText),
             (a, b) => ViewModel.SwapItems(a, b),
             item => ViewModel.MoveItemToEnd(item),
-            (Brush)Resources["ItemNameBrush"],
-            (Brush)Resources["AccentBrush"]);
+            GetThemedBrush("ItemNameBrush"),
+            GetThemedBrush("AccentBrush"),
+            GetThemedBrush("DragGhostBackgroundBrush"),
+            GetThemedBrush("TextPrimaryBrush"),
+            GetThemedBrush("ItemFallbackBrush"));
         UpdateReorderState();
 
         // 主题切换时更新
@@ -81,8 +84,11 @@ public sealed partial class LaunchpadPage : Page
 
         // 更新 DragHandler 引用的内存 Brush
         _dragHandler?.UpdateBrushes(
-            (Brush)Resources["ItemNameBrush"],
-            (Brush)Resources["AccentBrush"]);
+            GetThemedBrush("ItemNameBrush"),
+            GetThemedBrush("AccentBrush"),
+            GetThemedBrush("DragGhostBackgroundBrush"),
+            GetThemedBrush("TextPrimaryBrush"),
+            GetThemedBrush("ItemFallbackBrush"));
     }
 
     private void OnItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -105,6 +111,14 @@ public sealed partial class LaunchpadPage : Page
         // 每次打开时刷新主题（防止关闭期间系统主题变化）
         this.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
             ? ElementTheme.Light : ElementTheme.Dark;
+
+        // 同步刷新 drag handler 的 brush，避免主题切换后 ghost 用旧颜色
+        _dragHandler?.UpdateBrushes(
+            GetThemedBrush("ItemNameBrush"),
+            GetThemedBrush("AccentBrush"),
+            GetThemedBrush("DragGhostBackgroundBrush"),
+            GetThemedBrush("TextPrimaryBrush"),
+            GetThemedBrush("ItemFallbackBrush"));
 
         var settings = App.SettingsService.Load();
         ViewModel.PreloadSearchText(settings.LastSearchText ?? "");
@@ -150,6 +164,21 @@ public sealed partial class LaunchpadPage : Page
         return null;
     }
 
+    /// <summary>
+    /// 显式从当前主题字典读取 brush，避免代码中直接 Resources[key]
+    /// 在主题切换后仍解析为旧值的问题。
+    /// </summary>
+    private Brush GetThemedBrush(string key)
+    {
+        var themeKey = App.CurrentTheme == ApplicationTheme.Light ? "Light" : "Dark";
+        if (Resources.ThemeDictionaries.TryGetValue(themeKey, out var dictObj)
+            && dictObj is ResourceDictionary themeDict
+            && themeDict.TryGetValue(key, out var brush))
+        {
+            return (Brush)brush;
+        }
+        return (Brush)Resources[key];
+    }
 
     private void OnPinToggle(object sender, RoutedEventArgs e)
     {

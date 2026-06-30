@@ -35,6 +35,10 @@ public sealed partial class LaunchpadWindow : Window
         // DWM 暗色模式（SystemBackdrop 之后设置，确保 Mica 用正确主题渲染）
         App.UpdateDwmDarkMode(_hwnd);
 
+        // 初始主题与 App.CurrentTheme 保持一致，避免窗口创建时继承系统默认主题
+        RootGrid.RequestedTheme = App.CurrentTheme == ApplicationTheme.Light
+            ? ElementTheme.Light : ElementTheme.Dark;
+
         // Update DWM title bar dark mode when system theme changes
         App.SystemThemeChanged += OnSystemThemeChanged;
 

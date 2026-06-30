@@ -28,6 +28,7 @@
                     <SolidColorBrush x:Key="ItemIconCircleBrush" Color="#0A000000" />
                     <SolidColorBrush x:Key="ItemFallbackBrush" Color="#88616161" />
                     <SolidColorBrush x:Key="ItemNameBrush" Color="#DD1C1C1E" />
+                    <SolidColorBrush x:Key="DragGhostBackgroundBrush" Color="#DDF3F3F3" />
 
                     <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="#0A000000" />
                     <SolidColorBrush x:Key="GridViewItemBackgroundSelected" Color="#14000000" />
@@ -56,6 +57,7 @@
                     <SolidColorBrush x:Key="ItemIconCircleBrush" Color="#1AFFFFFF" />
                     <SolidColorBrush x:Key="ItemFallbackBrush" Color="#889E9E9E" />
                     <SolidColorBrush x:Key="ItemNameBrush" Color="#DDFFFFFF" />
+                    <SolidColorBrush x:Key="DragGhostBackgroundBrush" Color="#DD1A1E30" />
 
                     <SolidColorBrush x:Key="GridViewItemBackgroundPointerOver" Color="#14FFFFFF" />
                     <SolidColorBrush x:Key="GridViewItemBackgroundSelected" Color="#1EFFFFFF" />
