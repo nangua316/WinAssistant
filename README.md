@@ -24,9 +24,9 @@
 
 ## 界面预览
 
-![启动台](assets/screenshots/launchpad截图.png)
+![启动台](assets/screenshots/launchpad.jpg)
 
-![全局快捷键](assets/screenshots/全局快捷键.png)
+![全局快捷键](assets/screenshots/hotkey.jpg)
 
 ## 技术栈
 
