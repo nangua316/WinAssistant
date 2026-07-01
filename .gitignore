@@ -59,3 +59,6 @@ settings/
 
 # Design docs / temporary notes
 docs/
+
+# Release packages
+*.zip
