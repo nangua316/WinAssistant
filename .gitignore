@@ -49,3 +49,10 @@ bld/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Local / user-specific state
+lock/
+settings/
+.workbuddy/
+.hermes/
+.codex/
