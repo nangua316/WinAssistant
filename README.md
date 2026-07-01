@@ -22,6 +22,14 @@
   - 全局快捷键唤起启动台
   - 低侵入式 Toast 提示
 
+## 界面预览
+
+> 截图请放到 `assets/screenshots/` 目录下，替换下方文件名即可显示。
+
+![启动台](assets/screenshots/launchpad.png)
+
+![设置页](assets/screenshots/settings.png)
+
 ## 技术栈
 
 - .NET 9
