@@ -56,3 +56,6 @@ settings/
 .workbuddy/
 .hermes/
 .codex/
+
+# Design docs / temporary notes
+docs/
