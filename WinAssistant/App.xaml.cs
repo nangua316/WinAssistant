@@ -19,9 +19,9 @@ public partial class App : Application
     private const string SingleInstanceMutex = "WinAssistant_SingleInstance";
 
     public static Window Window { get; private set; } = null!;
-    private static LaunchpadWindow? _launchpadWindow;
-    public static LaunchpadWindow LaunchpadWindow =>
-        _launchpadWindow ??= new LaunchpadWindow();
+    private static LaunchpadHost? _launchpadHost;
+    public static LaunchpadHost LaunchpadWindow =>
+        _launchpadHost ??= new LaunchpadHost();
     public static Microsoft.UI.Dispatching.DispatcherQueue DispatcherQueue { get; private set; } = null!;
     public static HotKeyService HotKeyService { get; } = new();
     public static SettingsService SettingsService { get; } = new();
@@ -88,6 +88,17 @@ public partial class App : Application
             catch { }
         };
 
+        AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
+        {
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(Path.GetTempPath(), "WinAssistant_firstchance.log"),
+                    $"[{DateTime.Now:HH:mm:ss.fff}] FIRSTCHANCE: {e.Exception.GetType().Name}: {e.Exception.Message}\n");
+            }
+            catch { }
+        };
+
         TaskScheduler.UnobservedTaskException += (s, e) =>
         {
             try
@@ -128,9 +139,8 @@ public partial class App : Application
         DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         HotKeyService.Initialize(WindowHandle);
         Window.Activate();
-        // 在窗口隐藏前设置主题，确保根元素 RequestedTheme 正确
+        // 设置标题栏主题（启动台直接显示在 MainWindow 内）
         ApplyThemeToRoot();
-        ShowWindow(App.WindowHandle, SW_HIDE);
 
         MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
         MouseHookService.XButton1Clicked += OnLaunchpadTriggered;
@@ -335,11 +345,7 @@ public partial class App : Application
             var backdropType = DWMSBT_TRANSIENTWINDOW;
             DwmSetWindowAttribute(WindowHandle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
 
-            if (_launchpadWindow != null)
-            {
-                var lpHandle = WinRT.Interop.WindowNative.GetWindowHandle(_launchpadWindow);
-                DwmSetWindowAttribute(lpHandle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
-            }
+            // 启动台现在作为 MainWindow 的 overlay 显示，无需单独处理第二个窗口
         }
         catch { }
     }

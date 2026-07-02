@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Composition.SystemBackdrops;
 using Windows.Graphics;
 using WinAssistant.Controls.Tools;
+using WinAssistant.Pages;
 
 namespace WinAssistant;
 
@@ -16,6 +17,13 @@ public sealed partial class MainWindow : Window
     private nint _trayIconHandle;
     private bool _trayIconAdded;
     private nint _hwnd;
+
+    private LaunchpadPage? _launchpadPage;
+    private bool _isLaunchpadPinned;
+    private Microsoft.UI.Xaml.DispatcherTimer? _launchpadFocusTimer;
+    private long _lastLaunchpadOpenTicks;
+
+    public bool IsLaunchpadShowing => LaunchpadOverlay.Visibility == Visibility.Visible;
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
@@ -29,6 +37,9 @@ public sealed partial class MainWindow : Window
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
     private const int SW_RESTORE = 9;
+
+    private static readonly nint HWND_TOPMOST = (nint)(-1);
+    private static readonly nint HWND_NOTOPMOST = (nint)(-2);
 
     private const uint NIM_ADD = 0;
     private const uint NIM_DELETE = 2;
@@ -140,7 +151,12 @@ public sealed partial class MainWindow : Window
 
     public void ShowSettings()
     {
+        StopLaunchpadFocusTimer();
+        _isLaunchpadPinned = false;
         LaunchpadOverlay.Visibility = Visibility.Collapsed;
+        AppTitleBar.Visibility = Visibility.Visible;
+        RootFrame.Visibility = Visibility.Visible;
+        AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Standard;
         AppWindow.SetPresenter(AppWindowPresenterKind.Default);
         SetTitleBar(AppTitleBar);
         MakeAppWindow();
@@ -180,6 +196,89 @@ public sealed partial class MainWindow : Window
         SetWindowPos(_hwnd, nint.Zero, x, y, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
         SetForegroundWindow(_hwnd);
         try { Activate(); } catch { }
+    }
+
+    public void ShowLaunchpad()
+    {
+        if (IsLaunchpadShowing)
+        {
+            CloseLaunchpad();
+            return;
+        }
+
+        _lastLaunchpadOpenTicks = DateTime.UtcNow.Ticks;
+
+        if (_launchpadPage == null)
+        {
+            _launchpadPage = new Pages.LaunchpadPage();
+            _launchpadPage.OwnerHwnd = _hwnd;
+            _launchpadPage.CloseRequested += (_, _) => CloseLaunchpad();
+            _launchpadPage.PinChanged += (_, pinned) => _isLaunchpadPinned = pinned;
+            LaunchpadOverlay.Children.Add(_launchpadPage);
+        }
+
+        _launchpadPage.Activate();
+
+        LaunchpadOverlay.Visibility = Visibility.Visible;
+        ShowWindow(_hwnd, SW_SHOW);
+        try { Activate(); } catch { }
+
+        StartLaunchpadFocusTimer();
+    }
+
+    public void CloseLaunchpad()
+    {
+        if (_launchpadPage != null)
+        {
+            try
+            {
+                var settings = App.SettingsService.Load();
+                settings.LastSearchText = _launchpadPage.ViewModel.SearchText;
+                App.SettingsService.Save(settings);
+            }
+            catch { }
+        }
+
+        StopLaunchpadFocusTimer();
+        _isLaunchpadPinned = false;
+        LaunchpadOverlay.Visibility = Visibility.Collapsed;
+        ShowWindow(_hwnd, SW_HIDE);
+    }
+
+    private (int w, int h) CalcLaunchpadSize()
+    {
+        return (1600, 1200);
+    }
+
+    private void StartLaunchpadFocusTimer()
+    {
+        StopLaunchpadFocusTimer();
+        _launchpadFocusTimer = new Microsoft.UI.Xaml.DispatcherTimer();
+        _launchpadFocusTimer.Interval = TimeSpan.FromMilliseconds(150);
+        _launchpadFocusTimer.Tick += OnLaunchpadFocusTick;
+        _launchpadFocusTimer.Start();
+    }
+
+    private void StopLaunchpadFocusTimer()
+    {
+        if (_launchpadFocusTimer != null)
+        {
+            _launchpadFocusTimer.Stop();
+            _launchpadFocusTimer.Tick -= OnLaunchpadFocusTick;
+            _launchpadFocusTimer = null;
+        }
+    }
+
+    private void OnLaunchpadFocusTick(object? sender, object e)
+    {
+        if (!IsLaunchpadShowing || _isLaunchpadPinned) return;
+
+        var elapsed = (DateTime.UtcNow.Ticks - _lastLaunchpadOpenTicks) / TimeSpan.TicksPerMillisecond;
+        if (elapsed < 200) return;
+
+        var foreground = GetForegroundWindow();
+        if (foreground != _hwnd)
+            CloseLaunchpad();
     }
 
     private void MakeToolWindow()
@@ -230,7 +329,7 @@ public sealed partial class MainWindow : Window
 
             if (cmd == showItem)
             {
-                App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
+                App.DispatcherQueue.TryEnqueue(ShowLaunchpad);
             }
             else if (cmd == settingsItem)
             {
@@ -294,7 +393,7 @@ public sealed partial class MainWindow : Window
                 var hotKeyId = wParam.ToInt32();
                 if (hotKeyId == App.GLOBAL_HOTKEY_ID || hotKeyId == App.ALTSPACE_HOTKEY_ID)
                 {
-                    App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
+                    App.DispatcherQueue.TryEnqueue(ShowLaunchpad);
                     return nint.Zero;
                 }
                 if (App.HotKeyService.OnWindowMessage(msg, wParam, lParam))
@@ -305,7 +404,7 @@ public sealed partial class MainWindow : Window
                 var lParamLow = (uint)lParam.ToInt32();
                 if (lParamLow == WM_LBUTTONUP)
                 {
-                    App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
+                    App.DispatcherQueue.TryEnqueue(ShowLaunchpad);
                 }
                 else if (lParamLow == WM_RBUTTONUP)
                 {
@@ -383,6 +482,9 @@ public sealed partial class MainWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool SetForegroundWindow(nint hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetForegroundWindow();
 
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]

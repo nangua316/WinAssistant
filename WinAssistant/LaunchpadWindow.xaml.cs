@@ -100,7 +100,12 @@ public sealed partial class LaunchpadWindow : Window
     public void Open()
     {
         try { OpenCore(); }
-        catch { }
+        catch (Exception ex)
+        {
+            File.AppendAllText(
+                Path.Combine(Path.GetTempPath(), "WinAssistant_launchpad_error.log"),
+                $"[{DateTime.Now:HH:mm:ss.fff}] LaunchpadWindow.Open failed: {ex}\n");
+        }
     }
 
     private void DeleteFromTaskbar()
