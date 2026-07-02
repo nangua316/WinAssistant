@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using Microsoft.UI;
-using Microsoft.UI.Composition.SystemBackdrops;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Hosting;
@@ -8,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
 using Windows.Graphics;
 using Windows.UI.Composition;
+using WinAssistant.Helpers;
 using WinAssistant.Pages;
 
 namespace WinAssistant;
@@ -30,8 +30,9 @@ public sealed partial class LaunchpadWindow : Window
 
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
 
-        // MicaBackdrop — 与 Win11 设置页面效果一致
-        SystemBackdrop = new MicaBackdrop { Kind = MicaKind.BaseAlt };
+        // MicaBackdrop only works on Windows 11 (build 22000+).
+        // On Windows 10 we fall back to a solid theme background to avoid a blank/transparent window.
+        WindowBackdropHelper.ApplyMicaOrSolidBackground(this, RootGrid);
         // DWM 暗色模式（SystemBackdrop 之后设置，确保 Mica 用正确主题渲染）
         App.UpdateDwmDarkMode(_hwnd);
 
@@ -100,7 +101,16 @@ public sealed partial class LaunchpadWindow : Window
     public void Open()
     {
         try { OpenCore(); }
-        catch { }
+        catch (Exception ex)
+        {
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(Path.GetTempPath(), "WinAssistant_launchpad.log"),
+                    $"[{DateTime.Now:HH:mm:ss.fff}] LAUNCHPAD OPEN FAILED: {ex.Message}\n{ex.StackTrace}\n");
+            }
+            catch { }
+        }
     }
 
     private void DeleteFromTaskbar()
