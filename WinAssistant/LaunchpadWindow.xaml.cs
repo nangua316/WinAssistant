@@ -50,10 +50,10 @@ public sealed partial class LaunchpadWindow : Window
         AppWindow.TitleBar.ExtendsContentIntoTitleBar = true;
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Collapsed;
 
-        // Size to ~85% of virtual screen (DPI-aware)
-        var (winW, winH) = CalcWindowSize();
-        AppWindow.MoveAndResize(new RectInt32((winW - 860) / 2, (winH - 750) / 2, 860, 750)); // initial: smaller until DPI is known
-        // Actual resize happens in OpenCore() when DPI is available
+        // Size to fit the primary monitor work area (respects taskbar and low-res screens)
+        var (winW, winH, winX, winY) = CalcWindowSizeAndPosition();
+        AppWindow.MoveAndResize(new RectInt32(winX, winY, winW, winH));
+        // Actual resize/position happens in OpenCore() after the window is shown
 
         // Rounded corners (Windows 11 DWM)
         var cornerPref = DWMWCP_ROUND;
@@ -150,7 +150,7 @@ public sealed partial class LaunchpadWindow : Window
         // user. After ~60ms (WinUI's first composition frames are done), move
         // it onscreen and activate.
         // 构造函数已调用 MakeToolWindow()，此处重复调用会导致卡顿
-        var (winW, winH) = CalcWindowSize();
+        var (winW, winH, winX, winY) = CalcWindowSizeAndPosition();
         AppWindow.MoveAndResize(new RectInt32(-9999, -9999, winW, winH));
         ShowWindow(_hwnd, SW_SHOW);
 
@@ -165,11 +165,7 @@ public sealed partial class LaunchpadWindow : Window
             if (!_isShowing) return; // Was closed during the delay
             if (currentGen != _gen) return; // Superseded
 
-            var physW = GetSystemMetrics(SM_CXSCREEN);
-            var physH = GetSystemMetrics(SM_CYSCREEN);
-            var cx = (physW - winW) / 2;
-            var cy = (physH - winH) / 2;
-            SetWindowPos(_hwnd, nint.Zero, cx, cy, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
+            AppWindow.MoveAndResize(new RectInt32(winX, winY, winW, winH));
 
             // Force window to top and foreground
             SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
@@ -266,10 +262,36 @@ public sealed partial class LaunchpadWindow : Window
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
 
-    /// <summary>Window size in PHYSICAL pixels, fixed 1600x1200.</summary>
-    private (int w, int h) CalcWindowSize()
+    /// <summary>
+    /// Calculates a launchpad size that fits the primary monitor work area.
+    /// On low-resolution screens (e.g. 1366x768) it shrinks to ~90% of the work area;
+    /// on large screens it is capped at 1600x1200 and centered.
+    /// </summary>
+    private (int w, int h, int x, int y) CalcWindowSizeAndPosition()
     {
-        return (1600, 1200);
+        try
+        {
+            var display = DisplayArea.GetFromWindowId(
+                Microsoft.UI.Win32Interop.GetWindowIdFromWindow(_hwnd),
+                DisplayAreaFallback.Primary);
+            var area = display.WorkArea;
+
+            int w = (int)(area.Width * 0.9);
+            int h = (int)(area.Height * 0.9);
+            w = Math.Clamp(w, 800, 1600);
+            h = Math.Clamp(h, 600, 1200);
+
+            if (w > area.Width) w = area.Width;
+            if (h > area.Height) h = area.Height;
+
+            int x = area.X + (area.Width - w) / 2;
+            int y = area.Y + (area.Height - h) / 2;
+            return (w, h, x, y);
+        }
+        catch
+        {
+            return (1600, 1200, 0, 0);
+        }
     }
 
     #region P/Invoke and COM interop
@@ -324,12 +346,6 @@ public sealed partial class LaunchpadWindow : Window
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool BringWindowToTop(nint hWnd);
 
-    [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int nIndex);
-
-    [DllImport("user32.dll")]
-    private static extern int GetDpiForWindow(nint hwnd);
-
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
     private const int DWMWCP_ROUND = 2;
@@ -348,9 +364,6 @@ public sealed partial class LaunchpadWindow : Window
 
     private static readonly nint HWND_TOPMOST = (nint)(-1);
     private static readonly nint HWND_NOTOPMOST = (nint)(-2);
-
-    private const int SM_CXSCREEN = 0;
-    private const int SM_CYSCREEN = 1;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int left; public int top; public int right; public int bottom; }
