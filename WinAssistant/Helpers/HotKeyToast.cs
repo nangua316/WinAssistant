@@ -16,21 +16,31 @@ internal static class HotKeyToast
     private static string _toastName = "";
     private static WndProcDelegate? _wndProcDelegate;
 
-    private const int TOAST_WIDTH = 520;
-    private const int TOAST_MIN_HEIGHT = 100;
-    private const int TOAST_MAX_HEIGHT = 360;
-    private const int ACCENT_WIDTH = 4;
-    private const int ICON_SIZE = 44;
-    private const int TEXT_GAP = 12;         // gap between icon and text
-    private const int TEXT_PAD_LR = 22;     // left & right padding past accent
-    private const int TEXT_PAD_TB = 20;     // top & bottom padding
+    // Baseline sizes for 96 DPI (100% scaling). Everything scales with the system DPI.
+    private const int BASE_TOAST_WIDTH = 320;
+    private const int BASE_TOAST_MIN_HEIGHT = 64;
+    private const int BASE_TOAST_MAX_HEIGHT = 200;
+    private const int BASE_ACCENT_WIDTH = 4;
+    private const int BASE_ICON_SIZE = 28;
+    private const int BASE_TEXT_GAP = 8;
+    private const int BASE_TEXT_PAD_LR = 16;
+    private const int BASE_TEXT_PAD_TB = 12;
+    private const int BASE_FONT_SIZE = 24;
+    private const int BASE_MARGIN = 16;
     private const int DURATION_MS = 3000;
     private const string CLASS_NAME = "WinAssistantToast";
 
-    /// <summary>
-    /// Show a three-part toast: verb + icon + app name.
-    /// When appName is empty, shows verb as plain text (no icon).
-    /// </summary>
+    private static double _scale = 1.0;
+    private static int _toastWidth = BASE_TOAST_WIDTH;
+    private static int _toastMinHeight = BASE_TOAST_MIN_HEIGHT;
+    private static int _toastMaxHeight = BASE_TOAST_MAX_HEIGHT;
+    private static int _accentWidth = BASE_ACCENT_WIDTH;
+    private static int _iconSize = BASE_ICON_SIZE;
+    private static int _textGap = BASE_TEXT_GAP;
+    private static int _textPadLr = BASE_TEXT_PAD_LR;
+    private static int _textPadTb = BASE_TEXT_PAD_TB;
+    private static int _margin = BASE_MARGIN;
+
     /// <summary>
     /// 释放 GDI 资源（字体句柄），应用退出前调用。
     /// </summary>
@@ -52,6 +62,8 @@ internal static class HotKeyToast
     {
         try
         {
+            UpdateScale();
+
             if (_hwnd == nint.Zero)
             {
                 _hinst = GetModuleHandleW(null);
@@ -60,6 +72,16 @@ internal static class HotKeyToast
                 if (_hwnd == nint.Zero) return;
             }
 
+            // Recreate font when DPI/scale changes
+            if (_hfont != nint.Zero)
+            {
+                DeleteObject(_hfont);
+                _hfont = nint.Zero;
+            }
+            _hfont = CreateFontW((int)(BASE_FONT_SIZE * _scale), 0, 0, 0, FW_NORMAL, 0, 0, 0,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Microsoft YaHei UI");
+
             _toastVerb = verb;
             _toastName = appName;
 
@@ -67,7 +89,7 @@ internal static class HotKeyToast
             if (_hicon != nint.Zero) { DestroyIcon(_hicon); _hicon = nint.Zero; }
             if (!string.IsNullOrEmpty(iconPath) && (File.Exists(iconPath) || Directory.Exists(iconPath)))
             {
-                if (SHDefExtractIconW(iconPath, 0, 0, out nint hIcon, out _, ICON_SIZE) == 0)
+                if (SHDefExtractIconW(iconPath, 0, 0, out nint hIcon, out _, (uint)_iconSize) == 0)
                     _hicon = hIcon;
                 else
                 {
@@ -82,21 +104,21 @@ internal static class HotKeyToast
 
             // Calculate height
             var hdc = GetDC(_hwnd);
-            var height = TOAST_MIN_HEIGHT;
+            var height = _toastMinHeight;
             if (hdc != nint.Zero)
             {
                 if (_hfont != nint.Zero) SelectObject(hdc, _hfont);
                 if (hasParts || hasIcon)
                 {
-                    height = Math.Max(TOAST_MIN_HEIGHT, ICON_SIZE + TEXT_PAD_TB * 2);
+                    height = Math.Max(_toastMinHeight, _iconSize + _textPadTb * 2);
                 }
                 else
                 {
-                    int textWidth = TOAST_WIDTH - ACCENT_WIDTH - TEXT_PAD_LR * 2;
+                    int textWidth = _toastWidth - _accentWidth - _textPadLr * 2;
                     var rc = new RECT { left = 0, top = 0, right = textWidth, bottom = 0 };
                     DrawTextW(hdc, verb, verb.Length, ref rc, DT_WORDBREAK | DT_CALCRECT);
-                    height = Math.Max(TOAST_MIN_HEIGHT,
-                        Math.Min(rc.bottom + TEXT_PAD_TB * 2, TOAST_MAX_HEIGHT));
+                    height = Math.Max(_toastMinHeight,
+                        Math.Min(rc.bottom + _textPadTb * 2, _toastMaxHeight));
                 }
                 ReleaseDC(_hwnd, hdc);
             }
@@ -106,9 +128,9 @@ internal static class HotKeyToast
             // Position above the taskbar
             var workRect = new RECT();
             SystemParametersInfoW(0x0030, 0, ref workRect, 0);
-            var y = workRect.bottom - height - 8;
-            SetWindowPos(_hwnd, HWND_TOPMOST, 16, y,
-                TOAST_WIDTH, height,
+            var y = workRect.bottom - height - _margin / 2;
+            SetWindowPos(_hwnd, HWND_TOPMOST, _margin, y,
+                _toastWidth, height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
             KillTimer(_hwnd, 1);
@@ -118,6 +140,22 @@ internal static class HotKeyToast
         {
             // silently ignore — toast is non-critical
         }
+    }
+
+    private static void UpdateScale()
+    {
+        int dpi = GetDpiForSystem();
+        _scale = dpi / 96.0;
+
+        _toastWidth = (int)(BASE_TOAST_WIDTH * _scale);
+        _toastMinHeight = (int)(BASE_TOAST_MIN_HEIGHT * _scale);
+        _toastMaxHeight = (int)(BASE_TOAST_MAX_HEIGHT * _scale);
+        _accentWidth = Math.Max(2, (int)(BASE_ACCENT_WIDTH * _scale));
+        _iconSize = (int)(BASE_ICON_SIZE * _scale);
+        _textGap = (int)(BASE_TEXT_GAP * _scale);
+        _textPadLr = (int)(BASE_TEXT_PAD_LR * _scale);
+        _textPadTb = (int)(BASE_TEXT_PAD_TB * _scale);
+        _margin = (int)(BASE_MARGIN * _scale);
     }
 
     private static nint CreateWindow()
@@ -140,7 +178,7 @@ internal static class HotKeyToast
             WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST | WS_EX_LAYERED,
             CLASS_NAME, "",
             WS_POPUP,
-            0, 0, TOAST_WIDTH, TOAST_MIN_HEIGHT,
+            0, 0, _toastWidth, _toastMinHeight,
             nint.Zero, nint.Zero, _hinst, nint.Zero);
 
         if (hwnd == nint.Zero) return nint.Zero;
@@ -154,11 +192,6 @@ internal static class HotKeyToast
             int cornerPref = DWMWCP_ROUNDSMALL;
             DwmSetWindowAttribute(hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ref cornerPref, sizeof(int));
         }
-
-        // Font for text
-        _hfont = CreateFontW(48, 0, 0, 0, FW_NORMAL, 0, 0, 0,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
-            CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, "Microsoft YaHei UI");
 
         return hwnd;
     }
@@ -194,8 +227,8 @@ internal static class HotKeyToast
                         FillRect(ps.hdc, ref rc, brush);
                         DeleteObject(brush);
 
-                        // Left accent strip (4px blue)
-                        var accentRect = new RECT { left = 0, top = 0, right = ACCENT_WIDTH, bottom = rc.bottom };
+                        // Left accent strip
+                        var accentRect = new RECT { left = 0, top = 0, right = _accentWidth, bottom = rc.bottom };
                         var accentBrush = CreateSolidBrush(ACCENT_COLOR);
                         FillRect(ps.hdc, ref accentRect, accentBrush);
                         DeleteObject(accentBrush);
@@ -208,34 +241,34 @@ internal static class HotKeyToast
 
                         bool hasParts = !string.IsNullOrEmpty(_toastName);
                         bool hasIcon = _hicon != nint.Zero;
-                        int x = ACCENT_WIDTH + TEXT_PAD_LR;
+                        int x = _accentWidth + _textPadLr;
 
                         // Draw icon first if available (for both parts and plain text modes)
-                        int iconY = (rc.bottom - ICON_SIZE) / 2;
+                        int iconY = (rc.bottom - _iconSize) / 2;
                         if (hasIcon)
                         {
-                            DrawIconEx(ps.hdc, x, iconY, _hicon, ICON_SIZE, ICON_SIZE, 0, nint.Zero, DI_NORMAL);
-                            x += ICON_SIZE + TEXT_GAP;
+                            DrawIconEx(ps.hdc, x, iconY, _hicon, _iconSize, _iconSize, 0, nint.Zero, DI_NORMAL);
+                            x += _iconSize + _textGap;
                         }
 
                         if (hasParts)
                         {
                             // Layout: [icon] 打开 微信
                             string fullText = _toastVerb + " " + _toastName;
-                            var dRc = new RECT { left = x, top = 0, right = rc.right - TEXT_PAD_LR, bottom = rc.bottom };
+                            var dRc = new RECT { left = x, top = 0, right = rc.right - _textPadLr, bottom = rc.bottom };
                             DrawTextW(ps.hdc, fullText, fullText.Length, ref dRc,
                                 DT_SINGLELINE | DT_VCENTER | DT_LEFT);
                         }
                         else if (_toastVerb.Length > 0)
                         {
                             // Plain text mode (with optional icon)
-                            var textRc = new RECT { left = x, top = 0, right = rc.right - TEXT_PAD_LR, bottom = 0 };
+                            var textRc = new RECT { left = x, top = 0, right = rc.right - _textPadLr, bottom = 0 };
                             DrawTextW(ps.hdc, _toastVerb, _toastVerb.Length, ref textRc,
                                 DT_WORDBREAK | DT_CALCRECT);
                             var textH = textRc.bottom;
                             rc.top = (rc.bottom - textH) / 2;
                             rc.left = x;
-                            rc.right = rc.right - TEXT_PAD_LR;
+                            rc.right = rc.right - _textPadLr;
                             DrawTextW(ps.hdc, _toastVerb, _toastVerb.Length, ref rc,
                                 DT_WORDBREAK | DT_LEFT);
                         }
@@ -419,4 +452,7 @@ internal static class HotKeyToast
 
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(nint hwnd, uint dwAttribute, ref int pvAttribute, int cbAttribute);
+
+    [DllImport("user32.dll")]
+    private static extern int GetDpiForSystem();
 }
