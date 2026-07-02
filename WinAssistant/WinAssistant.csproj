@@ -10,8 +10,7 @@
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
-    <WindowsAppSdkBootstrapInitialize Condition="'$(Configuration)' == 'Debug'">true</WindowsAppSdkBootstrapInitialize>
-    <WindowsAppSdkBootstrapInitialize Condition="'$(Configuration)' != 'Debug'">false</WindowsAppSdkBootstrapInitialize>
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
     <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
     <EnableMsixTooling>true</EnableMsixTooling>
     <ImplicitUsings>enable</ImplicitUsings>

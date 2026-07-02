@@ -22,11 +22,5 @@
         </TitleBar>
 
         <Frame x:Name="RootFrame" Grid.Row="1" />
-
-        <!-- Launchpad overlay — covers everything including title bar -->
-        <Grid x:Name="LaunchpadOverlay"
-              Grid.RowSpan="2"
-              Visibility="Collapsed"
-              Background="{ThemeResource LaunchpadBgBrush}" />
     </Grid>
 </Window>

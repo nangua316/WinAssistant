@@ -19,9 +19,9 @@ public partial class App : Application
     private const string SingleInstanceMutex = "WinAssistant_SingleInstance";
 
     public static Window Window { get; private set; } = null!;
-    private static LaunchpadHost? _launchpadHost;
-    public static LaunchpadHost LaunchpadWindow =>
-        _launchpadHost ??= new LaunchpadHost();
+    private static LaunchpadWindow? _launchpadWindow;
+    public static LaunchpadWindow LaunchpadWindow =>
+        _launchpadWindow ??= new LaunchpadWindow();
     public static Microsoft.UI.Dispatching.DispatcherQueue DispatcherQueue { get; private set; } = null!;
     public static HotKeyService HotKeyService { get; } = new();
     public static SettingsService SettingsService { get; } = new();
@@ -88,17 +88,6 @@ public partial class App : Application
             catch { }
         };
 
-        AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
-        {
-            try
-            {
-                File.AppendAllText(
-                    Path.Combine(Path.GetTempPath(), "WinAssistant_firstchance.log"),
-                    $"[{DateTime.Now:HH:mm:ss.fff}] FIRSTCHANCE: {e.Exception.GetType().Name}: {e.Exception.Message}\n");
-            }
-            catch { }
-        };
-
         TaskScheduler.UnobservedTaskException += (s, e) =>
         {
             try
@@ -139,8 +128,9 @@ public partial class App : Application
         DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
         HotKeyService.Initialize(WindowHandle);
         Window.Activate();
-        // 设置标题栏主题（启动台直接显示在 MainWindow 内）
+        // 在窗口隐藏前设置主题，确保根元素 RequestedTheme 正确
         ApplyThemeToRoot();
+        ShowWindow(App.WindowHandle, SW_HIDE);
 
         MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
         MouseHookService.XButton1Clicked += OnLaunchpadTriggered;
@@ -256,7 +246,7 @@ public partial class App : Application
     private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
 
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
-    private const uint DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    private const uint DWMWA_SYSTEM_BACKDROP_TYPE = 38;
     private const int DWMSBT_MAINWINDOW = 2; // Mica Base
     private const int DWMSBT_TRANSIENTWINDOW = 3; // Mica BaseAlt（强制刷新用）
 
@@ -343,9 +333,13 @@ public partial class App : Application
         try
         {
             var backdropType = DWMSBT_TRANSIENTWINDOW;
-            DwmSetWindowAttribute(WindowHandle, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+            DwmSetWindowAttribute(WindowHandle, DWMWA_SYSTEM_BACKDROP_TYPE, ref backdropType, sizeof(int));
 
-            // 启动台现在作为 MainWindow 的 overlay 显示，无需单独处理第二个窗口
+            if (_launchpadWindow != null)
+            {
+                var lpHandle = WinRT.Interop.WindowNative.GetWindowHandle(_launchpadWindow);
+                DwmSetWindowAttribute(lpHandle, DWMWA_SYSTEM_BACKDROP_TYPE, ref backdropType, sizeof(int));
+            }
         }
         catch { }
     }
@@ -405,7 +399,7 @@ public partial class App : Application
         try
         {
             var backdropType = DWMSBT_MAINWINDOW;
-            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEMBACKDROP_TYPE, ref backdropType, sizeof(int));
+            DwmSetWindowAttribute(hwnd, DWMWA_SYSTEM_BACKDROP_TYPE, ref backdropType, sizeof(int));
             // 同步当前暗色/浅色模式
             var isDark = CurrentTheme == ApplicationTheme.Dark ? 1 : 0;
             DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref isDark, sizeof(int));
@@ -456,7 +450,7 @@ public partial class App : Application
         pollTimer.Interval = TimeSpan.FromSeconds(2);
         pollTimer.Tick += (_, _) =>
         {
-            // 检查缓存 ThemeMode，避免每 tick 读磁盘 JSON
+            // 检查缓存 ThemeMode，避免每 tick 读磁盘
             if (_lastThemeMode != 0)
             {
                 // 手动锁定模式，不跟随系统
