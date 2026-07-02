@@ -276,8 +276,10 @@ public sealed partial class LaunchpadWindow : Window
                 DisplayAreaFallback.Primary);
             var area = display.WorkArea;
 
-            int w = (int)(area.Width * 0.9);
-            int h = (int)(area.Height * 0.9);
+            // On lower-resolution screens leave more desktop visible; on large monitors fill more.
+            double scale = (area.Width >= 1600 && area.Height >= 900) ? 0.9 : 0.8;
+            int w = (int)(area.Width * scale);
+            int h = (int)(area.Height * scale);
             w = Math.Clamp(w, 800, 1600);
             h = Math.Clamp(h, 600, 1200);
 
