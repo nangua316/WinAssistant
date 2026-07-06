@@ -264,6 +264,7 @@ public class MainPageViewModel : ObservableObject
         );
         _isAutoStart = settings.IsAutoStart;
         OnPropertyChanged(nameof(IsAutoStart));
+        if (_isAutoStart) SetAutoStartRegistry(true);
         _isMouseTriggerMiddle = settings.MouseTriggers.Contains("MiddleButton");
         _isMouseTriggerX1 = settings.MouseTriggers.Contains("XButton1");
         _isMouseTriggerX2 = settings.MouseTriggers.Contains("XButton2");
@@ -891,7 +892,7 @@ public class MainPageViewModel : ObservableObject
             {
                 var exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
                 if (!string.IsNullOrEmpty(exePath))
-                    key.SetValue("WinAssistant", exePath);
+                    key.SetValue("WinAssistant", $"\"{exePath}\"");
             }
             else
             {
@@ -899,7 +900,10 @@ public class MainPageViewModel : ObservableObject
                     key.DeleteValue("WinAssistant");
             }
         }
-        catch { }
+        catch (Exception ex)
+        {
+            Helpers.Logger.Log("AutoStart", $"Registry {(enable ? "set" : "remove")} failed: {ex.Message}");
+        }
     }
 }
 

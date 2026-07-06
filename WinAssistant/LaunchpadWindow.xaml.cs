@@ -157,6 +157,10 @@ public sealed partial class LaunchpadWindow : Window
         _isShowing = true;
         DeleteFromTaskbar();
 
+        // Init Win32 drag-drop on first show (after window is visible,
+        // WinUI subclassing is settled).
+        EnsureFileDragDrop();
+
         var moveTimer = new Microsoft.UI.Xaml.DispatcherTimer();
         moveTimer.Interval = TimeSpan.FromMilliseconds(60);
         moveTimer.Tick += (s, e) =>
@@ -262,6 +266,87 @@ public sealed partial class LaunchpadWindow : Window
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
     }
 
+    private bool _dragDropInitialized;
+    private WndProcDelegate? _wndProcDelegate;
+    private nint _oldWndProc;
+
+    /// <summary>Set up Win32 WM_DROPFILES drag-drop for this elevated window.
+    /// WinUI's AllowDrop is fundamentally broken under elevation (UIPI blocks
+    /// OLE cross-integrity marshalling), so we bypass it entirely.</summary>
+    private void EnsureFileDragDrop()
+    {
+        if (_dragDropInitialized) return;
+        _dragDropInitialized = true;
+
+        try
+        {
+            // Process-wide UIPI bypass — allows WM_DROPFILES through the
+            // integrity-level barrier so Explorer (medium) → us (high) works.
+            ChangeWindowMessageFilter(WM_DROPFILES, MSGFLT_ADD);
+            ChangeWindowMessageFilter(WM_COPYGLOBALDATA, MSGFLT_ADD);
+
+            // Per-window bypass (belt-and-suspenders).
+            var filter = new CHANGEFILTERSTRUCT();
+            filter.cbSize = (uint)Marshal.SizeOf<CHANGEFILTERSTRUCT>();
+            ChangeWindowMessageFilterEx(_hwnd, WM_DROPFILES, MSGFLT_ALLOW, ref filter);
+
+            // Register the WIN32 drop target (NOT OLE — we bypass WinUI's
+            // AllowDrop which is broken under elevation).
+            DragAcceptFiles(_hwnd, true);
+
+            // Subclass HWND to intercept WM_DROPFILES.
+            _wndProcDelegate = FileDropWndProc;
+            _oldWndProc = SetWindowLongPtr(_hwnd, GWLP_WNDPROC,
+                Marshal.GetFunctionPointerForDelegate(_wndProcDelegate));
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("DragDrop", $"init failed: {ex.Message}");
+        }
+    }
+
+    private nint FileDropWndProc(nint hWnd, uint msg, nint wParam, nint lParam)
+    {
+        if (msg == WM_DROPFILES)
+        {
+            HandleDropFiles(wParam);
+            return 0;
+        }
+        return CallWindowProc(_oldWndProc, hWnd, msg, wParam, lParam);
+    }
+
+    private static void HandleDropFiles(nint hDrop)
+    {
+        try
+        {
+            var count = DragQueryFile(hDrop, 0xFFFFFFFF, null, 0);
+            for (uint i = 0; i < count; i++)
+            {
+                var sb = new System.Text.StringBuilder(260);
+                DragQueryFile(hDrop, i, sb, sb.Capacity);
+                var path = sb.ToString();
+
+                App.DispatcherQueue.TryEnqueue(() =>
+                {
+                    var win = App.LaunchpadWindow;
+                    if (win?._page == null) return;
+                    if (Directory.Exists(path))
+                        win._page.ViewModel.AddFolderItem(path, Path.GetFileName(path));
+                    else if (File.Exists(path))
+                        win._page.ViewModel.AddFileItem(path, Path.GetFileNameWithoutExtension(path));
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("DragDrop", $"HandleDropFiles: {ex.Message}");
+        }
+        finally
+        {
+            DragFinish(hDrop);
+        }
+    }
+
     /// <summary>
     /// Calculates a launchpad size that fits the primary monitor work area.
     /// On low-resolution screens (e.g. 1366x768) it shrinks to ~90% of the work area;
@@ -343,6 +428,50 @@ public sealed partial class LaunchpadWindow : Window
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool ShowWindow(nint hWnd, int nCmdShow);
+
+    // ── UIPI bypass for OLE drag-drop (app runs elevated, Explorer is medium) ──
+    // WM_COPYGLOBALDATA is the internal OLE message blocked by UIPI.
+    // Allowing it through makes WinUI's AllowDrop/DragOver/Drop work.
+
+    private const uint WM_DROPFILES = 0x0233;
+    private const uint WM_COPYGLOBALDATA = 0x0049;
+    private const uint MSGFLT_ALLOW = 1;
+    private const uint MSGFLT_ADD = 1;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ChangeWindowMessageFilter(uint msg, uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool ChangeWindowMessageFilterEx(nint hWnd, uint msg,
+        uint action, ref CHANGEFILTERSTRUCT pChangeFilter);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CHANGEFILTERSTRUCT
+    {
+        public uint cbSize;
+        public uint ExtStatus;
+    }
+
+    // -- Win32 WM_DROPFILES --
+    private const int GWLP_WNDPROC = -4;
+    private delegate nint WndProcDelegate(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void DragAcceptFiles(nint hWnd, bool fAccept);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern uint DragQueryFile(nint hDrop, uint iFile,
+        [Out] System.Text.StringBuilder? lpszFile, int cch);
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern void DragFinish(nint hDrop);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint SetWindowLongPtr(nint hWnd, int nIndex, nint dwNewLong);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern nint CallWindowProc(nint lpPrevWndFunc, nint hWnd,
+        uint msg, nint wParam, nint lParam);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
