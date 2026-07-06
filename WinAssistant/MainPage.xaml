@@ -553,6 +553,12 @@
                                            FontSize="13"
                                            Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}"
                                            TextWrapping="Wrap" />
+                                <TextBlock FontSize="13" Foreground="#FFD9904A"
+                                           Tapped="OnGitHubLinkTapped"
+                                           PointerEntered="OnGitHubLinkPointerEntered"
+                                           PointerExited="OnGitHubLinkPointerExited">
+                                    <Underline>GitHub 主页 →</Underline>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
 

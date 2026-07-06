@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
@@ -75,7 +76,13 @@ public sealed partial class MainPage : Page
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ViewModel.UpdateAvailableVersion))
-                UpdateText.Text = ViewModel.UpdateAvailableVersion ?? "";
+            {
+                var text = ViewModel.UpdateAvailableVersion ?? "";
+                UpdateText.Text = text;
+                // Only interactable when a new version is available
+                var hasUpdate = text.StartsWith("发现新版本");
+                UpdateText.IsTapEnabled = hasUpdate;
+            }
         };
 
         // 预填充工具列表（此时窗口在 DWM Cloak 中，ToggleSwitch 的初始动画不被用户看到）
@@ -580,13 +587,31 @@ public sealed partial class MainPage : Page
         App.LaunchpadWindow.Open();
     }
 
-    private void OnUpdateTextTapped(object sender, RoutedEventArgs e) =>
-        ViewModel.OpenUpdatePage();
+    private void OnUpdateTextTapped(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.UpdateAvailableVersion?.StartsWith("发现新版本") == true)
+            ViewModel.OpenUpdatePage();
+    }
 
-    private void OnUpdateTextPointerEntered(object sender, PointerRoutedEventArgs e) =>
+    private void OnUpdateTextPointerEntered(object sender, PointerRoutedEventArgs e)
+    {
+        if (ViewModel.UpdateAvailableVersion?.StartsWith("发现新版本") == true)
+            ((TextBlock)sender).Foreground = new SolidColorBrush(Colors.White);
+    }
+
+    private void OnUpdateTextPointerExited(object sender, PointerRoutedEventArgs e)
+    {
+        if (ViewModel.UpdateAvailableVersion?.StartsWith("发现新版本") == true)
+            ((TextBlock)sender).Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD9, 0x90, 0x4A));
+    }
+
+    private void OnGitHubLinkTapped(object sender, RoutedEventArgs e) =>
+        Process.Start(new ProcessStartInfo("https://github.com/nangua316/WinAssistant") { UseShellExecute = true });
+
+    private void OnGitHubLinkPointerEntered(object sender, PointerRoutedEventArgs e) =>
         ((TextBlock)sender).Foreground = new SolidColorBrush(Colors.White);
 
-    private void OnUpdateTextPointerExited(object sender, PointerRoutedEventArgs e) =>
+    private void OnGitHubLinkPointerExited(object sender, PointerRoutedEventArgs e) =>
         ((TextBlock)sender).Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD9, 0x90, 0x4A));
 
     private async void OnCheckUpdateClick(object sender, RoutedEventArgs e)
