@@ -18,6 +18,7 @@ public class MainPageViewModel : ObservableObject
     private ObservableCollection<HotKeyBindingViewModel> _bindings = [];
     private string _statusMessage = "";
     private bool _isAutoStart;
+    private string? _updateAvailableVersion;
     private bool _isMouseTriggerMiddle;
     private bool _isMouseTriggerX1;
     private bool _isMouseTriggerX2;
@@ -78,6 +79,13 @@ public class MainPageViewModel : ObservableObject
     {
         get => _statusMessage;
         set => SetProperty(ref _statusMessage, value);
+    }
+
+    /// <summary>Non-null when a newer version is available (set by background check on startup).</summary>
+    public string? UpdateAvailableVersion
+    {
+        get => _updateAvailableVersion;
+        set => SetProperty(ref _updateAvailableVersion, value);
     }
 
     /// <summary>
@@ -265,6 +273,9 @@ public class MainPageViewModel : ObservableObject
         _isAutoStart = settings.IsAutoStart;
         OnPropertyChanged(nameof(IsAutoStart));
         if (_isAutoStart) SetAutoStartRegistry(true);
+
+        // Fire-and-forget: check GitHub for newer version (UI thread → property binding)
+        _ = CheckUpdateAsync();
         _isMouseTriggerMiddle = settings.MouseTriggers.Contains("MiddleButton");
         _isMouseTriggerX1 = settings.MouseTriggers.Contains("XButton1");
         _isMouseTriggerX2 = settings.MouseTriggers.Contains("XButton2");
@@ -879,6 +890,16 @@ public class MainPageViewModel : ObservableObject
             b.Model.Modifiers == modifiers &&
             b.Model.VirtualKey == virtualKey);
     }
+
+    private async Task CheckUpdateAsync()
+    {
+        await Helpers.UpdateChecker.CheckAsync();
+        if (Helpers.UpdateChecker.LatestTag != null)
+            UpdateAvailableVersion = Helpers.UpdateChecker.LatestTag;
+    }
+
+    public void OpenUpdatePage() =>
+        Helpers.UpdateChecker.OpenReleasePage();
 
     private static void SetAutoStartRegistry(bool enable)
     {

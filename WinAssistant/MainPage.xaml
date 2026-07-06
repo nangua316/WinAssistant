@@ -536,6 +536,11 @@
                                 <TextBlock x:Name="VersionText"
                                            FontSize="14"
                                            Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+                                <TextBlock x:Name="UpdateText"
+                                           FontSize="13" Foreground="#FFD9904A"
+                                           Tapped="OnUpdateTextTapped"
+                                           PointerEntered="OnUpdateTextPointerEntered"
+                                           PointerExited="OnUpdateTextPointerExited" />
                                 <TextBlock Text="Windows 效率工具合集，集成启动台、全局快捷键、AI 对话、小工具等功能。"
                                            FontSize="13"
                                            Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}"

@@ -2,6 +2,7 @@ using Microsoft.UI;
 using Microsoft.UI.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
@@ -70,6 +71,14 @@ public sealed partial class MainPage : Page
 
         var ver = typeof(App).Assembly.GetName().Version;
         VersionText.Text = ver != null ? $"版本 {ver.Major}.{ver.Minor}.{ver.Build}" : "";
+
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(ViewModel.UpdateAvailableVersion))
+                UpdateText.Text = ViewModel.UpdateAvailableVersion != null
+                    ? $"发现新版本 {ViewModel.UpdateAvailableVersion} →"
+                    : "";
+        };
 
         // 预填充工具列表（此时窗口在 DWM Cloak 中，ToggleSwitch 的初始动画不被用户看到）
         PopulateToolList();
@@ -572,6 +581,15 @@ public sealed partial class MainPage : Page
     {
         App.LaunchpadWindow.Open();
     }
+
+    private void OnUpdateTextTapped(object sender, RoutedEventArgs e) =>
+        ViewModel.OpenUpdatePage();
+
+    private void OnUpdateTextPointerEntered(object sender, PointerRoutedEventArgs e) =>
+        ((TextBlock)sender).Foreground = new SolidColorBrush(Colors.White);
+
+    private void OnUpdateTextPointerExited(object sender, PointerRoutedEventArgs e) =>
+        ((TextBlock)sender).Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD9, 0x90, 0x4A));
 
     private async void OnModifyGlobalHotKeyClick(object sender, RoutedEventArgs e)
     {
