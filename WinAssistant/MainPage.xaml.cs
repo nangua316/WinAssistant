@@ -605,15 +605,6 @@ public sealed partial class MainPage : Page
             ((TextBlock)sender).Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD9, 0x90, 0x4A));
     }
 
-    private void OnGitHubLinkTapped(object sender, RoutedEventArgs e) =>
-        Process.Start(new ProcessStartInfo("https://github.com/nangua316/WinAssistant") { UseShellExecute = true });
-
-    private void OnGitHubLinkPointerEntered(object sender, PointerRoutedEventArgs e) =>
-        ((TextBlock)sender).Foreground = new SolidColorBrush(Colors.White);
-
-    private void OnGitHubLinkPointerExited(object sender, PointerRoutedEventArgs e) =>
-        ((TextBlock)sender).Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD9, 0x90, 0x4A));
-
     private async void OnCheckUpdateClick(object sender, RoutedEventArgs e)
     {
         CheckUpdateBtn.IsEnabled = false;
