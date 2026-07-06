@@ -541,6 +541,14 @@
                                            Tapped="OnUpdateTextTapped"
                                            PointerEntered="OnUpdateTextPointerEntered"
                                            PointerExited="OnUpdateTextPointerExited" />
+                                <Button x:Name="CheckUpdateBtn"
+                                        Content="检查更新"
+                                        FontSize="13"
+                                        Padding="12,4"
+                                        HorizontalAlignment="Left"
+                                        BorderThickness="1"
+                                        Background="Transparent"
+                                        Click="OnCheckUpdateClick" />
                                 <TextBlock Text="Windows 效率工具合集，集成启动台、全局快捷键、AI 对话、小工具等功能。"
                                            FontSize="13"
                                            Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}"

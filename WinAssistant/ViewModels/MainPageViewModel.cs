@@ -274,8 +274,12 @@ public class MainPageViewModel : ObservableObject
         OnPropertyChanged(nameof(IsAutoStart));
         if (_isAutoStart) SetAutoStartRegistry(true);
 
-        // Fire-and-forget: check GitHub for newer version (UI thread → property binding)
-        _ = CheckUpdateAsync();
+        // Fire-and-forget: check GitHub for newer version on startup
+        _ = CheckForUpdatesAsync().ContinueWith(t =>
+        {
+            if (t.IsCompletedSuccessfully && !string.IsNullOrEmpty(t.Result))
+                UpdateAvailableVersion = t.Result;
+        }, TaskContinuationOptions.ExecuteSynchronously);
         _isMouseTriggerMiddle = settings.MouseTriggers.Contains("MiddleButton");
         _isMouseTriggerX1 = settings.MouseTriggers.Contains("XButton1");
         _isMouseTriggerX2 = settings.MouseTriggers.Contains("XButton2");
@@ -891,11 +895,19 @@ public class MainPageViewModel : ObservableObject
             b.Model.VirtualKey == virtualKey);
     }
 
-    private async Task CheckUpdateAsync()
+    /// <summary>Check GitHub for a newer version. Returns a display string for the UI.</summary>
+    public async Task<string> CheckForUpdatesAsync()
     {
         await Helpers.UpdateChecker.CheckAsync();
-        if (Helpers.UpdateChecker.LatestTag != null)
-            UpdateAvailableVersion = Helpers.UpdateChecker.LatestTag;
+        var tag = Helpers.UpdateChecker.LatestTag;
+        if (tag != null)
+        {
+            UpdateAvailableVersion = tag;
+            return $"发现新版本 {tag} →";
+        }
+
+        var curVer = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        return curVer != null ? $"已是最新版本 {curVer.Major}.{curVer.Minor}.{curVer.Build}" : "已是最新版本";
     }
 
     public void OpenUpdatePage() =>

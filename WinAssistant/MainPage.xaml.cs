@@ -75,9 +75,7 @@ public sealed partial class MainPage : Page
         ViewModel.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(ViewModel.UpdateAvailableVersion))
-                UpdateText.Text = ViewModel.UpdateAvailableVersion != null
-                    ? $"发现新版本 {ViewModel.UpdateAvailableVersion} →"
-                    : "";
+                UpdateText.Text = ViewModel.UpdateAvailableVersion ?? "";
         };
 
         // 预填充工具列表（此时窗口在 DWM Cloak 中，ToggleSwitch 的初始动画不被用户看到）
@@ -590,6 +588,21 @@ public sealed partial class MainPage : Page
 
     private void OnUpdateTextPointerExited(object sender, PointerRoutedEventArgs e) =>
         ((TextBlock)sender).Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xD9, 0x90, 0x4A));
+
+    private async void OnCheckUpdateClick(object sender, RoutedEventArgs e)
+    {
+        CheckUpdateBtn.IsEnabled = false;
+        CheckUpdateBtn.Content = "检查中…";
+        var msg = await ViewModel.CheckForUpdatesAsync();
+        UpdateText.Text = msg;
+        if (ViewModel.UpdateAvailableVersion != null)
+            CheckUpdateBtn.Visibility = Visibility.Collapsed; // 有新版时隐藏按钮，用可点击文字代替
+        else
+        {
+            CheckUpdateBtn.IsEnabled = true;
+            CheckUpdateBtn.Content = "检查更新";
+        }
+    }
 
     private async void OnModifyGlobalHotKeyClick(object sender, RoutedEventArgs e)
     {
