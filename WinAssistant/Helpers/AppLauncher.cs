@@ -301,7 +301,18 @@ public static class AppLauncher
             else
             {
                 Logger.Log("AppLauncher",$"Launch new: {appPath}");
-                Process.Start(new ProcessStartInfo { FileName = appPath, Arguments = arguments, UseShellExecute = true });
+                // UseShellExecute=false so terminals inherit elevation when
+                // WinAssistant runs as admin (CreateProcess inherits the token).
+                bool isTerminal = exeName.Equals("cmd", StringComparison.OrdinalIgnoreCase)
+                    || exeName.Equals("powershell", StringComparison.OrdinalIgnoreCase)
+                    || exeName.Equals("pwsh", StringComparison.OrdinalIgnoreCase)
+                    || exeName.Equals("wt", StringComparison.OrdinalIgnoreCase);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = appPath,
+                    Arguments = arguments,
+                    UseShellExecute = !isTerminal
+                });
             }
             return "launch";
         }
