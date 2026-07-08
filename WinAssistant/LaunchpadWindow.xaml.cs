@@ -143,19 +143,17 @@ public sealed partial class LaunchpadWindow : Window
             ContentScaleHost.Children.Add(_page);
         }
 
-        _page.ViewModel.SetXamlRootGetter(() => _page?.XamlRoot);
-        _page.Activate();
-
-        // Show the window offscreen so DWM's white flash is invisible to the
-        // user. After ~60ms (WinUI's first composition frames are done), move
-        // it onscreen and activate.
-        // 构造函数已调用 MakeToolWindow()，此处重复调用会导致卡顿
+        // Move off-screen and show FIRST so any DWM white flash happens
+        // off-screen. Then render the page content (XAML layout / Mica).
         var (winW, winH, winX, winY) = CalcWindowSizeAndPosition();
         AppWindow.MoveAndResize(new RectInt32(-9999, -9999, winW, winH));
         ShowWindow(_hwnd, SW_SHOW);
 
         _isShowing = true;
         DeleteFromTaskbar();
+
+        _page.ViewModel.SetXamlRootGetter(() => _page?.XamlRoot);
+        _page.Activate();
 
         // Init Win32 drag-drop on first show (after window is visible,
         // WinUI subclassing is settled).
