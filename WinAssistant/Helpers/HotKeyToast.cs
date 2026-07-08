@@ -27,7 +27,7 @@ internal static class HotKeyToast
     private const int BASE_TEXT_PAD_TB = 12;
     private const int BASE_FONT_SIZE = 24;
     private const int BASE_MARGIN = 16;
-    private const int DURATION_MS = 3000;
+    private const int DURATION_MS = 2000;
     private const string CLASS_NAME = "WinAssistantToast";
 
     private static double _scale = 1.0;
