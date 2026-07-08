@@ -357,7 +357,7 @@
                            Foreground="{ThemeResource TextSecondaryBrush}"
                            FontSize="15"
                            HorizontalAlignment="Center" />
-                <TextBlock Text="点击下方 + 添加应用 按钮添加"
+                <TextBlock Text="右键空白区域添加应用"
                            Foreground="{ThemeResource TextDimBrush}"
                            FontSize="12"
                            HorizontalAlignment="Center" />
