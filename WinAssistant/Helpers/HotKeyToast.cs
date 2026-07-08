@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 
+using WinAssistant.Models;
+
 namespace WinAssistant.Helpers;
 
 /// <summary>
@@ -125,11 +127,12 @@ internal static class HotKeyToast
 
             InvalidateRect(_hwnd, nint.Zero, true);
 
-            // Position above the taskbar
+            // Position according to user preference
             var workRect = new RECT();
             SystemParametersInfoW(0x0030, 0, ref workRect, 0);
-            var y = workRect.bottom - height - _margin / 2;
-            SetWindowPos(_hwnd, HWND_TOPMOST, _margin, y,
+            var position = App.SettingsService.Load().ToastPosition;
+            var (x, y) = CalculateToastPosition(position, workRect, height);
+            SetWindowPos(_hwnd, HWND_TOPMOST, x, y,
                 _toastWidth, height,
                 SWP_NOACTIVATE | SWP_SHOWWINDOW);
 
@@ -156,6 +159,24 @@ internal static class HotKeyToast
         _textPadLr = (int)(BASE_TEXT_PAD_LR * _scale);
         _textPadTb = (int)(BASE_TEXT_PAD_TB * _scale);
         _margin = (int)(BASE_MARGIN * _scale);
+    }
+
+    private static (int x, int y) CalculateToastPosition(ToastPosition position, RECT workRect, int height)
+    {
+        var areaWidth = workRect.right - workRect.left;
+        var areaHeight = workRect.bottom - workRect.top;
+
+        return position switch
+        {
+            ToastPosition.BottomRight => (workRect.right - _toastWidth - _margin,
+                                          workRect.bottom - height - _margin / 2),
+            ToastPosition.TopCenter => (workRect.left + (areaWidth - _toastWidth) / 2,
+                                        workRect.top + _margin / 2),
+            ToastPosition.BottomCenter => (workRect.left + (areaWidth - _toastWidth) / 2,
+                                           workRect.bottom - height - _margin / 2),
+            _ => (workRect.left + _margin,
+                  workRect.bottom - height - _margin / 2)
+        };
     }
 
     private static nint CreateWindow()

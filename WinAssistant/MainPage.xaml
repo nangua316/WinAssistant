@@ -168,6 +168,31 @@
                     </Border>
 
                     <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="0">
+                        <Grid Padding="16,12" ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <FontIcon Grid.Column="0" Glyph="&#xE8C7;" FontSize="16"
+                                      Foreground="{ThemeResource AccentBlue}"
+                                      VerticalAlignment="Center" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                <TextBlock Text="Toast 显示位置" FontSize="15" />
+                                <TextBlock Text="选择提示弹窗在屏幕上的位置" FontSize="12"
+                                           Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+                            </StackPanel>
+                            <ComboBox Grid.Column="2" MinWidth="120"
+                                      SelectedIndex="{x:Bind ViewModel.ToastPositionIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="左下" />
+                                <ComboBoxItem Content="右下" />
+                                <ComboBoxItem Content="中上" />
+                                <ComboBoxItem Content="中下" />
+                            </ComboBox>
+                        </Grid>
+                    </Border>
+
+                    <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="0">
                         <StackPanel>
                             <TextBlock Text="启动台" FontSize="15" FontWeight="SemiBold"
                                        Foreground="{ThemeResource SystemControlPageTextBaseHighBrush}"

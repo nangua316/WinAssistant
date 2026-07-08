@@ -32,6 +32,7 @@ public class MainPageViewModel : ObservableObject
     private bool _loaded;
 
     private int _themeMode;
+    private ToastPosition _toastPosition;
     private bool _isCapsLockToastEnabled;
     private bool _isCnEnToastEnabled;
     private bool _isImeSwitchToastEnabled;
@@ -193,6 +194,21 @@ public class MainPageViewModel : ObservableObject
     }
 
     /// <summary>
+    /// Toast 显示位置索引：0=左下, 1=右下, 2=中上, 3=中下
+    /// </summary>
+    public int ToastPositionIndex
+    {
+        get => (int)_toastPosition;
+        set
+        {
+            if (SetProperty(ref _toastPosition, (ToastPosition)value))
+            {
+                SaveSettings();
+            }
+        }
+    }
+
+    /// <summary>
     /// 是否启用大写锁定 Toast 提示。
     /// </summary>
     public bool IsCapsLockToastEnabled
@@ -295,6 +311,9 @@ public class MainPageViewModel : ObservableObject
         _themeMode = settings.ThemeMode;
         OnPropertyChanged(nameof(ThemeMode));
 
+        _toastPosition = settings.ToastPosition;
+        OnPropertyChanged(nameof(ToastPositionIndex));
+
         _isCapsLockToastEnabled = settings.IsCapsLockToastEnabled;
         _isCnEnToastEnabled = settings.IsCnEnToastEnabled;
         _isImeSwitchToastEnabled = settings.IsImeSwitchToastEnabled;
@@ -331,6 +350,7 @@ public class MainPageViewModel : ObservableObject
         current.KeyboardTriggers = BuildKeyboardTriggersList();
         current.LaunchpadHotKey = _launchpadHotKeyDisplay;
         current.ThemeMode = _themeMode;
+        current.ToastPosition = _toastPosition;
         current.IsCapsLockToastEnabled = _isCapsLockToastEnabled;
         current.IsCnEnToastEnabled = _isCnEnToastEnabled;
         current.IsImeSwitchToastEnabled = _isImeSwitchToastEnabled;

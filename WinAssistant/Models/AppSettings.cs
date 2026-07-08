@@ -1,5 +1,13 @@
 namespace WinAssistant.Models;
 
+public enum ToastPosition
+{
+    BottomLeft,
+    BottomRight,
+    TopCenter,
+    BottomCenter
+}
+
 public class AppSettings
 {
     public bool IsAutoStart { get; set; }
@@ -26,6 +34,9 @@ public class AppSettings
     public bool IsCapsLockToastEnabled { get; set; } = true;
     public bool IsCnEnToastEnabled { get; set; } = true;
     public bool IsImeSwitchToastEnabled { get; set; } = true;
+
+    // Toast 显示位置（默认左下）
+    public ToastPosition ToastPosition { get; set; } = ToastPosition.BottomLeft;
 
     // 主题模式：0=跟随系统, 1=浅色, 2=深色
     public int ThemeMode { get; set; } = 0;
