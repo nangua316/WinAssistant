@@ -126,11 +126,13 @@ public partial class App : Application
 
         Window = new MainWindow();
         DispatcherQueue = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread();
-        HotKeyService.Initialize(WindowHandle);
         Window.Activate();
-        // 在窗口隐藏前设置主题，确保根元素 RequestedTheme 正确
-        ApplyThemeToRoot();
+        // Hide immediately so the main window never renders on screen.
         ShowWindow(App.WindowHandle, SW_HIDE);
+
+        // 在窗口隐藏后设置主题和初始化
+        ApplyThemeToRoot();
+        HotKeyService.Initialize(WindowHandle);
 
         MouseHookService.MiddleButtonClicked += OnLaunchpadTriggered;
         MouseHookService.XButton1Clicked += OnLaunchpadTriggered;
