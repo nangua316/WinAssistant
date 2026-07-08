@@ -56,6 +56,11 @@ public sealed partial class MainWindow : Window
         AppWindow.SetIcon("Assets/AppIcon.ico");
         AppWindow.Resize(new SizeInt32(1800, 1500));
 
+        // Move off-screen before Activate() shows it, preventing initial flash.
+        // ShowSettings() repositions it normally when the user opens settings.
+        SetWindowPos(_hwnd, nint.Zero, -9999, -9999, 0, 0,
+            SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+
         // Subclass the window for hotkey + tray messages
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         _wndProcHook = WndProc;
@@ -372,6 +377,7 @@ public sealed partial class MainWindow : Window
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_FRAMECHANGED = 0x0020;
+    private const uint SWP_NOACTIVATE = 0x0010;
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
