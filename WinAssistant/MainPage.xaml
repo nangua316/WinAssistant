@@ -188,6 +188,8 @@
                                 <ComboBoxItem Content="右下" />
                                 <ComboBoxItem Content="中上" />
                                 <ComboBoxItem Content="中下" />
+                                <ComboBoxItem Content="左上" />
+                                <ComboBoxItem Content="右上" />
                             </ComboBox>
                         </Grid>
                     </Border>

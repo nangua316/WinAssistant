@@ -168,6 +168,10 @@ internal static class HotKeyToast
 
         return position switch
         {
+            ToastPosition.TopLeft => (workRect.left + _margin,
+                                       workRect.top + _margin / 2),
+            ToastPosition.TopRight => (workRect.right - _toastWidth - _margin,
+                                        workRect.top + _margin / 2),
             ToastPosition.BottomRight => (workRect.right - _toastWidth - _margin,
                                           workRect.bottom - height - _margin / 2),
             ToastPosition.TopCenter => (workRect.left + (areaWidth - _toastWidth) / 2,

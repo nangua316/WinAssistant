@@ -5,7 +5,9 @@ public enum ToastPosition
     BottomLeft,
     BottomRight,
     TopCenter,
-    BottomCenter
+    BottomCenter,
+    TopLeft,
+    TopRight
 }
 
 public class AppSettings
