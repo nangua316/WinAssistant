@@ -11,6 +11,8 @@ public static class ToolRegistry
         Register(new WeChatDualTool());
         Register(new OneClickLaunchTool());
         Register(new WifiPasswordTool());
+        Register(new DesktopIconToggleTool());
+        Register(new LockScreenTool());
     }
 
     public static IReadOnlyCollection<IAssistantTool> All => _tools.Values;

@@ -29,7 +29,11 @@ public class SettingsService
     public AppSettings Load()
     {
         if (!File.Exists(_filePath))
-            return new AppSettings();
+        {
+            var defaults = new AppSettings();
+            SeedDefaultTools(defaults);
+            return defaults;
+        }
 
         try
         {
@@ -52,6 +56,24 @@ public class SettingsService
         {
             Debug.WriteLine($"[SettingsService] Load failed: {ex.Message}");
             return new AppSettings();
+        }
+    }
+
+    /// <summary>
+    /// For first-time users: pre-populate all tools into the launchpad.
+    /// </summary>
+    private static void SeedDefaultTools(AppSettings settings)
+    {
+        foreach (var tool in Controls.Tools.ToolRegistry.All)
+        {
+            if (!settings.LaunchpadItems.Any(i => i.ToolId == tool.Id))
+            {
+                settings.LaunchpadItems.Add(new Models.LaunchpadItem
+                {
+                    Name = tool.Name,
+                    ToolId = tool.Id
+                });
+            }
         }
     }
 

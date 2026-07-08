@@ -3,6 +3,7 @@
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:vm="using:WinAssistant.ViewModels"
       xmlns:helpers="using:WinAssistant.Helpers"
+      xmlns:controls="using:WinAssistant.Controls"
       Background="Transparent"
       KeyDown="OnPageKeyDown">
 
@@ -150,7 +151,7 @@
     <!-- ===== Page Surface (半透明覆盖层，Mica 透出) ===== -->
     <Grid Background="{ThemeResource PageBackgroundBrush}"
           RightTapped="OnPageRightTapped">
-        <Grid Margin="20,16,20,16">
+        <Grid Margin="20,16,20,8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -159,7 +160,7 @@
 
             <!-- ===== Search Bar ===== -->
             <Grid>
-                <TextBox x:Name="SearchBox"
+                <controls:SearchTextBox x:Name="SearchBox"
                          PlaceholderText="搜索应用..."
                          Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          HorizontalAlignment="Stretch"
@@ -167,18 +168,18 @@
                          Foreground="{ThemeResource TextPrimaryBrush}"
                          PlaceholderForeground="{ThemeResource TextDimBrush}"
                          BorderThickness="0"
-                         CornerRadius="10"
-                         Padding="16,11,50,11"
-                         Margin="0,0,48,0"
+                         CornerRadius="8"
+                         Padding="16,11,56,11"
+                         Margin="0"
                          FontSize="14"
                          KeyDown="OnSearchBoxKeyDown" />
-                <!-- Pin toggle -->
+                <!-- Pin toggle（置于搜索栏内部最右侧，清除按钮在它左边） -->
                 <ToggleButton x:Name="PinButton"
                               Click="OnPinToggle"
                               Style="{StaticResource PinToggleButtonStyle}"
                               HorizontalAlignment="Right"
                               VerticalAlignment="Center"
-                              Margin="0,0,6,0"
+                              Margin="0,0,4,0"
                               ToolTipService.ToolTip="固定窗口" />
             </Grid>
 
@@ -385,20 +386,24 @@
             </StackPanel>
 
             <!-- ===== Bottom Bar ===== -->
-            <Border Grid.Row="2" Margin="0,8,0,0" Padding="0,4"
+            <Border Grid.Row="2" Margin="0,2,0,0" Padding="0"
                     Background="Transparent">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                               Foreground="{ThemeResource TextDimBrush}"
-                               FontSize="12"
-                               VerticalAlignment="Center" />
+                <Grid HorizontalAlignment="Right">
+                    <!-- 菜单按钮（三个横线，等效于右键菜单） -->
+                    <Button x:Name="MenuButton"
+                            Click="OnMenuButtonClick"
+                            Width="32"
+                            Height="32"
+                            Background="{ThemeResource ControlIdleBrush}"
+                            BorderThickness="0"
+                            CornerRadius="6"
+                            ToolTipService.ToolTip="菜单">
+                        <FontIcon Glyph="&#xE700;"
+                                  FontSize="14"
+                                  Foreground="{ThemeResource TextSecondaryBrush}" />
+                    </Button>
                     <!-- AI 对话按钮（暂隐藏） -->
-                    <Button Grid.Column="1"
-                            x:Name="AiChatButton"
+                    <Button x:Name="AiChatButton"
                             Click="OnAiChatClick"
                             Background="{ThemeResource AccentDimBrush}"
                             Foreground="{ThemeResource AccentBrush}"
@@ -414,7 +419,7 @@
                         </StackPanel>
                     </Button>
                 </Grid>
-            </Border>
+        </Border>
         </Grid>
     </Grid>
 </Page>

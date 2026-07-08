@@ -143,9 +143,12 @@ public sealed partial class LaunchpadWindow : Window
             ContentScaleHost.Children.Add(_page);
         }
 
-        // Move off-screen and show FIRST so any DWM white flash happens
-        // off-screen. Then render the page content (XAML layout / Mica).
+        // Cloak the window so DWM never renders a white flash,
+        // then show off-screen, render content, and only uncloak
+        // after moving to the final position.
         var (winW, winH, winX, winY) = CalcWindowSizeAndPosition();
+        var cloaked = 1;
+        DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloaked, sizeof(int));
         AppWindow.MoveAndResize(new RectInt32(-9999, -9999, winW, winH));
         ShowWindow(_hwnd, SW_SHOW);
 
@@ -168,6 +171,11 @@ public sealed partial class LaunchpadWindow : Window
             if (currentGen != _gen) return; // Superseded
 
             AppWindow.MoveAndResize(new RectInt32(winX, winY, winW, winH));
+
+            // Uncloak now that we're at the final position — DWM will
+            // compose the first frame with Mica already rendered.
+            cloaked = 0;
+            DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloaked, sizeof(int));
 
             // Force window to top and foreground
             SetWindowPos(_hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
@@ -477,6 +485,7 @@ public sealed partial class LaunchpadWindow : Window
 
     private const uint DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
     private const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+    private const uint DWMWA_CLOAK = 14;
     private const int DWMWCP_ROUND = 2;
 
     private const uint SWP_NOSIZE = 0x0001;

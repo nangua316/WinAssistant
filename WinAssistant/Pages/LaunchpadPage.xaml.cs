@@ -47,6 +47,8 @@ public sealed partial class LaunchpadPage : Page
 
         InitializeComponent();
         ViewModel = new LaunchpadPageViewModel();
+
+        // 移除文本框内置删除按钮（在自定义 TextBox 的 OnApplyTemplate 中处理）
         ViewModel.Items.CollectionChanged += OnItemsChanged;
         ViewModel.FilteredItems.CollectionChanged += (_, _) => UpdateEmptyState();
         ViewModel.PropertyChanged += (s, e) =>
@@ -164,6 +166,20 @@ public sealed partial class LaunchpadPage : Page
         return null;
     }
 
+    private static DependencyObject? FindChildByName(DependencyObject parent, string name)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is FrameworkElement fe && fe.Name == name)
+                return child;
+            var found = FindChildByName(child, name);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     /// <summary>
     /// 显式从当前主题字典读取 brush，避免代码中直接 Resources[key]
     /// 在主题切换后仍解析为旧值的问题。
@@ -186,12 +202,12 @@ public sealed partial class LaunchpadPage : Page
         PinChanged?.Invoke(this, _isPinned);
     }
 
-    private void OnPageRightTapped(object sender, RightTappedRoutedEventArgs e)
+    /// <summary>
+    /// Builds the page-level context menu (添加应用, 添加文件夹, … 打开设置).
+    /// Shared between right-click and the bottom-right hamburger button.
+    /// </summary>
+    private MenuFlyout CreatePageMenu()
     {
-        var point = e.GetPosition(AppGrid);
-        var hitItem = _dragHandler?.FindItemAt(point);
-        if (hitItem != null) return;
-
         var menu = new MenuFlyout();
         var addItem = new MenuFlyoutItem
         {
@@ -239,6 +255,23 @@ public sealed partial class LaunchpadPage : Page
             if (App.Window is MainWindow main) main.ShowSettings();
         });
         menu.Items.Add(settingsItem);
+        return menu;
+    }
+
+    private void OnMenuButtonClick(object sender, RoutedEventArgs e)
+    {
+        var menu = CreatePageMenu();
+        if (sender is FrameworkElement fe)
+            menu.ShowAt(fe);
+    }
+
+    private void OnPageRightTapped(object sender, RightTappedRoutedEventArgs e)
+    {
+        var point = e.GetPosition(AppGrid);
+        var hitItem = _dragHandler?.FindItemAt(point);
+        if (hitItem != null) return;
+
+        var menu = CreatePageMenu();
         menu.ShowAt((UIElement)sender, e.GetPosition((UIElement)sender));
         e.Handled = true;
     }
