@@ -16,6 +16,7 @@ public sealed partial class MainWindow : Window
     private nint _trayIconHandle;
     private bool _trayIconAdded;
     private nint _hwnd;
+    private bool _suppressFirstShow = true;
 
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TOOLWINDOW = 0x00000080;
@@ -25,6 +26,8 @@ public sealed partial class MainWindow : Window
     private const int WM_HOTKEY = 0x0312;
     private const int WM_DESTROY = 0x0002;
     private const uint WM_SETTINGCHANGE = 0x001A;
+    private const int WM_WINDOWPOSCHANGING = 0x0046;
+    private const int SWP_SHOWWINDOW = 0x0040;
     private const int GWLP_WNDPROC = -4;
     private const int SW_HIDE = 0;
     private const int SW_SHOW = 5;
@@ -55,11 +58,6 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.SetIcon("Assets/AppIcon.ico");
         AppWindow.Resize(new SizeInt32(1800, 1500));
-
-        // Move off-screen before Activate() shows it, preventing initial flash.
-        // ShowSettings() repositions it normally when the user opens settings.
-        SetWindowPos(_hwnd, nint.Zero, -9999, -9999, 0, 0,
-            SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
 
         // Subclass the window for hotkey + tray messages
         _hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
@@ -318,6 +316,19 @@ public sealed partial class MainWindow : Window
                 }
                 return nint.Zero;
 
+            case WM_WINDOWPOSCHANGING:
+                if (_suppressFirstShow)
+                {
+                    var pos = Marshal.PtrToStructure<WINDOWPOS>(lParam);
+                    if ((pos.flags & SWP_SHOWWINDOW) != 0)
+                    {
+                        pos.flags &= ~SWP_SHOWWINDOW;
+                        Marshal.StructureToPtr(pos, lParam, false);
+                        _suppressFirstShow = false;
+                    }
+                }
+                break;
+
             case WM_DESTROY:
                 CleanupTrayIcon();
                 break;
@@ -377,7 +388,6 @@ public sealed partial class MainWindow : Window
     private const uint SWP_NOMOVE = 0x0002;
     private const uint SWP_NOZORDER = 0x0004;
     private const uint SWP_FRAMECHANGED = 0x0020;
-    private const uint SWP_NOACTIVATE = 0x0010;
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -438,6 +448,9 @@ public sealed partial class MainWindow : Window
 
     [StructLayout(LayoutKind.Sequential)]
     private struct RECT { public int left; public int top; public int right; public int bottom; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WINDOWPOS { public nint hwnd; public nint hwndInsertAfter; public int x; public int y; public int cx; public int cy; public int flags; }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NOTIFYICONDATAW
