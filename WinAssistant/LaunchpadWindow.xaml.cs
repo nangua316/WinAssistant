@@ -234,9 +234,14 @@ public sealed partial class LaunchpadWindow : Window
         {
             if (GetWindowRect(_hwnd, out var rect))
             {
+                var width = rect.right - rect.left;
+                var height = rect.bottom - rect.top;
                 var settings = App.SettingsService.Load();
-                settings.LaunchpadWindowWidth = rect.right - rect.left;
-                settings.LaunchpadWindowHeight = rect.bottom - rect.top;
+                if (settings.LaunchpadWindowWidth == width && settings.LaunchpadWindowHeight == height)
+                    return;
+
+                settings.LaunchpadWindowWidth = width;
+                settings.LaunchpadWindowHeight = height;
                 App.SettingsService.Save(settings);
             }
         }
