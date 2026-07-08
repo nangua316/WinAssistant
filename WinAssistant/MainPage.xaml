@@ -248,8 +248,10 @@
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
                                           Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="按下中键" FontSize="15"
-                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" FontSize="15"
+                                           VerticalAlignment="Center">
+                                    <Run Text="按下中键" /><Run Text="（鼠标滚轮）" FontSize="12" Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}" />
+                                </TextBlock>
                                 <controls:NoAnimToggleSwitch Grid.Column="2"
                                               IsOn="{x:Bind ViewModel.IsMouseTriggerMiddle, Mode=TwoWay}" />
                             </Grid>
@@ -262,8 +264,10 @@
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
                                           Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="按下X1键" FontSize="15"
-                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" FontSize="15"
+                                           VerticalAlignment="Center">
+                                    <Run Text="按下X1键" /><Run Text="（鼠标侧面向下键）" FontSize="12" Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}" />
+                                </TextBlock>
                                 <controls:NoAnimToggleSwitch Grid.Column="2"
                                               IsOn="{x:Bind ViewModel.IsMouseTriggerX1, Mode=TwoWay}" />
                             </Grid>
@@ -276,8 +280,10 @@
                                 <FontIcon Grid.Column="0" Glyph="&#xE962;" FontSize="16"
                                           Foreground="{ThemeResource AccentBlue}"
                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="按下X2键" FontSize="15"
-                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" FontSize="15"
+                                           VerticalAlignment="Center">
+                                    <Run Text="按下X2键" /><Run Text="（鼠标侧面向上键）" FontSize="12" Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}" />
+                                </TextBlock>
                                 <controls:NoAnimToggleSwitch Grid.Column="2"
                                               IsOn="{x:Bind ViewModel.IsMouseTriggerX2, Mode=TwoWay}" />
                             </Grid>
@@ -397,7 +403,7 @@
                                     <TextBlock Grid.Row="1"
                                                Text="{x:Bind AppPath}"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
-                                               Opacity="0.6"
+                                               Foreground="{ThemeResource SystemControlDisabledBaseMediumLowBrush}"
                                                TextTrimming="CharacterEllipsis"
                                                TextWrapping="NoWrap" />
                                 </Grid>
