@@ -51,7 +51,10 @@ public sealed partial class LaunchpadWindow : Window
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Collapsed;
 
         // Size to fit the primary monitor work area (respects taskbar and low-res screens)
-        var (winW, winH, winX, winY) = CalcWindowSizeAndPosition();
+        var settings = App.SettingsService.Load();
+        var (winW, winH, winX, winY) = CalcWindowSizeAndPosition(
+            settings.LaunchpadWindowWidth > 0 ? settings.LaunchpadWindowWidth : null,
+            settings.LaunchpadWindowHeight > 0 ? settings.LaunchpadWindowHeight : null);
         AppWindow.MoveAndResize(new RectInt32(winX, winY, winW, winH));
         // Actual resize/position happens in OpenCore() after the window is shown
 
@@ -146,7 +149,10 @@ public sealed partial class LaunchpadWindow : Window
         // Cloak the window so DWM never renders a white flash,
         // then show off-screen, render content, and only uncloak
         // after moving to the final position.
-        var (winW, winH, winX, winY) = CalcWindowSizeAndPosition();
+        var openSettings = App.SettingsService.Load();
+        var (winW, winH, winX, winY) = CalcWindowSizeAndPosition(
+            openSettings.LaunchpadWindowWidth > 0 ? openSettings.LaunchpadWindowWidth : null,
+            openSettings.LaunchpadWindowHeight > 0 ? openSettings.LaunchpadWindowHeight : null);
         var cloaked = 1;
         DwmSetWindowAttribute(_hwnd, DWMWA_CLOAK, ref cloaked, sizeof(int));
         AppWindow.MoveAndResize(new RectInt32(-9999, -9999, winW, winH));
@@ -222,11 +228,27 @@ public sealed partial class LaunchpadWindow : Window
         catch { }
     }
 
+    private void SaveWindowSize()
+    {
+        try
+        {
+            if (GetWindowRect(_hwnd, out var rect))
+            {
+                var settings = App.SettingsService.Load();
+                settings.LaunchpadWindowWidth = rect.right - rect.left;
+                settings.LaunchpadWindowHeight = rect.bottom - rect.top;
+                App.SettingsService.Save(settings);
+            }
+        }
+        catch { }
+    }
+
     private void ForceHide()
     {
         _isShowing = false;
         StopFocusTimer();
 
+        SaveWindowSize();
         ShowWindow(_hwnd, SW_HIDE);
         DeleteFromTaskbar();
     }
@@ -355,10 +377,11 @@ public sealed partial class LaunchpadWindow : Window
 
     /// <summary>
     /// Calculates a launchpad size that fits the primary monitor work area.
-    /// On low-resolution screens (e.g. 1366x768) it shrinks to ~90% of the work area;
-    /// on large screens it is capped at 1600x1200 and centered.
+    /// If the user has previously resized the window, savedW/savedH are used
+    /// (clamped to the current work area). Otherwise fall back to the
+    /// default proportional size. The window is always centered.
     /// </summary>
-    private (int w, int h, int x, int y) CalcWindowSizeAndPosition()
+    private (int w, int h, int x, int y) CalcWindowSizeAndPosition(int? savedW = null, int? savedH = null)
     {
         try
         {
@@ -367,15 +390,24 @@ public sealed partial class LaunchpadWindow : Window
                 DisplayAreaFallback.Primary);
             var area = display.WorkArea;
 
-            // On lower-resolution screens leave more desktop visible; on large monitors fill more.
-            double scale = (area.Width >= 1600 && area.Height >= 900) ? 0.9 : 0.8;
-            int w = (int)(area.Width * scale);
-            int h = (int)(area.Height * scale);
-            w = Math.Clamp(w, 800, 1600);
-            h = Math.Clamp(h, 600, 1200);
+            int w, h;
+            if (savedW > 0 && savedH > 0)
+            {
+                w = Math.Clamp(savedW.Value, 400, Math.Max(400, area.Width));
+                h = Math.Clamp(savedH.Value, 300, Math.Max(300, area.Height));
+            }
+            else
+            {
+                // On lower-resolution screens leave more desktop visible; on large monitors fill more.
+                double scale = (area.Width >= 1600 && area.Height >= 900) ? 0.9 : 0.8;
+                w = (int)(area.Width * scale);
+                h = (int)(area.Height * scale);
+                w = Math.Clamp(w, 800, 1600);
+                h = Math.Clamp(h, 600, 1200);
 
-            if (w > area.Width) w = area.Width;
-            if (h > area.Height) h = area.Height;
+                if (w > area.Width) w = area.Width;
+                if (h > area.Height) h = area.Height;
+            }
 
             int x = area.X + (area.Width - w) / 2;
             int y = area.Y + (area.Height - h) / 2;

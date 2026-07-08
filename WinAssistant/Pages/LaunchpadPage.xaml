@@ -145,6 +145,63 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
+        <!-- ===== Hamburger Button Style ===== -->
+        <Style x:Key="HamburgerButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{ThemeResource ControlIdleBrush}" />
+            <Setter Property="Foreground" Value="{ThemeResource TextSecondaryBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="UseSystemFocusVisuals" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid CornerRadius="{TemplateBinding CornerRadius}" Background="Transparent">
+                            <Border x:Name="BgBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="{TemplateBinding CornerRadius}" />
+                            <FontIcon x:Name="Icon"
+                                      Glyph="{Binding Content, RelativeSource={RelativeSource TemplatedParent}}"
+                                      FontSize="14"
+                                      Foreground="{TemplateBinding Foreground}"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="PointerOver">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background"
+                                                    Value="{ThemeResource ControlHoverBrush}" />
+                                            <Setter Target="Icon.Foreground"
+                                                    Value="{ThemeResource TextPrimaryBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Pressed">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Background"
+                                                    Value="{ThemeResource ControlPressedBrush}" />
+                                            <Setter Target="Icon.Foreground"
+                                                    Value="{ThemeResource TextPrimaryBrush}" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                    <VisualState x:Name="Disabled">
+                                        <VisualState.Setters>
+                                            <Setter Target="BgBorder.Opacity" Value="0.5" />
+                                        </VisualState.Setters>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         </ResourceDictionary>
     </Page.Resources>
 
@@ -388,20 +445,24 @@
             <!-- ===== Bottom Bar ===== -->
             <Border Grid.Row="2" Margin="0,2,0,0" Padding="0"
                     Background="Transparent">
-                <Grid HorizontalAlignment="Right">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <!-- 菜单按钮（三个横线，等效于右键菜单） -->
-                    <Button x:Name="MenuButton"
+                    <Button Grid.Column="0"
+                            x:Name="MenuButton"
                             Click="OnMenuButtonClick"
-                            Width="32"
-                            Height="32"
-                            Background="{ThemeResource ControlIdleBrush}"
-                            BorderThickness="0"
-                            CornerRadius="6"
-                            ToolTipService.ToolTip="菜单">
-                        <FontIcon Glyph="&#xE700;"
-                                  FontSize="14"
-                                  Foreground="{ThemeResource TextSecondaryBrush}" />
-                    </Button>
+                            Style="{StaticResource HamburgerButtonStyle}"
+                            ToolTipService.ToolTip="菜单"
+                            Content="&#xE700;" />
+                    <TextBlock Grid.Column="1"
+                               Text="拖动图标替换位置"
+                               Foreground="{ThemeResource TextDimBrush}"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0" />
                     <!-- AI 对话按钮（暂隐藏） -->
                     <Button x:Name="AiChatButton"
                             Click="OnAiChatClick"
@@ -420,6 +481,36 @@
                     </Button>
                 </Grid>
         </Border>
+        </Grid>
+
+        <!-- 顶部拖拽区域（透明，仅用于窗口拖动） -->
+        <Grid Height="16"
+              VerticalAlignment="Top"
+              Background="Transparent"
+              PointerPressed="OnDragHeaderPressed"
+              PointerMoved="OnDragHeaderMoved"
+              PointerReleased="OnDragHeaderReleased"
+              PointerCaptureLost="OnDragHeaderCaptureLost" />
+
+        <!-- 右下角大小调整区域 -->
+        <Grid Width="20"
+              Height="20"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Bottom"
+              Background="Transparent"
+              PointerPressed="OnResizeGripPressed"
+              PointerMoved="OnResizeGripMoved"
+              PointerReleased="OnResizeGripReleased"
+              PointerCaptureLost="OnResizeGripCaptureLost"
+              ToolTipService.ToolTip="拖动调整大小">
+            <!-- 小三角视觉提示 -->
+            <Path Data="M 12,20 L 20,12 M 16,20 L 20,16"
+                  Stroke="{ThemeResource TextDimBrush}"
+                  StrokeThickness="1.5"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Bottom"
+                  Margin="0,0,3,3"
+                  IsHitTestVisible="False" />
         </Grid>
     </Grid>
 </Page>

@@ -168,68 +168,6 @@
                     </Border>
 
                     <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="0">
-                        <StackPanel Spacing="12">
-                            <TextBlock Text="输入法状态提示" FontSize="15" FontWeight="SemiBold"
-                                       Foreground="{ThemeResource SystemControlPageTextBaseHighBrush}"
-                                       Padding="16,12,16,0" />
-
-                            <Grid Padding="16,8" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
-                                          Foreground="{ThemeResource IconAmber}"
-                                          VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="大小写锁定" FontSize="15" />
-                                    <TextBlock Text="Caps Lock 切换时显示提示" FontSize="12"
-                                               Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-                                </StackPanel>
-                                <controls:NoAnimToggleSwitch Grid.Column="2"
-                                              IsOn="{x:Bind ViewModel.IsCapsLockToastEnabled, Mode=TwoWay}" />
-                            </Grid>
-
-                            <Grid Padding="16,8" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
-                                          Foreground="{ThemeResource IconAmber}"
-                                          VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="中英文/全半角切换" FontSize="15" />
-                                    <TextBlock Text="Shift/Ctrl+Space 切换输入模式时显示提示" FontSize="12"
-                                               Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-                                </StackPanel>
-                                <controls:NoAnimToggleSwitch Grid.Column="2"
-                                              IsOn="{x:Bind ViewModel.IsCnEnToastEnabled, Mode=TwoWay}" />
-                            </Grid>
-
-                            <Grid Padding="16,8" ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
-                                          Foreground="{ThemeResource IconAmber}"
-                                          VerticalAlignment="Center" />
-                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="输入法切换" FontSize="15" />
-                                    <TextBlock Text="Win+Space / Ctrl+Shift 切换输入法时显示提示" FontSize="12"
-                                               Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
-                                </StackPanel>
-                                <controls:NoAnimToggleSwitch Grid.Column="2"
-                                              IsOn="{x:Bind ViewModel.IsImeSwitchToastEnabled, Mode=TwoWay}" />
-                            </Grid>
-                        </StackPanel>
-                    </Border>
-
-                    <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="0">
                         <StackPanel>
                             <TextBlock Text="启动台" FontSize="15" FontWeight="SemiBold"
                                        Foreground="{ThemeResource SystemControlPageTextBaseHighBrush}"
@@ -339,6 +277,68 @@
                                     Padding="16,8" CornerRadius="6"
                                     Margin="16,8,16,12"
                                     HorizontalAlignment="Stretch" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="{ThemeResource CardBgBrush}" BorderThickness="0" CornerRadius="8" Padding="0">
+                        <StackPanel Spacing="12">
+                            <TextBlock Text="输入法状态提示" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="{ThemeResource SystemControlPageTextBaseHighBrush}"
+                                       Padding="16,12,16,0" />
+
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
+                                          Foreground="{ThemeResource IconAmber}"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="大小写锁定" FontSize="15" />
+                                    <TextBlock Text="Caps Lock 切换时显示提示" FontSize="12"
+                                               Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+                                </StackPanel>
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsCapsLockToastEnabled, Mode=TwoWay}" />
+                            </Grid>
+
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
+                                          Foreground="{ThemeResource IconAmber}"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="中英文/全半角切换" FontSize="15" />
+                                    <TextBlock Text="Shift/Ctrl+Space 切换输入模式时显示提示" FontSize="12"
+                                               Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+                                </StackPanel>
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsCnEnToastEnabled, Mode=TwoWay}" />
+                            </Grid>
+
+                            <Grid Padding="16,8" ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <FontIcon Grid.Column="0" Glyph="&#xE7F4;" FontSize="16"
+                                          Foreground="{ThemeResource IconAmber}"
+                                          VerticalAlignment="Center" />
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="输入法切换" FontSize="15" />
+                                    <TextBlock Text="Win+Space / Ctrl+Shift 切换输入法时显示提示" FontSize="12"
+                                               Foreground="{ThemeResource SystemControlForegroundBaseLowBrush}" />
+                                </StackPanel>
+                                <controls:NoAnimToggleSwitch Grid.Column="2"
+                                              IsOn="{x:Bind ViewModel.IsImeSwitchToastEnabled, Mode=TwoWay}" />
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </StackPanel>

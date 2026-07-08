@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,16 @@ public sealed partial class LaunchpadPage : Page
 {
     private LaunchpadDragHandler? _dragHandler;
     private CancellationTokenSource? _fetchCts;
+
+    // ── Manual window drag state ──
+    private bool _isDragging;
+    private POINT _dragStartCursor;
+    private RECT _dragStartWindowRect;
+
+    // ── Manual window resize state ──
+    private bool _isResizing;
+    private POINT _resizeStartCursor;
+    private RECT _resizeStartWindowRect;
 
     public LaunchpadPageViewModel ViewModel { get; }
 
@@ -194,6 +205,117 @@ public sealed partial class LaunchpadPage : Page
             return (Brush)brush;
         }
         return (Brush)Resources[key];
+    }
+
+    // ── Manual window drag ──
+
+    private void OnDragHeaderPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (OwnerHwnd is nint hwnd && hwnd != nint.Zero && GetCursorPos(out _dragStartCursor))
+        {
+            _isDragging = true;
+            GetWindowRect(hwnd, out _dragStartWindowRect);
+            SetCapture(hwnd);
+            ((UIElement)sender).CapturePointer(e.Pointer);
+            e.Handled = true;
+        }
+    }
+
+    private void OnDragHeaderMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isDragging || OwnerHwnd is not nint hwnd) return;
+        if (!GetCursorPos(out var cur)) return;
+
+        var dx = cur.X - _dragStartCursor.X;
+        var dy = cur.Y - _dragStartCursor.Y;
+
+        SetWindowPos(hwnd, nint.Zero,
+            _dragStartWindowRect.left + dx,
+            _dragStartWindowRect.top + dy,
+            0, 0, SWP_NOSIZE | SWP_NOZORDER);
+    }
+
+    private void OnDragHeaderReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isDragging)
+        {
+            _isDragging = false;
+            if (OwnerHwnd is nint hwnd && hwnd != nint.Zero)
+                ReleaseCapture();
+            ((UIElement)sender).ReleasePointerCapture(e.Pointer);
+            e.Handled = true;
+        }
+    }
+
+    private void OnDragHeaderCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isDragging)
+        {
+            _isDragging = false;
+            if (OwnerHwnd is nint hwnd && hwnd != nint.Zero)
+                ReleaseCapture();
+        }
+    }
+
+    // ── Manual window resize ──
+
+    private void OnResizeGripPressed(object sender, PointerRoutedEventArgs e)
+    {
+        if (OwnerHwnd is nint hwnd && hwnd != nint.Zero && GetCursorPos(out _resizeStartCursor))
+        {
+            _isResizing = true;
+            GetWindowRect(hwnd, out _resizeStartWindowRect);
+            SetCapture(hwnd);
+            ((UIElement)sender).CapturePointer(e.Pointer);
+            e.Handled = true;
+        }
+    }
+
+    private void OnResizeGripMoved(object sender, PointerRoutedEventArgs e)
+    {
+        if (!_isResizing || OwnerHwnd is not nint hwnd) return;
+        if (!GetCursorPos(out var cur)) return;
+
+        var dx = cur.X - _resizeStartCursor.X;
+        var dy = cur.Y - _resizeStartCursor.Y;
+
+        var startW = _resizeStartWindowRect.right - _resizeStartWindowRect.left;
+        var startH = _resizeStartWindowRect.bottom - _resizeStartWindowRect.top;
+        var newW = Math.Max(400, startW + dx);
+        var newH = Math.Max(300, startH + dy);
+
+        SetWindowPos(hwnd, nint.Zero, 0, 0, newW, newH, SWP_NOMOVE | SWP_NOZORDER);
+    }
+
+    private void OnResizeGripReleased(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isResizing)
+        {
+            _isResizing = false;
+            if (OwnerHwnd is nint hwnd && hwnd != nint.Zero)
+            {
+                ReleaseCapture();
+                if (GetWindowRect(hwnd, out var rect))
+                {
+                    var settings = App.SettingsService.Load();
+                    settings.LaunchpadWindowWidth = rect.right - rect.left;
+                    settings.LaunchpadWindowHeight = rect.bottom - rect.top;
+                    App.SettingsService.Save(settings);
+                }
+            }
+            ((UIElement)sender).ReleasePointerCapture(e.Pointer);
+            e.Handled = true;
+        }
+    }
+
+    private void OnResizeGripCaptureLost(object sender, PointerRoutedEventArgs e)
+    {
+        if (_isResizing)
+        {
+            _isResizing = false;
+            if (OwnerHwnd is nint hwnd && hwnd != nint.Zero)
+                ReleaseCapture();
+        }
     }
 
     private void OnPinToggle(object sender, RoutedEventArgs e)
@@ -1400,4 +1522,35 @@ public sealed partial class LaunchpadPage : Page
         try { HotKeyToast.Show(verb, appName, iconPath); }
         catch { }
     }
+
+    // ── Win32 window position ──
+
+    private struct POINT { public int X; public int Y; }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+
+    [DllImport("user32.dll")]
+    private static extern nint SetCapture(nint hWnd);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReleaseCapture();
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT { public int left; public int top; public int right; public int bottom; }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter,
+        int x, int y, int cx, int cy, uint uFlags);
+
+    private const uint SWP_NOSIZE = 0x0001;
+    private const uint SWP_NOMOVE = 0x0002;
+    private const uint SWP_NOZORDER = 0x0004;
 }

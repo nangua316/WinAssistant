@@ -12,6 +12,10 @@ public class AppSettings
     public Dictionary<string, string> ToolSettings { get; set; } = [];
     public string LastSearchText { get; set; } = "";
 
+    // 启动台窗口大小（像素，0 表示使用默认自动计算）
+    public int LaunchpadWindowWidth { get; set; }
+    public int LaunchpadWindowHeight { get; set; }
+
     // AI / 技能库配置
     public string? AiApiKey { get; set; }
     public string AiEndpoint { get; set; } = "https://dashscope.aliyuncs.com";
