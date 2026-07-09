@@ -13,6 +13,7 @@ public static class ToolRegistry
         Register(new WifiPasswordTool());
         Register(new DesktopIconToggleTool());
         Register(new LockScreenTool());
+        Register(new FloatingScreenshotTool());
     }
 
     public static IReadOnlyCollection<IAssistantTool> All => _tools.Values;
