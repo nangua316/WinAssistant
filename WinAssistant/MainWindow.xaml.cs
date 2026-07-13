@@ -300,6 +300,11 @@ public sealed partial class MainWindow : Window
                     App.DispatcherQueue.TryEnqueue(() => App.LaunchpadWindow.Open());
                     return nint.Zero;
                 }
+                if (hotKeyId == App.FLOATING_SCREENSHOT_HOTKEY_ID)
+                {
+                    App.DispatcherQueue.TryEnqueue(() => WinAssistant.Helpers.ScreenshotOverlay.Start());
+                    return nint.Zero;
+                }
                 if (App.HotKeyService.OnWindowMessage(msg, wParam, lParam))
                     return nint.Zero;
                 break;

@@ -27,6 +27,9 @@ public class MainPageViewModel : ObservableObject
     private uint _launchpadHotKeyModifiers = KeyHelper.MOD_CONTROL;
     private uint _launchpadHotKeyVirtualKey = (uint)Windows.System.VirtualKey.Q;
     private string _launchpadHotKeyDisplay = "Ctrl + Q";
+    private uint _floatingScreenshotHotKeyModifiers;
+    private uint _floatingScreenshotHotKeyVirtualKey;
+    private string _floatingScreenshotHotKeyDisplay = "";
     private List<InstalledAppInfo>? _cachedApps;
     private Task<List<InstalledAppInfo>>? _preloadTask;
     private bool _loaded;
@@ -262,6 +265,12 @@ public class MainPageViewModel : ObservableObject
         set => SetProperty(ref _launchpadHotKeyDisplay, value);
     }
 
+    public string FloatingScreenshotHotKeyDisplay
+    {
+        get => _floatingScreenshotHotKeyDisplay;
+        set => SetProperty(ref _floatingScreenshotHotKeyDisplay, value);
+    }
+
     public void SetLaunchpadHotKey(uint modifiers, uint virtualKey, string display)
     {
         _launchpadHotKeyModifiers = modifiers;
@@ -270,6 +279,44 @@ public class MainPageViewModel : ObservableObject
         OnPropertyChanged(nameof(LaunchpadHotKeyDisplay));
         UpdateTriggerServices();
         SaveSettings();
+    }
+
+    public void SetFloatingScreenshotHotKey(uint modifiers, uint virtualKey, string display)
+    {
+        _floatingScreenshotHotKeyModifiers = modifiers;
+        _floatingScreenshotHotKeyVirtualKey = virtualKey;
+        _floatingScreenshotHotKeyDisplay = display;
+        OnPropertyChanged(nameof(FloatingScreenshotHotKeyDisplay));
+        UpdateTriggerServices();
+        SaveSettings();
+    }
+
+    /// <summary>
+    /// Checks whether the given key combination is already used by another trigger
+    /// or hotkey binding. Returns the conflicting name, or null if none.
+    /// </summary>
+    public string? FindFloatingScreenshotHotKeyConflict(uint modifiers, uint virtualKey)
+    {
+        if (modifiers == 0 || virtualKey == 0) return null;
+
+        if (modifiers == _launchpadHotKeyModifiers &&
+            virtualKey == _launchpadHotKeyVirtualKey)
+        {
+            return "启动台全局快捷键";
+        }
+
+        if (modifiers == KeyHelper.MOD_ALT &&
+            virtualKey == (uint)Windows.System.VirtualKey.Space)
+        {
+            return "Alt + 空格";
+        }
+
+        var conflict = Bindings.FirstOrDefault(b =>
+            b.Model.IsEnabled &&
+            b.Model.Modifiers == modifiers &&
+            b.Model.VirtualKey == virtualKey);
+
+        return conflict?.Model.Name;
     }
 
     public ICommand AddApplicationCommand { get; }
@@ -324,6 +371,10 @@ public class MainPageViewModel : ObservableObject
         ParseLaunchpadHotKeyString(settings.LaunchpadHotKey);
         OnPropertyChanged(nameof(LaunchpadHotKeyDisplay));
 
+        ParseFloatingScreenshotHotKeyString(settings.FloatingScreenshotHotKey,
+            settings.FloatingScreenshotHotKeyModifiers, settings.FloatingScreenshotHotKeyVirtualKey);
+        OnPropertyChanged(nameof(FloatingScreenshotHotKeyDisplay));
+
         UpdateTriggerServices();
 
         RefreshHotKeys();
@@ -349,6 +400,9 @@ public class MainPageViewModel : ObservableObject
         current.MouseTriggers = BuildMouseTriggersList();
         current.KeyboardTriggers = BuildKeyboardTriggersList();
         current.LaunchpadHotKey = _launchpadHotKeyDisplay;
+        current.FloatingScreenshotHotKey = _floatingScreenshotHotKeyDisplay;
+        current.FloatingScreenshotHotKeyModifiers = _floatingScreenshotHotKeyModifiers;
+        current.FloatingScreenshotHotKeyVirtualKey = _floatingScreenshotHotKeyVirtualKey;
         current.ThemeMode = _themeMode;
         current.ToastPosition = _toastPosition;
         current.IsCapsLockToastEnabled = _isCapsLockToastEnabled;
@@ -835,6 +889,11 @@ public class MainPageViewModel : ObservableObject
         if (_isKeyboardTriggerGlobalHotKey && _launchpadHotKeyModifiers != 0 && _launchpadHotKeyVirtualKey != 0)
             App.RegisterTriggerHotKey(App.GLOBAL_HOTKEY_ID, _launchpadHotKeyModifiers, _launchpadHotKeyVirtualKey);
 
+        // Floating screenshot hotkey
+        App.UnregisterTriggerHotKey(App.FLOATING_SCREENSHOT_HOTKEY_ID);
+        if (_floatingScreenshotHotKeyModifiers != 0 && _floatingScreenshotHotKeyVirtualKey != 0)
+            App.RegisterTriggerHotKey(App.FLOATING_SCREENSHOT_HOTKEY_ID, _floatingScreenshotHotKeyModifiers, _floatingScreenshotHotKeyVirtualKey);
+
         // Alt+Space
         App.UnregisterTriggerHotKey(App.ALTSPACE_HOTKEY_ID);
         if (_isKeyboardTriggerAltSpace)
@@ -902,6 +961,77 @@ public class MainPageViewModel : ObservableObject
             _launchpadHotKeyModifiers = mods;
             _launchpadHotKeyVirtualKey = vk;
         }
+    }
+
+    private void ParseFloatingScreenshotHotKeyString(string hotKey, uint savedModifiers = 0, uint savedVirtualKey = 0)
+    {
+        // Prefer the raw numeric values stored alongside the display string. Parsing the
+        // display string is unreliable for keys whose name does not match VirtualKey enum
+        // names (e.g. "1" vs VirtualKey.Number1).
+        if (savedModifiers != 0 && savedVirtualKey != 0)
+        {
+            _floatingScreenshotHotKeyModifiers = savedModifiers;
+            _floatingScreenshotHotKeyVirtualKey = savedVirtualKey;
+            _floatingScreenshotHotKeyDisplay = string.IsNullOrWhiteSpace(hotKey)
+                ? KeyHelper.GetFullDisplay(savedModifiers, savedVirtualKey)
+                : hotKey;
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(hotKey))
+        {
+            _floatingScreenshotHotKeyModifiers = 0;
+            _floatingScreenshotHotKeyVirtualKey = 0;
+            _floatingScreenshotHotKeyDisplay = "";
+            return;
+        }
+
+        _floatingScreenshotHotKeyDisplay = hotKey;
+
+        uint mods = 0;
+        uint vk = 0;
+        var parts = hotKey.Split('+', StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (string.IsNullOrEmpty(trimmed)) continue;
+
+            switch (trimmed.ToLower())
+            {
+                case "ctrl": mods |= KeyHelper.MOD_CONTROL; break;
+                case "alt": mods |= KeyHelper.MOD_ALT; break;
+                case "shift": mods |= KeyHelper.MOD_SHIFT; break;
+                case "win": mods |= KeyHelper.MOD_WIN; break;
+                default:
+                    vk = ParseVirtualKeyFromDisplay(trimmed);
+                    break;
+            }
+        }
+
+        if (mods == 0 || vk == 0)
+        {
+            _floatingScreenshotHotKeyModifiers = 0;
+            _floatingScreenshotHotKeyVirtualKey = 0;
+            _floatingScreenshotHotKeyDisplay = "";
+        }
+        else
+        {
+            _floatingScreenshotHotKeyModifiers = mods;
+            _floatingScreenshotHotKeyVirtualKey = vk;
+        }
+    }
+
+    private static uint ParseVirtualKeyFromDisplay(string keyName)
+    {
+        if (keyName.Length == 1 && char.IsDigit(keyName[0]))
+        {
+            return (uint)Windows.System.VirtualKey.Number0 + (uint)(keyName[0] - '0');
+        }
+
+        if (Enum.TryParse<Windows.System.VirtualKey>(keyName, true, out var parsed))
+            return (uint)parsed;
+
+        return 0;
     }
 
     /// <summary>

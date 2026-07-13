@@ -178,6 +178,7 @@ public partial class App : Application
 
     public const int GLOBAL_HOTKEY_ID = 9001;
     public const int ALTSPACE_HOTKEY_ID = 9002;
+    public const int FLOATING_SCREENSHOT_HOTKEY_ID = 9003;
 
     public static void RegisterTriggerHotKey(int id, uint modifiers, uint virtualKey)
     {

@@ -1411,7 +1411,10 @@ public sealed partial class LaunchpadPage : Page
 
         if (vm.Tool.IsOneClickAction)
         {
+            // For one-click tools, run the action before closing the launchpad so the
+            // app always has a visible window and doesn't shut down mid-action.
             var msg = vm.Tool.Activate();
+            Close(clearSearch: true);
             if (!string.IsNullOrEmpty(msg))
             {
                 try
@@ -1425,6 +1428,8 @@ public sealed partial class LaunchpadPage : Page
             }
             return true;
         }
+
+        Close(clearSearch: true);
         ToolHostWindow.OpenOrActivate(vm.Tool);
         return true;
     }

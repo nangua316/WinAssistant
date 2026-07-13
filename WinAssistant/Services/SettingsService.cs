@@ -45,11 +45,15 @@ public class SettingsService
                 if (json.TrimStart().StartsWith('['))
                 {
                     var bindings = JsonSerializer.Deserialize<List<HotKeyBinding>>(json) ?? [];
-                    return new AppSettings { Bindings = bindings };
+                    var wrapped = new AppSettings { Bindings = bindings };
+                    SeedDefaultTools(wrapped);
+                    return wrapped;
                 }
 
                 // New format: AppSettings object
-                return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                var settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+                SeedDefaultTools(settings);
+                return settings;
             }
         }
         catch (Exception ex)

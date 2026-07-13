@@ -17,6 +17,9 @@ public class AppSettings
     public List<string> MouseTriggers { get; set; } = ["XButton2"];
     public List<string> KeyboardTriggers { get; set; } = ["AltSpace"];
     public string LaunchpadHotKey { get; set; } = "Ctrl+Q";
+    public string FloatingScreenshotHotKey { get; set; } = "";
+    public uint FloatingScreenshotHotKeyModifiers { get; set; }
+    public uint FloatingScreenshotHotKeyVirtualKey { get; set; }
     public List<HotKeyBinding> Bindings { get; set; } = [];
     public List<LaunchpadItem> LaunchpadItems { get; set; } = [];
     public Dictionary<string, string> ToolSettings { get; set; } = [];
