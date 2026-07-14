@@ -1,9 +1,11 @@
+using System.Collections.Concurrent;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.UI.Windowing;
 using Windows.ApplicationModel.DataTransfer;
 using Windows.Storage.Streams;
+using static WinAssistant.Helpers.Win32WindowHelper;
 
 namespace WinAssistant.Helpers;
 
@@ -38,11 +40,11 @@ internal static class ScreenshotOverlay
                     }
                     Logger.Log("ScreenshotOverlay", $"Captured bitmap {bmp.Width}x{bmp.Height}");
 
-                    _ = new ScreenshotOverlayWin32(bmp, bounds.X, bounds.Y, (cropped, x, y) =>
+                    ScreenshotOverlayWin32.Start(bmp, bounds.X, bounds.Y, (cropped, x, y) =>
                     {
                         App.DispatcherQueue.TryEnqueue(() =>
                         {
-                            try { new FloatingImageWin32(cropped, x, y); }
+                            try { FloatingImageWin32.Show(cropped, x, y); }
                             catch (Exception ex)
                             {
                                 Logger.Log("ScreenshotOverlay", $"Open floating window failed: {ex.Message}");
@@ -75,9 +77,10 @@ internal sealed class ScreenshotOverlayWin32
     // to it; if the delegate is GC'd the app will crash as soon as a message is dispatched.
     private static readonly WndProcDelegate _wndProc = WndProcStatic;
 
-    // Only one overlay can be active at a time, so a single static reference is enough
-    // and avoids the pointer-truncation pitfalls of GWL_USERDATA on 64-bit.
-    private static ScreenshotOverlayWin32? _activeInstance;
+    // Map each HWND to its instance so messages are routed correctly even if multiple
+    // overlays exist concurrently (e.g. rapid hotkey presses). ConcurrentDictionary is
+    // used because each overlay lives on its own STA thread.
+    private static readonly ConcurrentDictionary<nint, ScreenshotOverlayWin32> _instances = new();
 
     private readonly System.Drawing.Bitmap _fullBitmap;
     private readonly nint _hBitmap;
@@ -92,7 +95,35 @@ internal sealed class ScreenshotOverlayWin32
 
     private const string CLASS_NAME = "WinAssistantScreenshotOverlay";
 
-    public ScreenshotOverlayWin32(System.Drawing.Bitmap fullBitmap, int screenX, int screenY,
+    /// <summary>
+    /// 在专用 STA 线程上创建并运行覆盖层窗口。Win32 窗口必须有自己的消息循环，
+    /// 否则依赖 DispatcherQueue 时输入消息可能无法送达 WndProc，导致窗口卡住。
+    /// </summary>
+    public static void Start(System.Drawing.Bitmap fullBitmap, int screenX, int screenY,
+        Action<System.Drawing.Bitmap, int, int> onSelected)
+    {
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var overlay = new ScreenshotOverlayWin32(fullBitmap, screenX, screenY, onSelected);
+                overlay.RunMessageLoop();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("ScreenshotOverlayWin32", $"Thread failed: {ex}");
+                fullBitmap.Dispose();
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "ScreenshotOverlay"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    private ScreenshotOverlayWin32(System.Drawing.Bitmap fullBitmap, int screenX, int screenY,
         Action<System.Drawing.Bitmap, int, int> onSelected)
     {
         _fullBitmap = fullBitmap;
@@ -141,7 +172,7 @@ internal sealed class ScreenshotOverlayWin32
                 throw new InvalidOperationException($"CreateWindowEx failed: {err}");
             }
 
-            _activeInstance = this;
+            _instances.TryAdd(_hwnd, this);
 
             Logger.Log("ScreenshotOverlayWin32", "Showing window");
             ShowWindow(_hwnd, SW_SHOW);
@@ -157,10 +188,14 @@ internal sealed class ScreenshotOverlayWin32
         }
     }
 
+    private void RunMessageLoop()
+    {
+        Win32WindowHelper.RunMessageLoop("ScreenshotOverlayWin32");
+    }
+
     private static nint WndProcStatic(nint hwnd, uint msg, nint wParam, nint lParam)
     {
-        var self = _activeInstance;
-        if (self == null || self._hwnd != hwnd)
+        if (!_instances.TryGetValue(hwnd, out var self))
             return DefWindowProc(hwnd, msg, wParam, lParam);
 
         return self.WndProc(hwnd, msg, wParam, lParam);
@@ -215,6 +250,7 @@ internal sealed class ScreenshotOverlayWin32
 
             case WM_DESTROY:
                 Cleanup();
+                PostQuitMessage(0);
                 return 0;
         }
 
@@ -427,7 +463,7 @@ internal sealed class ScreenshotOverlayWin32
     {
         try
         {
-            _activeInstance = null;
+            _instances.TryRemove(_hwnd, out _);
             DeleteObject(_hBitmap);
             _fullBitmap.Dispose();
         }
@@ -436,162 +472,11 @@ internal sealed class ScreenshotOverlayWin32
             Logger.Log("ScreenshotOverlayWin32", $"Cleanup failed: {ex.Message}");
         }
     }
-
-    // ── Win32 ──
-
-    private const uint WS_POPUP = 0x80000000;
-    private const uint WS_EX_TOOLWINDOW = 0x00000080;
-    private const uint WS_EX_TOPMOST = 0x00000008;
-    private const int SW_SHOW = 5;
-    private const uint WM_PAINT = 0x000F;
-    private const uint WM_ERASEBKGND = 0x0014;
-    private const uint WM_DESTROY = 0x0002;
-    private const uint WM_LBUTTONDOWN = 0x0201;
-    private const uint WM_LBUTTONUP = 0x0202;
-    private const uint WM_RBUTTONDOWN = 0x0204;
-    private const uint WM_MOUSEMOVE = 0x0200;
-    private const uint WM_KEYDOWN = 0x0100;
-    private const nint VK_ESCAPE = 0x1B;
-    private const uint SRCCOPY = 0x00CC0020;
-    private const uint PS_SOLID = 0;
-    private const int HOLLOW_BRUSH = 5;
-    private const nint IDC_CROSS = 32515;
-    private const int ERROR_CLASS_ALREADY_EXISTS = 1410;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WNDCLASSEX
-    {
-        public int cbSize;
-        public uint style;
-        public WndProcDelegate lpfnWndProc;
-        public int cbClsExtra;
-        public int cbWndExtra;
-        public nint hInstance;
-        public nint hIcon;
-        public nint hCursor;
-        public nint hbrBackground;
-        [MarshalAs(UnmanagedType.LPWStr)]
-        public string lpszMenuName;
-        [MarshalAs(UnmanagedType.LPWStr)]
-        public string lpszClassName;
-        public nint hIconSm;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PAINTSTRUCT
-    {
-        public nint hdc;
-        public bool fErase;
-        public RECT rcPaint;
-        public bool fRestore;
-        public bool fIncUpdate;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-        public byte[] rgbReserved;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT
-    {
-        public int left;
-        public int top;
-        public int right;
-        public int bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int X;
-        public int Y;
-        public POINT(int x, int y) { X = x; Y = y; }
-    }
-
-    private delegate nint WndProcDelegate(nint hwnd, uint msg, nint wParam, nint lParam);
-
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
-
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern nint CreateWindowEx(uint dwExStyle, string lpClassName,
-        string lpWindowName, uint dwStyle, int x, int y, int nWidth, int nHeight,
-        nint hWndParent, nint hMenu, nint hInstance, nint lpParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    private static extern bool UpdateWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool DestroyWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern nint DefWindowProc(nint hWnd, uint uMsg, nint wParam, nint lParam);
-
-    [DllImport("user32.dll")]
-    private static extern nint BeginPaint(nint hWnd, ref PAINTSTRUCT lpPaint);
-
-    [DllImport("user32.dll")]
-    private static extern bool EndPaint(nint hWnd, ref PAINTSTRUCT lpPaint);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetClientRect(nint hWnd, out RECT lpRect);
-
-    [DllImport("user32.dll")]
-    private static extern bool InvalidateRect(nint hWnd, nint lpRect, bool bErase);
-
-    [DllImport("user32.dll")]
-    private static extern nint SetCapture(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll")]
-    private static extern nint LoadCursor(nint hInstance, nint lpCursorName);
-
-    [DllImport("kernel32.dll")]
-    private static extern nint GetModuleHandle(string? lpModuleName);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateCompatibleDC(nint hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateCompatibleBitmap(nint hdc, int nWidth, int nHeight);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteDC(nint hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint SelectObject(nint hdc, nint hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(nint hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool BitBlt(nint hdcDest, int nXDest, int nYDest,
-        int nWidth, int nHeight, nint hdcSrc, int nXSrc, int nYSrc, uint dwRop);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreatePen(uint fnPenStyle, int nWidth, uint crColor);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint GetStockObject(int fnObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool Rectangle(nint hdc, int nLeftRect, int nTopRect,
-        int nRightRect, int nBottomRect);
-
-    private static int GET_X_LPARAM(nint lParam) => (int)(short)(lParam & 0xFFFF);
-    private static int GET_Y_LPARAM(nint lParam) => (int)(short)((lParam >> 16) & 0xFFFF);
-    private static uint RGB(byte r, byte g, byte b) => (uint)((b << 16) | (g << 8) | r);
 }
 
 /// <summary>
 /// 纯 Win32 悬浮图片窗口：拖动移动，滚轮缩放，双击关闭，右上角 X 按钮，
-/// 右下角复制按钮（点击关闭并复制图片到剪贴板）。
+/// 右下角复制按钮（点击关闭并复制图片到剪贴板），左上角高亮画笔按钮。
 /// 用 Win32 替代 WinUI 3 Window，避免缩放时窗口resize带来的抖动。
 /// </summary>
 internal sealed class FloatingImageWin32
@@ -599,18 +484,96 @@ internal sealed class FloatingImageWin32
     private static readonly WndProcDelegate _wndProc = WndProcStatic;
     // Multiple floating images can exist at the same time, so map each HWND to its instance
     // instead of keeping a single active reference.
-    private static readonly Dictionary<nint, FloatingImageWin32> _instances = new();
+    private static readonly ConcurrentDictionary<nint, FloatingImageWin32> _instances = new();
+    private static readonly nint _penCursor = CreatePenCursor();
+    private static readonly nint _handCursor = LoadCursor(nint.Zero, IDC_HAND);
 
-    private readonly System.Drawing.Bitmap _bitmap;
-    private readonly nint _hBitmap;
-    private readonly int _baseW;
-    private readonly int _baseH;
+    /// <summary>
+    /// 优先加载 Windows 系统自带的画笔光标，失败则回退到自定义白色画笔光标。
+    /// </summary>
+    private static nint CreatePenCursor()
+    {
+        try
+        {
+            var cursorPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+                "Cursors", "aero_pen.cur");
+            if (File.Exists(cursorPath))
+            {
+                var cursor = LoadCursorFromFile(cursorPath);
+                if (cursor != nint.Zero)
+                {
+                    Logger.Log("FloatingImageWin32", $"Loaded system pen cursor: {cursorPath}");
+                    return cursor;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("FloatingImageWin32", $"Load system pen cursor failed: {ex.Message}");
+        }
+
+        return CreateFallbackPenCursor();
+    }
+
+    /// <summary>
+    /// 自定义白色单色画笔光标，在深色截图背景上足够明显。
+    /// </summary>
+    private static nint CreateFallbackPenCursor()
+    {
+        const int size = 32;
+        var andMask = new byte[size * size / 8];
+        var xorMask = new byte[size * size / 8];
+        Array.Fill(andMask, (byte)0xFF);
+
+        void SetPixel(int x, int y)
+        {
+            if (x < 0 || x >= size || y < 0 || y >= size) return;
+            // CreateIcon expects a bottom-up bitmap; row 0 in the array is the bottom row.
+            // In monochrome bitmaps, the most-significant bit of each byte is the leftmost pixel.
+            int row = (size - 1) - y;
+            int byteIndex = row * (size / 8) + x / 8;
+            int bitIndex = 7 - (x % 8);
+            andMask[byteIndex] &= (byte)~(1 << bitIndex);
+            xorMask[byteIndex] |= (byte)(1 << bitIndex); // white pen shape
+        }
+
+        // Draw a thick diagonal pen from (2,0) to (26,26).
+        for (int i = 0; i < 26; i++)
+        {
+            int x = 2 + i;
+            int y = i;
+            // 3px wide body
+            SetPixel(x, y);
+            SetPixel(x + 1, y);
+            SetPixel(x, y + 1);
+            SetPixel(x + 1, y + 1);
+        }
+
+        var cursor = CreateIcon(nint.Zero, size, size, 1, 1, andMask, xorMask);
+        if (cursor == nint.Zero)
+        {
+            Logger.Log("FloatingImageWin32", $"CreateFallbackPenCursor failed: {Marshal.GetLastWin32Error()}");
+        }
+        else
+        {
+            Logger.Log("FloatingImageWin32", $"Fallback pen cursor created: 0x{cursor:X}");
+        }
+        return cursor;
+    }
+
+    private System.Drawing.Bitmap _bitmap = null!;
+    private System.Drawing.Bitmap _highlightBitmap = null!;
+    private System.Drawing.Bitmap _compositedBitmap = null!;
+    private nint _hBitmap;
+    private int _baseW;
+    private int _baseH;
 
     private nint _hwnd;
     private double _zoom = 1.0;
+    private System.Drawing.Bitmap? _backBuffer;
 
     private bool _dragging;
-    private bool _hasCapture;
     private POINT _dragStartCursor;
     private RECT _dragStartRect;
     private DateTimeOffset _firstClickTime;
@@ -620,10 +583,69 @@ internal sealed class FloatingImageWin32
     private bool _copyButtonHover;
     private bool _copyButtonPressed;
     private bool _copyRequested;
+    private bool _highlightMode;
+    private bool _highlightButtonHover;
+    private bool _isHighlightDrawing;
+    private bool _mouseInside;
+    private bool _trackingMouseLeave;
+    private POINT _lastHighlightPoint;
 
     private const string CLASS_NAME = "WinAssistantFloatingImage";
+    private const int HIGHLIGHT_BUTTON_SIZE = 36;
+    private const int HIGHLIGHT_BUTTON_MARGIN = 10;
+    private static readonly System.Drawing.Color HIGHLIGHT_COLOR = System.Drawing.Color.FromArgb(180, 255, 255, 0);
+    private int _highlightPenWidth;
 
-    public FloatingImageWin32(System.Drawing.Bitmap bitmap, int screenX, int screenY)
+    /// <summary>
+    /// 在专用 STA 线程上创建并运行悬浮图片窗口。Win32 窗口必须有自己的消息循环，
+    /// 否则依赖 DispatcherQueue 时输入消息可能无法送达 WndProc，导致窗口卡住。
+    /// </summary>
+    public static void Show(System.Drawing.Bitmap bitmap, int screenX, int screenY)
+    {
+        // Calculate the target monitor's work area on the UI thread before spawning
+        // the window thread, so we size the image against the display that owns it.
+        int maxW = bitmap.Width;
+        int maxH = bitmap.Height;
+        try
+        {
+            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Window);
+            var display = DisplayArea.GetFromWindowId(
+                Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd),
+                DisplayAreaFallback.Primary);
+            var area = display.WorkArea;
+            maxW = (int)(area.Width * 0.9);
+            maxH = (int)(area.Height * 0.9);
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("FloatingImageWin32", $"WorkArea calc failed: {ex.Message}");
+        }
+
+        var thread = new Thread(() =>
+        {
+            try
+            {
+                var floating = new FloatingImageWin32();
+                floating.Initialize(bitmap, screenX, screenY, maxW, maxH);
+                floating.RunMessageLoop();
+            }
+            catch (Exception ex)
+            {
+                Logger.Log("FloatingImageWin32", $"Thread failed: {ex}");
+                bitmap.Dispose();
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "FloatingImage"
+        };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    private FloatingImageWin32() { }
+
+    private void Initialize(System.Drawing.Bitmap bitmap, int screenX, int screenY, int maxW, int maxH)
     {
         // GDI+ respects alpha; screen captures may carry alpha=0, which would draw
         // transparently. Convert to 24bppRgb to ensure the image always renders opaque.
@@ -638,10 +660,27 @@ internal sealed class FloatingImageWin32
         _baseW = _bitmap.Width;
         _baseH = _bitmap.Height;
 
-        _hBitmap = _bitmap.GetHbitmap();
+        // Make the highlighter wide enough to cover a line of text in the original screenshot.
+        _highlightPenWidth = Math.Max(35, _baseH / 45);
+
+        _highlightBitmap = new System.Drawing.Bitmap(_baseW, _baseH, PixelFormat.Format32bppPArgb);
+        using (var hg = System.Drawing.Graphics.FromImage(_highlightBitmap))
+        {
+            hg.Clear(System.Drawing.Color.Transparent);
+        }
+
+        // 合成图初始等于原图，后续高亮只更新局部区域。
+        _compositedBitmap = new System.Drawing.Bitmap(_baseW, _baseH, PixelFormat.Format24bppRgb);
+        using (var cg = System.Drawing.Graphics.FromImage(_compositedBitmap))
+        {
+            cg.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
+            cg.DrawImageUnscaled(_bitmap, 0, 0);
+        }
 
         try
         {
+            _hBitmap = _bitmap.GetHbitmap();
+
             var wndClass = new WNDCLASSEX
             {
                 cbSize = Marshal.SizeOf<WNDCLASSEX>(),
@@ -657,7 +696,7 @@ internal sealed class FloatingImageWin32
             if (atom == 0 && Marshal.GetLastWin32Error() != ERROR_CLASS_ALREADY_EXISTS)
                 throw new InvalidOperationException($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}");
 
-            var (w, h) = CalcInitialSize();
+            var (w, h) = CalcInitialSize(maxW, maxH);
             _zoom = w / (double)_baseW;
 
             _hwnd = CreateWindowEx(
@@ -671,7 +710,7 @@ internal sealed class FloatingImageWin32
             if (_hwnd == nint.Zero)
                 throw new InvalidOperationException($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
 
-            _instances[_hwnd] = this;
+            _instances.TryAdd(_hwnd, this);
 
             // Round corners so the window gets the modern DWM shadow back.
             var cornerPref = DWMWCP_ROUND;
@@ -684,24 +723,22 @@ internal sealed class FloatingImageWin32
         catch
         {
             DeleteObject(_hBitmap);
-            _bitmap.Dispose();
+            _compositedBitmap?.Dispose();
+            _highlightBitmap?.Dispose();
+            _bitmap?.Dispose();
             throw;
         }
     }
 
-    private (int w, int h) CalcInitialSize()
+    private void RunMessageLoop()
+    {
+        Win32WindowHelper.RunMessageLoop("FloatingImageWin32");
+    }
+
+    private (int w, int h) CalcInitialSize(int maxW, int maxH)
     {
         try
         {
-            var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(App.Window);
-            var display = DisplayArea.GetFromWindowId(
-                Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd),
-                DisplayAreaFallback.Primary);
-            var area = display.WorkArea;
-
-            int maxW = (int)(area.Width * 0.9);
-            int maxH = (int)(area.Height * 0.9);
-
             double scale = 1.0;
             if (_baseW > maxW || _baseH > maxH)
                 scale = Math.Min((double)maxW / _baseW, (double)maxH / _baseH);
@@ -743,6 +780,24 @@ internal sealed class FloatingImageWin32
                 int cw = cr.right - cr.left;
                 int ch = cr.bottom - cr.top;
 
+                if (HitTestHighlightButton(x, y, cw, ch))
+                {
+                    _highlightMode = !_highlightMode;
+                    _isHighlightDrawing = false;
+                    _firstClickPending = false;
+                    if (_highlightMode)
+                    {
+                        // Capture the mouse so clicks outside the image can be detected.
+                        SetCapture(hwnd);
+                    }
+                    else if (GetCapture() == hwnd)
+                    {
+                        ReleaseCapture();
+                    }
+                    InvalidateRect(hwnd, nint.Zero, false);
+                    return 0;
+                }
+
                 if (HitTestCloseButton(x, y, cw, ch))
                 {
                     _closeButtonPressed = true;
@@ -759,8 +814,29 @@ internal sealed class FloatingImageWin32
                     return 0;
                 }
 
+                if (_highlightMode)
+                {
+                    // Clicking outside the image exits highlight mode instead of drawing.
+                    if (x < 0 || x >= cw || y < 0 || y >= ch)
+                    {
+                        _highlightMode = false;
+                        _isHighlightDrawing = false;
+                        _firstClickPending = false;
+                        if (GetCapture() == hwnd)
+                        {
+                            ReleaseCapture();
+                        }
+                        InvalidateRect(hwnd, nint.Zero, false);
+                        return 0;
+                    }
+
+                    _isHighlightDrawing = true;
+                    _lastHighlightPoint = new POINT { X = x, Y = y };
+                    SetCapture(hwnd);
+                    return 0;
+                }
+
                 _dragging = false;
-                _hasCapture = true;
                 GetCursorPos(out _dragStartCursor);
                 GetWindowRect(hwnd, out _dragStartRect);
                 SetCapture(hwnd);
@@ -774,6 +850,13 @@ internal sealed class FloatingImageWin32
                 GetClientRect(hwnd, out var cr);
                 int cw = cr.right - cr.left;
                 int ch = cr.bottom - cr.top;
+
+                bool highlightHovering = HitTestHighlightButton(mx, my, cw, ch);
+                if (highlightHovering != _highlightButtonHover)
+                {
+                    _highlightButtonHover = highlightHovering;
+                    InvalidateRect(hwnd, nint.Zero, false);
+                }
 
                 bool closeHovering = HitTestCloseButton(mx, my, cw, ch);
                 if (closeHovering != _closeButtonHover)
@@ -799,7 +882,36 @@ internal sealed class FloatingImageWin32
                     InvalidateRect(hwnd, nint.Zero, false);
                 }
 
-                if (_hasCapture)
+                if (!_mouseInside)
+                {
+                    _mouseInside = true;
+                    InvalidateRect(hwnd, nint.Zero, false);
+                }
+
+                // Track when the cursor leaves the window so we can hide the buttons.
+                if (!_trackingMouseLeave)
+                {
+                    _trackingMouseLeave = true;
+                    var tme = new TRACKMOUSEEVENT
+                    {
+                        cbSize = Marshal.SizeOf<TRACKMOUSEEVENT>(),
+                        dwFlags = TME_LEAVE,
+                        hwndTrack = hwnd,
+                        dwHoverTime = 0
+                    };
+                    TrackMouseEvent(ref tme);
+                }
+
+                if (_highlightMode && _isHighlightDrawing)
+                {
+                    var current = new POINT { X = mx, Y = my };
+                    DrawHighlightLine(_lastHighlightPoint, current);
+                    _lastHighlightPoint = current;
+                    return 0;
+                }
+
+                // Dragging is only allowed outside highlight mode.
+                if (GetCapture() == hwnd && !_highlightMode)
                 {
                     GetCursorPos(out var cursor);
                     int dx = cursor.X - _dragStartCursor.X;
@@ -821,14 +933,18 @@ internal sealed class FloatingImageWin32
 
             case WM_LBUTTONUP:
             {
-                _hasCapture = false;
-                ReleaseCapture();
-
                 int ux = GET_X_LPARAM(lParam);
                 int uy = GET_Y_LPARAM(lParam);
                 GetClientRect(hwnd, out var cr);
                 int cw = cr.right - cr.left;
                 int ch = cr.bottom - cr.top;
+
+                if (_highlightMode && _isHighlightDrawing)
+                {
+                    _isHighlightDrawing = false;
+                    // Keep capture while highlight mode remains active.
+                    return 0;
+                }
 
                 if (_closeButtonPressed)
                 {
@@ -856,6 +972,10 @@ internal sealed class FloatingImageWin32
                 if (_dragging)
                 {
                     _dragging = false;
+                    if (GetCapture() == hwnd)
+                    {
+                        ReleaseCapture();
+                    }
                     return 0;
                 }
 
@@ -867,6 +987,20 @@ internal sealed class FloatingImageWin32
                 }
                 _firstClickPending = true;
                 _firstClickTime = now;
+
+                // A plain click outside highlight/drag mode releases capture.
+                if (GetCapture() == hwnd && !_highlightMode)
+                {
+                    ReleaseCapture();
+                }
+                return 0;
+            }
+
+            case WM_MOUSELEAVE:
+            {
+                _trackingMouseLeave = false;
+                _mouseInside = false;
+                InvalidateRect(hwnd, nint.Zero, false);
                 return 0;
             }
 
@@ -880,10 +1014,18 @@ internal sealed class FloatingImageWin32
                     GetClientRect(hwnd, out var cr);
                     int cw = cr.right - cr.left;
                     int ch = cr.bottom - cr.top;
-                    if (HitTestCloseButton(pt.X, pt.Y, cw, ch) ||
+
+                    if (HitTestHighlightButton(pt.X, pt.Y, cw, ch) ||
+                        HitTestCloseButton(pt.X, pt.Y, cw, ch) ||
                         HitTestCopyButton(pt.X, pt.Y, cw, ch))
                     {
-                        SetCursor(LoadCursor(nint.Zero, IDC_HAND));
+                        SetCursor(_handCursor);
+                        return (nint)1;
+                    }
+
+                    if (_highlightMode)
+                    {
+                        SetCursor(_penCursor != nint.Zero ? _penCursor : LoadCursor(nint.Zero, IDC_CROSS));
                         return (nint)1;
                     }
                 }
@@ -901,6 +1043,7 @@ internal sealed class FloatingImageWin32
 
             case WM_DESTROY:
                 Cleanup();
+                PostQuitMessage(0);
                 return 0;
         }
 
@@ -920,21 +1063,32 @@ internal sealed class FloatingImageWin32
         try
         {
             // Double-buffer: draw to a memory bitmap first, then blit to the window.
-            using var backBuffer = new System.Drawing.Bitmap(w, h, PixelFormat.Format24bppRgb);
-            using var g = System.Drawing.Graphics.FromImage(backBuffer);
+            // Reuse the buffer when the window size hasn't changed.
+            if (_backBuffer == null || _backBuffer.Width != w || _backBuffer.Height != h)
+            {
+                _backBuffer?.Dispose();
+                _backBuffer = new System.Drawing.Bitmap(w, h, PixelFormat.Format24bppRgb);
+            }
+            using var g = System.Drawing.Graphics.FromImage(_backBuffer);
             g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
             g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.Half;
-            g.DrawImage(_bitmap, 0, 0, w, h);
+            g.DrawImage(_compositedBitmap, 0, 0, w, h);
 
-            // Draw the semi-transparent close button on top of the image.
-            g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
-            DrawCloseButton(g, w, h);
-            DrawCopyButton(g, w, h);
+            // Draw the semi-transparent buttons on top of everything.
+            // Hide them when the mouse is outside the window, unless highlight mode
+            // is active so the user can still turn it off.
+            if (_mouseInside || _highlightMode)
+            {
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+                DrawHighlightButton(g, w, h);
+                DrawCloseButton(g, w, h);
+                DrawCopyButton(g, w, h);
+            }
 
             using var screenG = System.Drawing.Graphics.FromHdc(hdc);
             screenG.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceCopy;
-            screenG.DrawImageUnscaled(backBuffer, 0, 0);
+            screenG.DrawImageUnscaled(_backBuffer, 0, 0);
         }
         catch (Exception ex)
         {
@@ -1061,6 +1215,289 @@ internal sealed class FloatingImageWin32
         }
     }
 
+    private static System.Drawing.Rectangle GetHighlightButtonRect(int windowW, int windowH)
+    {
+        // Place to the left of the copy button in the bottom-right corner.
+        return new System.Drawing.Rectangle(
+            windowW - HIGHLIGHT_BUTTON_SIZE * 2 - HIGHLIGHT_BUTTON_MARGIN * 2,
+            windowH - HIGHLIGHT_BUTTON_SIZE - HIGHLIGHT_BUTTON_MARGIN,
+            HIGHLIGHT_BUTTON_SIZE, HIGHLIGHT_BUTTON_SIZE);
+    }
+
+    private static bool HitTestHighlightButton(int x, int y, int windowW, int windowH)
+    {
+        return GetHighlightButtonRect(windowW, windowH).Contains(x, y);
+    }
+
+    private void DrawHighlightButton(System.Drawing.Graphics g, int windowW, int windowH)
+    {
+        try
+        {
+            var rect = GetHighlightButtonRect(windowW, windowH);
+            var oldSmoothing = g.SmoothingMode;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+
+            // Match the copy/close button visual style: same alpha levels.
+            int alpha = _highlightMode ? 140 : (_highlightButtonHover ? 105 : 70);
+            using var bgBrush = new System.Drawing.SolidBrush(
+                System.Drawing.Color.FromArgb(alpha, 0, 0, 0));
+            g.FillEllipse(bgBrush, rect);
+
+            // Draw a simple pen/highlighter icon: a diagonal line with a small tip.
+            const int padding = 10;
+            using var shadowPen = new System.Drawing.Pen(
+                System.Drawing.Color.FromArgb(160, 0, 0, 0), 2);
+            g.DrawLine(shadowPen, rect.Left + padding + 1, rect.Bottom - padding - 2,
+                rect.Right - padding + 2, rect.Top + padding - 4);
+            g.DrawLine(shadowPen, rect.Right - padding - 1, rect.Top + padding,
+                rect.Right - padding + 4, rect.Top + padding - 7);
+
+            using var pen = new System.Drawing.Pen(
+                _highlightMode ? HIGHLIGHT_COLOR : System.Drawing.Color.White, 2);
+            g.DrawLine(pen, rect.Left + padding, rect.Bottom - padding - 3,
+                rect.Right - padding + 1, rect.Top + padding - 5);
+            g.DrawLine(pen, rect.Right - padding - 2, rect.Top + padding - 1,
+                rect.Right - padding + 3, rect.Top + padding - 8);
+
+            g.SmoothingMode = oldSmoothing;
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("FloatingImageWin32", $"DrawHighlightButton failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 用 HSV Color blend 把 _highlightBitmap 的指定区域合成到 _compositedBitmap。
+    /// 黑色文字保持黑色，白色/浅色背景被染上黄色，实现真实荧光笔效果。
+    /// </summary>
+    private void CompositeHighlight(int x, int y, int width, int height)
+    {
+        try
+        {
+            int left = Math.Max(0, x);
+            int top = Math.Max(0, y);
+            int right = Math.Min(_baseW, left + width);
+            int bottom = Math.Min(_baseH, top + height);
+            if (left >= right || top >= bottom) return;
+
+            int w = right - left;
+            int h = bottom - top;
+
+            var baseData = _bitmap.LockBits(
+                new System.Drawing.Rectangle(left, top, w, h),
+                ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            var blendData = _highlightBitmap.LockBits(
+                new System.Drawing.Rectangle(left, top, w, h),
+                ImageLockMode.ReadOnly, PixelFormat.Format32bppPArgb);
+            var resultData = _compositedBitmap.LockBits(
+                new System.Drawing.Rectangle(left, top, w, h),
+                ImageLockMode.WriteOnly, PixelFormat.Format24bppRgb);
+
+            try
+            {
+                unsafe
+                {
+                    byte* basePtr = (byte*)baseData.Scan0;
+                    byte* blendPtr = (byte*)blendData.Scan0;
+                    byte* resultPtr = (byte*)resultData.Scan0;
+
+                    int baseStride = baseData.Stride;
+                    int blendStride = blendData.Stride;
+                    int resultStride = resultData.Stride;
+
+                    var highlightHsv = RgbToHsv(HIGHLIGHT_COLOR.R, HIGHLIGHT_COLOR.G, HIGHLIGHT_COLOR.B);
+
+                    for (int py = 0; py < h; py++)
+                    {
+                        byte* bpRow = basePtr + py * baseStride;
+                        byte* lpRow = blendPtr + py * blendStride;
+                        byte* rpRow = resultPtr + py * resultStride;
+
+                        for (int px = 0; px < w; px++)
+                        {
+                            byte* bp = bpRow + px * 3;
+                            byte* lp = lpRow + px * 4;
+                            byte* rp = rpRow + px * 3;
+
+                            byte blendA = lp[3];
+                            if (blendA == 0)
+                            {
+                                rp[0] = bp[0];
+                                rp[1] = bp[1];
+                                rp[2] = bp[2];
+                                continue;
+                            }
+
+                            double alpha = blendA / 255.0;
+
+                            // Color blend in HSV: preserve base brightness, apply highlight hue/saturation.
+                            var baseHsv = RgbToHsv(bp[2], bp[1], bp[0]);
+                            var (r, g, b) = HsvToRgb(highlightHsv.H, highlightHsv.S, baseHsv.V);
+
+                            rp[0] = (byte)(bp[0] + (b - bp[0]) * alpha);
+                            rp[1] = (byte)(bp[1] + (g - bp[1]) * alpha);
+                            rp[2] = (byte)(bp[2] + (r - bp[2]) * alpha);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                _bitmap.UnlockBits(baseData);
+                _highlightBitmap.UnlockBits(blendData);
+                _compositedBitmap.UnlockBits(resultData);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("FloatingImageWin32", $"CompositeHighlight failed: {ex.Message}");
+        }
+    }
+
+    private static (double H, double S, double V) RgbToHsv(byte r, byte g, byte b)
+    {
+        double rd = r / 255.0;
+        double gd = g / 255.0;
+        double bd = b / 255.0;
+        double max = Math.Max(rd, Math.Max(gd, bd));
+        double min = Math.Min(rd, Math.Min(gd, bd));
+        double v = max;
+        double d = max - min;
+        double s = max == 0 ? 0 : d / max;
+
+        if (max == min)
+            return (0, s, v);
+
+        double h;
+        if (max == rd)
+            h = (gd - bd) / d + (gd < bd ? 6 : 0);
+        else if (max == gd)
+            h = (bd - rd) / d + 2;
+        else
+            h = (rd - gd) / d + 4;
+        h /= 6.0;
+
+        return (h, s, v);
+    }
+
+    private static (byte R, byte G, byte B) HsvToRgb(double h, double s, double v)
+    {
+        double r, g, b;
+        int i = (int)(h * 6);
+        double f = h * 6 - i;
+        double p = v * (1 - s);
+        double q = v * (1 - f * s);
+        double t = v * (1 - (1 - f) * s);
+
+        switch (i % 6)
+        {
+            case 0: r = v; g = t; b = p; break;
+            case 1: r = q; g = v; b = p; break;
+            case 2: r = p; g = v; b = t; break;
+            case 3: r = p; g = q; b = v; break;
+            case 4: r = t; g = p; b = v; break;
+            default: r = v; g = p; b = q; break;
+        }
+
+        return ((byte)(r * 255), (byte)(g * 255), (byte)(b * 255));
+    }
+
+    private void DrawHighlightLine(POINT fromWindow, POINT toWindow)
+    {
+        try
+        {
+            GetClientRect(_hwnd, out var clientRect);
+            int cw = clientRect.right - clientRect.left;
+            int ch = clientRect.bottom - clientRect.top;
+            if (cw == 0 || ch == 0) return;
+
+            double scaleX = (double)_baseW / cw;
+            double scaleY = (double)_baseH / ch;
+
+            int x1 = (int)(fromWindow.X * scaleX);
+            int y1 = (int)(fromWindow.Y * scaleY);
+            int x2 = (int)(toWindow.X * scaleX);
+            int y2 = (int)(toWindow.Y * scaleY);
+
+            x1 = Math.Clamp(x1, 0, _baseW - 1);
+            y1 = Math.Clamp(y1, 0, _baseH - 1);
+            x2 = Math.Clamp(x2, 0, _baseW - 1);
+            y2 = Math.Clamp(y2, 0, _baseH - 1);
+
+            // Region that needs to be recomposited: the segment bounding box expanded by
+            // the pen width to cover round caps and anti-aliasing.
+            int dirtyX = Math.Min(x1, x2) - _highlightPenWidth;
+            int dirtyY = Math.Min(y1, y2) - _highlightPenWidth;
+            int dirtyW = Math.Abs(x2 - x1) + _highlightPenWidth * 2;
+            int dirtyH = Math.Abs(y2 - y1) + _highlightPenWidth * 2;
+
+            using (var g = System.Drawing.Graphics.FromImage(_highlightBitmap))
+            {
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                g.CompositingMode = System.Drawing.Drawing2D.CompositingMode.SourceOver;
+                using var pen = new System.Drawing.Pen(HIGHLIGHT_COLOR, _highlightPenWidth);
+                pen.StartCap = System.Drawing.Drawing2D.LineCap.Round;
+                pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+
+                // Interpolate between the two points so fast mouse movements don't leave
+                // dotted gaps; draw a sequence of short overlapping segments instead.
+                double dx = x2 - x1;
+                double dy = y2 - y1;
+                double dist = Math.Sqrt(dx * dx + dy * dy);
+                double step = _highlightPenWidth / 4.0;
+                int segments = Math.Max(1, (int)(dist / step));
+
+                for (int i = 0; i < segments; i++)
+                {
+                    double t1 = i / (double)segments;
+                    double t2 = (i + 1) / (double)segments;
+                    int sx1 = (int)(x1 + dx * t1);
+                    int sy1 = (int)(y1 + dy * t1);
+                    int sx2 = (int)(x1 + dx * t2);
+                    int sy2 = (int)(y1 + dy * t2);
+                    g.DrawLine(pen, sx1, sy1, sx2, sy2);
+                }
+            }
+
+            CompositeHighlight(dirtyX, dirtyY, dirtyW, dirtyH);
+
+            // Invalidate only the window region that corresponds to the dirty bitmap
+            // rectangle, so large screenshots don't redraw the whole image on every segment.
+            if (cw > 0 && ch > 0)
+            {
+                double invScaleX = (double)cw / _baseW;
+                double invScaleY = (double)ch / _baseH;
+                int winDirtyX = (int)(dirtyX * invScaleX);
+                int winDirtyY = (int)(dirtyY * invScaleY);
+                int winDirtyW = Math.Max(1, (int)(dirtyW * invScaleX));
+                int winDirtyH = Math.Max(1, (int)(dirtyH * invScaleY));
+
+                var dirtyRect = new RECT
+                {
+                    left = winDirtyX,
+                    top = winDirtyY,
+                    right = winDirtyX + winDirtyW,
+                    bottom = winDirtyY + winDirtyH
+                };
+                nint pDirtyRect = Marshal.AllocHGlobal(Marshal.SizeOf<RECT>());
+                try
+                {
+                    Marshal.StructureToPtr(dirtyRect, pDirtyRect, false);
+                    InvalidateRect(_hwnd, pDirtyRect, false);
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(pDirtyRect);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.Log("FloatingImageWin32", $"DrawHighlightLine failed: {ex.Message}");
+        }
+    }
+
     private static void DrawCopyIcon(System.Drawing.Graphics g, System.Drawing.Pen pen,
         int x, int y, int size, int offset)
     {
@@ -1089,25 +1526,37 @@ internal sealed class FloatingImageWin32
     {
         try
         {
-            _instances.Remove(_hwnd);
+            _instances.TryRemove(_hwnd, out _);
             DeleteObject(_hBitmap);
 
             // Only copy to clipboard when the user explicitly clicked the copy button.
             // Double-click / X-button / Esc close should leave the clipboard untouched.
             if (_copyRequested)
             {
-                // Clone before disposing so the async clipboard operation has a valid bitmap.
-                var clipboardBitmap = _bitmap.Clone(
-                    new System.Drawing.Rectangle(0, 0, _bitmap.Width, _bitmap.Height),
-                    _bitmap.PixelFormat);
-                _bitmap.Dispose();
+                // _compositedBitmap already contains the Color-blended highlight.
+                System.Drawing.Bitmap? clipboardBitmap = null;
+                try
+                {
+                    clipboardBitmap = _compositedBitmap.Clone(
+                        new System.Drawing.Rectangle(0, 0, _compositedBitmap.Width, _compositedBitmap.Height),
+                        _compositedBitmap.PixelFormat);
+                }
+                finally
+                {
+                    _compositedBitmap.Dispose();
+                    _bitmap.Dispose();
+                    _highlightBitmap.Dispose();
+                }
 
                 App.DispatcherQueue.TryEnqueue(async () =>
                 {
                     try
                     {
-                        await CopyBitmapToClipboardAsync(clipboardBitmap);
-                        HotKeyToast.Show("截图已复制到剪贴板");
+                        if (clipboardBitmap != null)
+                        {
+                            await CopyBitmapToClipboardAsync(clipboardBitmap);
+                            HotKeyToast.Show("截图已复制到剪贴板");
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -1115,14 +1564,18 @@ internal sealed class FloatingImageWin32
                     }
                     finally
                     {
-                        clipboardBitmap.Dispose();
+                        clipboardBitmap?.Dispose();
                     }
                 });
             }
             else
             {
+                _compositedBitmap.Dispose();
                 _bitmap.Dispose();
+                _highlightBitmap.Dispose();
             }
+
+            _backBuffer?.Dispose();
         }
         catch (Exception ex)
         {
@@ -1163,172 +1616,4 @@ internal sealed class FloatingImageWin32
             stream.Dispose();
         }
     }
-
-    // ── Win32 ──
-
-    private const uint WS_POPUP = 0x80000000;
-    private const uint WS_EX_TOOLWINDOW = 0x00000080;
-    private const uint WS_EX_TOPMOST = 0x00000008;
-    private const int SW_SHOW = 5;
-    private const uint WM_PAINT = 0x000F;
-    private const uint WM_ERASEBKGND = 0x0014;
-    private const uint WM_DESTROY = 0x0002;
-    private const uint WM_LBUTTONDOWN = 0x0201;
-    private const uint WM_LBUTTONUP = 0x0202;
-    private const uint WM_MOUSEMOVE = 0x0200;
-    private const uint WM_MOUSEWHEEL = 0x020A;
-    private const uint WM_KEYDOWN = 0x0100;
-    private const uint WM_SETCURSOR = 0x0020;
-    private const nint VK_ESCAPE = 0x1B;
-    private const nint IDC_HAND = 32649;
-    private const nint IDC_ARROW = 32512;
-    private const int HTCLIENT = 1;
-    private const uint SRCCOPY = 0x00CC0020;
-    private const int ERROR_CLASS_ALREADY_EXISTS = 1410;
-    private const uint DWMWA_WINDOW_CORNER_PREFERENCE = 33;
-    private const int DWMWCP_ROUND = 2;
-    private const uint CS_DROPSHADOW = 0x00020000;
-    private static readonly nint HWND_TOPMOST = (nint)(-1);
-    private const uint SWP_NOSIZE = 0x0001;
-    private const uint SWP_NOZORDER = 0x0004;
-    private const uint SWP_NOACTIVATE = 0x0010;
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct WNDCLASSEX
-    {
-        public int cbSize;
-        public uint style;
-        public WndProcDelegate lpfnWndProc;
-        public int cbClsExtra;
-        public int cbWndExtra;
-        public nint hInstance;
-        public nint hIcon;
-        public nint hCursor;
-        public nint hbrBackground;
-        [MarshalAs(UnmanagedType.LPWStr)]
-        public string lpszMenuName;
-        [MarshalAs(UnmanagedType.LPWStr)]
-        public string lpszClassName;
-        public nint hIconSm;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct PAINTSTRUCT
-    {
-        public nint hdc;
-        public bool fErase;
-        public RECT rcPaint;
-        public bool fRestore;
-        public bool fIncUpdate;
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 32)]
-        public byte[] rgbReserved;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct RECT
-    {
-        public int left;
-        public int top;
-        public int right;
-        public int bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct POINT
-    {
-        public int X;
-        public int Y;
-    }
-
-    private delegate nint WndProcDelegate(nint hwnd, uint msg, nint wParam, nint lParam);
-
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern ushort RegisterClassEx(ref WNDCLASSEX lpwcx);
-
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    private static extern nint CreateWindowEx(uint dwExStyle, string lpClassName,
-        string lpWindowName, uint dwStyle, int x, int y, int nWidth, int nHeight,
-        nint hWndParent, nint hMenu, nint hInstance, nint lpParam);
-
-    [DllImport("user32.dll")]
-    private static extern bool ShowWindow(nint hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    private static extern bool UpdateWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool DestroyWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern nint DefWindowProc(nint hWnd, uint uMsg, nint wParam, nint lParam);
-
-    [DllImport("user32.dll")]
-    private static extern nint BeginPaint(nint hWnd, ref PAINTSTRUCT lpPaint);
-
-    [DllImport("user32.dll")]
-    private static extern bool EndPaint(nint hWnd, ref PAINTSTRUCT lpPaint);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetClientRect(nint hWnd, out RECT lpRect);
-
-    [DllImport("user32.dll")]
-    private static extern bool InvalidateRect(nint hWnd, nint lpRect, bool bErase);
-
-    [DllImport("user32.dll")]
-    private static extern nint SetCapture(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll")]
-    private static extern nint LoadCursor(nint hInstance, nint lpCursorName);
-
-    [DllImport("user32.dll")]
-    private static extern nint SetCursor(nint hCursor);
-
-    [DllImport("user32.dll")]
-    private static extern bool ScreenToClient(nint hWnd, ref POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetCursorPos(out POINT lpPoint);
-
-    [DllImport("user32.dll")]
-    private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
-
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter,
-        int x, int y, int cx, int cy, uint uFlags);
-
-    [DllImport("dwmapi.dll")]
-    private static extern int DwmSetWindowAttribute(nint hwnd, uint attr, ref int attrValue, int attrSize);
-
-    [DllImport("kernel32.dll")]
-    private static extern nint GetModuleHandle(string? lpModuleName);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint CreateCompatibleDC(nint hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteDC(nint hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern nint SelectObject(nint hdc, nint hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(nint hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool StretchBlt(nint hdcDest, int nXOriginDest, int nYOriginDest,
-        int nWidthDest, int nHeightDest, nint hdcSrc, int nXOriginSrc, int nYOriginSrc,
-        int nWidthSrc, int nHeightSrc, uint dwRop);
-
-    [DllImport("gdi32.dll")]
-    private static extern int SetStretchBltMode(nint hdc, int iStretchMode);
-
-    private static int GET_X_LPARAM(nint lParam) => (int)(short)(lParam & 0xFFFF);
-    private static int GET_Y_LPARAM(nint lParam) => (int)(short)((lParam >> 16) & 0xFFFF);
-    private static int GET_WHEEL_DELTA_WPARAM(nint wParam) => (int)(short)((wParam >> 16) & 0xFFFF);
 }
