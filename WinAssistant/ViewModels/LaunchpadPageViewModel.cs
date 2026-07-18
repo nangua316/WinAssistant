@@ -929,7 +929,25 @@ public class LaunchpadItemViewModel : ObservableObject, IDisposable
         if (model.ToolId != null) return false;
         var path = model.AppPath;
         if (string.IsNullOrEmpty(path)) return false;
-        return !File.Exists(path) && !Directory.Exists(path);
+        if (File.Exists(path) || Directory.Exists(path)) return false;
+        // Store apps live in a versioned WindowsApps folder that Store updates replace,
+        // so a stale AppPath doesn't mean uninstalled — check the package via AUMID.
+        if (!string.IsNullOrEmpty(model.Aumid) && IsPackageInstalled(model.Aumid)) return false;
+        return true;
+    }
+
+    private static bool IsPackageInstalled(string aumid)
+    {
+        try
+        {
+            // AUMID format: "PackageFamilyName!AppId"
+            var familyName = aumid.Split('!')[0];
+            if (string.IsNullOrEmpty(familyName)) return false;
+            var pm = new Windows.Management.Deployment.PackageManager();
+            return pm.FindPackages().Any(p =>
+                string.Equals(p.Id.FamilyName, familyName, StringComparison.OrdinalIgnoreCase));
+        }
+        catch { return false; }
     }
 
     private bool _isBeingDragged;
