@@ -105,6 +105,9 @@ public static class AppScanner
 
         // 8. Populate usage counts from Windows FeatureUsage tracking
         var usageCounts = GetAppUsageCounts();
+
+        // 9. Frequently-used exes with no shortcut/registry presence (e.g. 必剪)
+        ScanFrequentApps(apps, sources, usageCounts);
 #if DEBUG
         int matched = 0, total = 0;
 #endif
@@ -216,7 +219,10 @@ public static class AppScanner
 
                 var ext = Path.GetExtension(target).ToLowerInvariant();
                 if (ext != ".exe") continue;
-                if (AppFilter.IsUninstaller(target)) continue;
+                // Check the shortcut's own filename too: some apps (向日葵/花生壳/UClient)
+                // use the main exe itself as the uninstaller ("AweSun.exe --mod=uninstall"),
+                // so the target passes IsUninstaller while the lnk name ("卸载向日葵…") doesn't.
+                if (AppFilter.IsUninstaller(target) || AppFilter.IsUninstaller(lnkFile)) continue;
 
                 var name = Path.GetFileNameWithoutExtension(lnkFile);
                 if (AddOrUpdateApp(apps, name, target, iconPath, arguments: args, shortcutPath: lnkFile))
@@ -601,49 +607,8 @@ public static class AppScanner
                         if (!string.IsNullOrEmpty(uninstallString) && uninstallString.Contains("--uninstall-app-id", StringComparison.OrdinalIgnoreCase))
                             continue;
 
-                        // Resolve the exe path: icon often contains the exe path
-                        var exePath = ResolveExeFromRegistry(displayIcon, installLocation, displayName);
-
-                        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
-                        {
-                            // Try to find exe in install location
-                            if (!string.IsNullOrEmpty(installLocation) && Directory.Exists(installLocation))
-                            {
-                                var foundExe = Directory.EnumerateFiles(installLocation, "*.exe", SearchOption.TopDirectoryOnly)
-                                    .FirstOrDefault(e => Path.GetFileNameWithoutExtension(e).IndexOf(displayName, StringComparison.OrdinalIgnoreCase) >= 0)
-                                    ?? Directory.EnumerateFiles(installLocation, "*.exe", SearchOption.TopDirectoryOnly)
-                                        .FirstOrDefault(e => !AppFilter.IsUninstaller(e));
-                                if (foundExe != null) exePath = foundExe;
-                            }
-                        }
-
-                        // Fallback: extract directory from UninstallString and search for app exe
-                        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
-                        {
-                            if (!string.IsNullOrEmpty(uninstallString))
-                            {
-                                var uninstExe = ParseUninstallExePath(uninstallString);
-                                var uninstDir = !string.IsNullOrEmpty(uninstExe) ? Path.GetDirectoryName(uninstExe) : null;
-                                if (!string.IsNullOrEmpty(uninstDir) && Directory.Exists(uninstDir))
-                                {
-                                    var foundExe = Directory.EnumerateFiles(uninstDir, "*.exe", SearchOption.TopDirectoryOnly)
-                                        .FirstOrDefault(e => !AppFilter.IsUninstaller(e));
-                                    if (foundExe != null) exePath = foundExe;
-                                }
-                            }
-                        }
-
-                        // Safety net: if resolved exe is an uninstaller, search broader for the real app exe
-                        if (!string.IsNullOrEmpty(exePath) && AppFilter.IsUninstaller(exePath))
-                        {
-                            var searchDir = Path.GetDirectoryName(exePath);
-                            if (!string.IsNullOrEmpty(searchDir) && Directory.Exists(searchDir))
-                            {
-                                var foundExe = Directory.EnumerateFiles(searchDir, "*.exe", SearchOption.TopDirectoryOnly)
-                                    .FirstOrDefault(e => !AppFilter.IsUninstaller(e) && !e.Equals(exePath, StringComparison.OrdinalIgnoreCase));
-                                if (foundExe != null) exePath = foundExe;
-                            }
-                        }
+                        // Resolve the launchable app exe (skips installers/uninstallers)
+                        var exePath = ResolveRegistryAppExe(displayIcon, installLocation, uninstallString, displayName, subKeyName);
 
                         if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
                         {
@@ -700,48 +665,7 @@ public static class AppScanner
                         if (!string.IsNullOrEmpty(uninstallString) && uninstallString.Contains("--uninstall-app-id", StringComparison.OrdinalIgnoreCase))
                             continue;
 
-                        var exePath = ResolveExeFromRegistry(displayIcon, installLocation, displayName);
-
-                        // Try to find exe in install location (same as HKLM branch)
-                        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
-                        {
-                            if (!string.IsNullOrEmpty(installLocation) && Directory.Exists(installLocation))
-                            {
-                                var foundExe = Directory.EnumerateFiles(installLocation, "*.exe", SearchOption.TopDirectoryOnly)
-                                    .FirstOrDefault(e => Path.GetFileNameWithoutExtension(e).IndexOf(displayName, StringComparison.OrdinalIgnoreCase) >= 0)
-                                    ?? Directory.EnumerateFiles(installLocation, "*.exe", SearchOption.TopDirectoryOnly)
-                                        .FirstOrDefault(e => !AppFilter.IsUninstaller(e));
-                                if (foundExe != null) exePath = foundExe;
-                            }
-                        }
-
-                        // Fallback: extract directory from UninstallString and search for app exe
-                        if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
-                        {
-                            if (!string.IsNullOrEmpty(uninstallString))
-                            {
-                                var uninstExe = ParseUninstallExePath(uninstallString);
-                                var uninstDir = !string.IsNullOrEmpty(uninstExe) ? Path.GetDirectoryName(uninstExe) : null;
-                                if (!string.IsNullOrEmpty(uninstDir) && Directory.Exists(uninstDir))
-                                {
-                                    var foundExe = Directory.EnumerateFiles(uninstDir, "*.exe", SearchOption.TopDirectoryOnly)
-                                        .FirstOrDefault(e => !AppFilter.IsUninstaller(e));
-                                    if (foundExe != null) exePath = foundExe;
-                                }
-                            }
-                        }
-
-                        // Safety net: if resolved exe is an uninstaller, search broader for the real app exe
-                        if (!string.IsNullOrEmpty(exePath) && AppFilter.IsUninstaller(exePath))
-                        {
-                            var searchDir = Path.GetDirectoryName(exePath);
-                            if (!string.IsNullOrEmpty(searchDir) && Directory.Exists(searchDir))
-                            {
-                                var foundExe = Directory.EnumerateFiles(searchDir, "*.exe", SearchOption.TopDirectoryOnly)
-                                    .FirstOrDefault(e => !AppFilter.IsUninstaller(e) && !e.Equals(exePath, StringComparison.OrdinalIgnoreCase));
-                                if (foundExe != null) exePath = foundExe;
-                            }
-                        }
+                        var exePath = ResolveRegistryAppExe(displayIcon, installLocation, uninstallString, displayName, subKeyName);
 
                         if (!string.IsNullOrEmpty(exePath) && File.Exists(exePath))
                         {
@@ -961,6 +885,181 @@ public static class AppScanner
         // First token contains '\' so spaces are part of the path itself
         // Return the full string as-is; caller will use Path.GetDirectoryName on it
         return trimmed;
+    }
+
+    /// <summary>
+    /// Resolve the launchable app exe for a registry Uninstall entry.
+    /// Returns "" when only an installer/uninstaller could be found — the entry should be skipped.
+    /// </summary>
+    private static string ResolveRegistryAppExe(string displayIcon, string installLocation, string uninstallString, string displayName, string subKeyName)
+    {
+        installLocation = installLocation.Trim().Trim('"');
+        var uninstExe = ParseUninstallExePath(uninstallString) ?? "";
+
+        // The exe DisplayIcon points to ("" if not an exe). An entry whose declared icon IS
+        // the exe keeps it even if it doubles as the uninstaller (向日葵 AweSun.exe).
+        var iconExe = "";
+        if (!string.IsNullOrEmpty(displayIcon))
+        {
+            var p = displayIcon.Trim().Trim('"');
+            var commaIdx = p.IndexOf(',');
+            if (commaIdx > 0) p = p[..commaIdx].Trim();
+            if (p.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(p)) iconExe = p;
+        }
+
+        var exePath = ResolveExeFromRegistry(displayIcon, installLocation, displayName);
+
+        // Try to find exe in install location
+        if ((string.IsNullOrEmpty(exePath) || !File.Exists(exePath))
+            && !string.IsNullOrEmpty(installLocation) && Directory.Exists(installLocation))
+        {
+            var foundExe = Directory.EnumerateFiles(installLocation, "*.exe", SearchOption.TopDirectoryOnly)
+                .FirstOrDefault(e => Path.GetFileNameWithoutExtension(e).IndexOf(displayName, StringComparison.OrdinalIgnoreCase) >= 0)
+                ?? PickBestExeInDir(installLocation, displayName, subKeyName);
+            if (foundExe != null) exePath = foundExe;
+        }
+
+        // Fallback: search the uninstaller's directory for the app exe
+        if ((string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) && !string.IsNullOrEmpty(uninstExe))
+        {
+            var uninstDir = Path.GetDirectoryName(uninstExe);
+            if (!string.IsNullOrEmpty(uninstDir) && Directory.Exists(uninstDir))
+            {
+                var foundExe = PickBestExeInDir(uninstDir, displayName, subKeyName);
+                if (foundExe != null) exePath = foundExe;
+            }
+        }
+
+        // Safety net: resolved exe is an uninstaller — look for a better exe alongside
+        if (!string.IsNullOrEmpty(exePath) && AppFilter.IsUninstaller(exePath))
+            exePath = PickBestExeInDir(Path.GetDirectoryName(exePath) ?? "", displayName, subKeyName, exclude: exePath) ?? "";
+
+        // Resolved exe is an installer/setup bundle, not the app (OneDriveSetup.exe,
+        // VC_redist, Package Cache bundles, Office ClickToRun) — find the real app exe nearby
+        if (!string.IsNullOrEmpty(exePath) && AppFilter.IsInstallerPackage(exePath))
+        {
+            string? replacement = null;
+            if (!string.IsNullOrEmpty(installLocation) && Directory.Exists(installLocation))
+                replacement = PickBestExeInDir(installLocation, displayName, subKeyName);
+            // Versioned-folder installers (OneDrive): the real exe lives in the parent dir
+            if (replacement == null)
+            {
+                var parentDir = Path.GetDirectoryName(Path.GetDirectoryName(exePath) ?? "");
+                if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                    replacement = PickBestExeInDir(parentDir, displayName, subKeyName);
+            }
+            if (replacement == null)
+                replacement = PickBestExeInDir(Path.GetDirectoryName(exePath) ?? "", displayName, subKeyName, exclude: exePath);
+            exePath = replacement ?? "";
+        }
+
+        // Only the uninstaller itself was found (e.g. Rustup's "rustup.exe self uninstall")
+        // and the icon didn't vouch for it — nothing launchable here, drop the entry
+        if (!string.IsNullOrEmpty(exePath)
+            && !string.IsNullOrEmpty(uninstExe)
+            && exePath.Equals(uninstExe, StringComparison.OrdinalIgnoreCase)
+            && !exePath.Equals(iconExe, StringComparison.OrdinalIgnoreCase)
+            && uninstallString.Contains("uninstall", StringComparison.OrdinalIgnoreCase))
+        {
+            exePath = "";
+        }
+
+        return exePath;
+    }
+
+    /// <summary>
+    /// Pick the most plausible app exe in a directory: never an uninstaller/installer/daemon,
+    /// never from Windows system dirs, preferring an exe whose filename relates to the
+    /// display or key name (e.g. rustup.exe for the "Rustup" key).
+    /// </summary>
+    private static string? PickBestExeInDir(string dir, string displayName, string subKeyName, string? exclude = null)
+    {
+        if (string.IsNullOrEmpty(dir) || !Directory.Exists(dir)) return null;
+        // Never pick a random exe from Windows system dirs (e.g. InstallShield stubs in SysWOW64)
+        var windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        if (dir.StartsWith(windowsDir, StringComparison.OrdinalIgnoreCase)) return null;
+
+        var candidates = Directory.EnumerateFiles(dir, "*.exe", SearchOption.TopDirectoryOnly)
+            .Where(e => !AppFilter.IsUninstaller(e) && !AppFilter.IsInstallerPackage(e) && !AppFilter.IsDaemonProcess(e))
+            .Where(e => exclude == null || !e.Equals(exclude, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => e, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (candidates.Count == 0) return null;
+
+        var normDisplay = NormalizeExeName(displayName);
+        var normKey = NormalizeExeName(subKeyName);
+        return candidates.FirstOrDefault(e =>
+            {
+                var fn = NormalizeExeName(Path.GetFileNameWithoutExtension(e));
+                return (fn.Length >= 3 && normDisplay.Contains(fn, StringComparison.Ordinal))
+                    || (normKey.Length >= 3 && fn.Contains(normKey, StringComparison.Ordinal));
+            })
+            ?? candidates[0];
+    }
+
+    private static string NormalizeExeName(string name)
+        => name.ToLowerInvariant().Replace(" ", "").Replace("-", "").Replace("_", "").Replace(".", "");
+
+    /// <summary>
+    /// Add frequently-used exes that have no shortcut or registry presence (e.g. 必剪 BCUT),
+    /// discovered via Windows FeatureUsage tracking. Only exes launched several times are
+    /// considered — one-off launches are usually installers.
+    /// </summary>
+    private static void ScanFrequentApps(Dictionary<string, InstalledAppInfo> apps, Dictionary<string, string> sources, Dictionary<string, int> usageCounts)
+    {
+        foreach (var (path, count) in usageCounts)
+        {
+            if (count < 3) continue; // ran only once or twice → likely an installer, skip
+            if (!path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) continue;
+            if (AppFilter.IsUninstaller(path) || AppFilter.IsInstallerPackage(path)
+                || AppFilter.IsDaemonProcess(path) || AppFilter.IsWindowsSystemBinary(path))
+                continue;
+
+            // Dev build outputs and plugin/runtime internals are not standalone apps
+            var lowerPath = path.ToLowerInvariant();
+            if (lowerPath.Contains(@"\node_modules\") || lowerPath.Contains(@"\bin\debug\")
+                || lowerPath.Contains(@"\target\debug\") || lowerPath.Contains(@"\target\release\")
+                || lowerPath.Contains(@"\plugins\") || lowerPath.Contains(@"\app.asar.unpacked\")
+                || lowerPath.Contains(@"\extracted\"))
+                continue;
+
+            // Updaters (foxmailUpdate.exe etc.)
+            if (Path.GetFileNameWithoutExtension(path).Contains("update", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // Same app already listed from an ancestor dir (UU远程 GameViewer.exe vs bin\GameViewer.exe)
+            if (apps.Values.Any(a =>
+            {
+                var dir = Path.GetDirectoryName(a.AppPath);
+                return !string.IsNullOrEmpty(dir)
+                    && Path.GetFileName(a.AppPath).Equals(Path.GetFileName(path), StringComparison.OrdinalIgnoreCase)
+                    && path.StartsWith(dir + "\\", StringComparison.OrdinalIgnoreCase);
+            }))
+                continue;
+            if (apps.Values.Any(a => a.AppPath.Equals(path, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            var name = "";
+            if (AppFilter.KnownAppNames.TryGetValue(Path.GetFileNameWithoutExtension(path), out var knownName))
+                name = knownName;
+            if (string.IsNullOrEmpty(name))
+            {
+                try
+                {
+                    var fvi = FileVersionInfo.GetVersionInfo(path);
+                    if (!string.IsNullOrEmpty(fvi.FileDescription)) name = fvi.FileDescription;
+                    else if (!string.IsNullOrEmpty(fvi.ProductName)) name = fvi.ProductName;
+                }
+                catch { }
+            }
+            if (string.IsNullOrEmpty(name))
+                name = Path.GetFileNameWithoutExtension(path);
+            if (name.Contains("安装程序") || name.Contains("更新程序")) continue;
+            if (apps.ContainsKey(name)) continue;
+
+            if (AddOrUpdateApp(apps, name, path, path))
+                sources[name] = "FrequentApp";
+        }
     }
 
     private static readonly Dictionary<string, string> KnownFolderIds = new(StringComparer.OrdinalIgnoreCase)

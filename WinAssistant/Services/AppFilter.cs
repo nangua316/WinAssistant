@@ -15,6 +15,13 @@ public static class AppFilter
         "“添加文件夹建议”对话框",
     };
 
+    // Known display-name overrides by exe filename, for apps whose exe metadata lacks
+    // a proper (Chinese) name — e.g. 必剪's exe only has ProductName "BCUT".
+    public static readonly Dictionary<string, string> KnownAppNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "BCUT", "必剪" },
+    };
+
     // PackagedApp name patterns that indicate a system dialog/component (not a real app)
     public static readonly string[] SystemAppSuffixes =
     {
@@ -111,6 +118,7 @@ public static class AppFilter
         var name = fileName.ToLowerInvariant();
         if (name.Contains("unins") || name == "uninstall" ||
             name == "installpre" ||
+            name.StartsWith("isuu") || // InstallShield uninstall stub (ISUU31011.exe)
             path.Contains("\\Temp\\", StringComparison.OrdinalIgnoreCase))
             return true;
 
@@ -118,6 +126,21 @@ public static class AppFilter
         if (fileName.Contains("卸载"))
             return true;
 
+        return false;
+    }
+
+    /// <summary>
+    /// Check if a path is an installer/setup bundle rather than the installed app itself
+    /// (WiX bundles in Package Cache, *setup*.exe, vc_redist, Office ClickToRun engine...).
+    /// </summary>
+    public static bool IsInstallerPackage(string path)
+    {
+        if (path.Contains(@"\Package Cache\", StringComparison.OrdinalIgnoreCase)) return true;
+        if (path.Contains(@"\Microsoft Shared\ClickToRun\", StringComparison.OrdinalIgnoreCase)) return true;
+
+        var name = Path.GetFileNameWithoutExtension(path).ToLowerInvariant();
+        if (name.Contains("setup") || name.Contains("redist")) return true;
+        if (name is "feedback" or "installcleanup" or "vswhere") return true;
         return false;
     }
 
