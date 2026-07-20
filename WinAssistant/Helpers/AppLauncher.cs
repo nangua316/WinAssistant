@@ -38,6 +38,12 @@ public static class AppLauncher
 
                 if (!string.IsNullOrEmpty(appDir))
                 {
+                    // Exes of other known apps — excluded from directory-prefix
+                    // matching so an app installed in a shared root (e.g. 花生壳 at
+                    // D:\APP\HskDDNS.exe, next to 微信/豆包/WPS…) never activates
+                    // a different app's window.
+                    var (otherAppPaths, exactOnly) = GetOtherKnownAppPaths(appPath);
+
                     // Step 0: if this app's process already owns the foreground window,
                     // find the best (highest-scored) window from this app and
                     // activate/minimise it.  Using the foreground window directly
@@ -45,16 +51,16 @@ public static class AppLauncher
                     // "写邮件" popup) which minimises to the desktop corner
                     // instead of the taskbar.
                     var fg = GetForegroundWindow();
-                    if (fg != nint.Zero && IsWindowOwnedByDir(fg, appDir))
+                    if (fg != nint.Zero && IsWindowOwnedByApp(fg, appPath, appDir, otherAppPaths, exactOnly))
                     {
-                        var best = FindBestWindowByDir(appDir, null);
+                        var best = FindBestWindowByDir(appPath, appDir, otherAppPaths, exactOnly, null);
                         if (best != nint.Zero)
                             return ActivateOrMinimizeWindow(best);
                         return ActivateOrMinimizeWindow(fg);
                     }
 
                     // Step 1: find a visible window from this app's process
-                    hWnd = FindWindowFromDir(appDir);
+                    hWnd = FindWindowFromDir(appPath, appDir, otherAppPaths, exactOnly);
 
                     if (hWnd != nint.Zero)
                     {
@@ -71,7 +77,7 @@ public static class AppLauncher
                     }
 
                     // Step 2: try hidden windows (tray apps)
-                    var hidden = FindHiddenWindowFromDir(appDir);
+                    var hidden = FindHiddenWindowFromDir(appPath, appDir, otherAppPaths, exactOnly);
                     if (hidden != nint.Zero)
                     {
                         // Only try multi-strategy restore for packaged/UWP apps
@@ -321,17 +327,71 @@ public static class AppLauncher
         return "";
     }
 
-    private static nint FindWindowFromDir(string appDir)
+    private static nint FindWindowFromDir(string appPath, string appDir, HashSet<string> otherAppPaths, bool exactOnly)
     {
-        return FindBestWindowByDir(appDir, true);
+        return FindBestWindowByDir(appPath, appDir, otherAppPaths, exactOnly, true);
     }
 
-    private static nint FindHiddenWindowFromDir(string appDir)
+    private static nint FindHiddenWindowFromDir(string appPath, string appDir, HashSet<string> otherAppPaths, bool exactOnly)
     {
-        return FindBestWindowByDir(appDir, false);
+        return FindBestWindowByDir(appPath, appDir, otherAppPaths, exactOnly, false);
     }
 
-    private static bool IsWindowOwnedByDir(nint hWnd, string appDir)
+    /// <summary>
+    /// Exes of every other known app NOT in this app's own directory, plus whether
+    /// this app lives in a shared install root (other apps installed underneath its
+    /// directory, e.g. 花生壳 at D:\APP\HskDDNS.exe with 微信/豆包/WPS in subdirs).
+    /// In a shared root, directory-prefix matching would hit unrelated apps'
+    /// processes (helpers, services), so callers must match the exact exe only.
+    /// Same-dir entries are usually the same app (launcher/main-exe pairs), so
+    /// they stay eligible for directory-prefix matching.
+    /// </summary>
+    private static (HashSet<string> otherAppPaths, bool exactOnly) GetOtherKnownAppPaths(string appPath)
+    {
+        var others = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        bool sharedRoot = false;
+        try
+        {
+            var appDir = Path.GetDirectoryName(appPath)?.TrimEnd('\\');
+            foreach (var app in AppScanner.ScanInstalledApps())
+            {
+                if (string.IsNullOrEmpty(app.AppPath)) continue;
+                if (app.AppPath.Equals(appPath, StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(Path.GetDirectoryName(app.AppPath), appDir, StringComparison.OrdinalIgnoreCase)) continue;
+                others.Add(app.AppPath);
+                if (appDir != null && app.AppPath.StartsWith(appDir + "\\", StringComparison.OrdinalIgnoreCase))
+                    sharedRoot = true;
+            }
+        }
+        catch { }
+        return (others, sharedRoot);
+    }
+
+    /// <summary>
+    /// Decide whether a process path belongs to the app being launched.
+    /// An exact exe match always qualifies. A directory-prefix match qualifies
+    /// unless the path is another known app's exe — needed when the app lives in
+    /// a shared install root (e.g. 花生壳 at D:\APP\HskDDNS.exe, where D:\APP
+    /// also holds 微信/豆包/WPS/…). exactOnly disables prefix matching entirely
+    /// for such shared roots.
+    /// </summary>
+    private static bool IsAppProcessPath(string processPath, string appPath, string appDir, HashSet<string> otherAppPaths, bool exactOnly)
+    {
+        if (processPath.Equals(appPath, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (exactOnly)
+            return false;
+
+        var dir = appDir.TrimEnd('\\');
+        if (!processPath.StartsWith(dir, StringComparison.OrdinalIgnoreCase)
+            || processPath.Length <= dir.Length + 1
+            || (processPath[dir.Length] != '\\' && processPath[dir.Length] != '/'))
+            return false;
+
+        return !otherAppPaths.Contains(processPath);
+    }
+
+    private static bool IsWindowOwnedByApp(nint hWnd, string appPath, string appDir, HashSet<string> otherAppPaths, bool exactOnly)
     {
         GetWindowThreadProcessId(hWnd, out uint pid);
         var hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
@@ -341,19 +401,13 @@ public static class AppLauncher
             var sb = new StringBuilder(MAX_PATH_BUFFER);
             int size = sb.Capacity;
             if (QueryFullProcessImageNameW(hProcess, 0, sb, ref size))
-            {
-                var path = sb.ToString();
-                var dir = appDir.TrimEnd('\\');
-                return path.StartsWith(dir, StringComparison.OrdinalIgnoreCase) &&
-                       path.Length > dir.Length + 1 &&
-                       (path[dir.Length] == '\\' || path[dir.Length] == '/');
-            }
+                return IsAppProcessPath(sb.ToString(), appPath, appDir, otherAppPaths, exactOnly);
         }
         finally { CloseHandle(hProcess); }
         return false;
     }
 
-    private static nint FindBestWindowByDir(string appDir, bool? requireVisible)
+    private static nint FindBestWindowByDir(string appPath, string appDir, HashSet<string> otherAppPaths, bool exactOnly, bool? requireVisible)
     {
         nint best = nint.Zero;
         int bestScore = int.MinValue;
@@ -379,11 +433,12 @@ public static class AppLauncher
                 if (QueryFullProcessImageNameW(hProcess, 0, sb, ref size))
                 {
                     var path = sb.ToString();
-                    if (path.StartsWith(appDir, StringComparison.OrdinalIgnoreCase) &&
-                        path.Length > appDir.Length + 1 &&
-                        (path[appDir.Length] == '\\' || path[appDir.Length] == '/'))
+                    if (IsAppProcessPath(path, appPath, appDir, otherAppPaths, exactOnly))
                     {
                         int score = ScoreWindow(hWnd, path);
+                        // Exact exe match always beats sibling/child helper exes
+                        if (path.Equals(appPath, StringComparison.OrdinalIgnoreCase))
+                            score += 1000;
                         if (score > bestScore)
                         {
                             bestScore = score;
